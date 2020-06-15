@@ -1,0 +1,197 @@
+#######################
+# General variables
+#######################
+vars:
+  model_version: v3
+  servers:
+    - worker1
+    - worker2
+  upload_server: 'https://{{ servers|choice }}.sonycproject.com'
+
+####################################
+# Reusable Block Configurations
+####################################
+components:
+  ################
+  # Sets base parameters for the audio block
+  ################
+  audio:
+    channels: 1
+    sr: 48000
+    chunk: 4800
+
+  audio16:
+    block: audio
+    channels: 16
+
+  ################
+  # Sets base parameters for the spl block
+  ################
+  spl:
+    nfft: 2048
+    duration: 1
+
+  ################
+  # Sets up the machine learning block
+  #     audio -> embedding -> classification -> csv
+  #                     \-----------------------^
+  ################
+  ml:
+    block: stft_tflite
+    filename: /path/to/model.tf
+    then:
+      - block: tflite
+          filename: /path/to/model_{{ model_version }}.tf
+          then:
+            block: status+csv.gz
+            group: ml_class
+      - block: status+csv.gz
+        group: embedding
+
+  ################
+  # Sends data to status message and to csv.tar.gz
+  ################
+  status+csv.gz:
+    block: tee
+    then:
+      - block: csv.gz
+      - block: state
+        persistance: "{{ persistance|default('once') }}"
+        key: '{{ key|default(group) }}'
+        input:
+          data: -1
+
+  ################
+  # Write to csv and compress as tar.gz
+  ################
+  csv.gz:
+    block: csv
+    interval: 120 # seconds
+    then:
+      block: tar
+      output: '{{ upload_dir }}/{{ group }}/{{ nodeid }}_{{ root.time }}_{{ block.name }}.tar'
+
+  ################
+  # Upload to API endpoint
+  ################
+  upload:
+    block: request
+    method: POST
+    url: '{{ upload_server }}'
+    data:
+      id: '{{ state.deployment_id }}'
+
+  ################
+  # Get device status
+  ################
+  status:
+    block: python
+    call: sonycnode.monitor.devstatus:status
+    args:
+    kwargs:
+      wifi:
+        interface: wlan0
+      cell:
+        command_interface: /dev/ttyUSB2
+      network:
+        interfaces: ['wlan0', 'eth0', 'tun*']
+      cpu: True
+      memory: True
+      usb:
+        mic_connected:
+          pattern: Cypress|JMTek
+          value: bool
+        wifi_adapter: WLAN|802.11|Wireless|wireless
+      storage: ['/', '/var/log', '{{ tmp_root }}', '{{ data_root }}']
+      git: ['sonycnode']
+
+
+    data_files:
+      block: glob
+      pattern: '{{ upload_dir }}/{{ group }}/*'
+
+
+############################
+# Composed block pipelines
+############################
+pipelines:
+  ################
+  # Audio Pipeline
+  # microphone -> spl -> status & csv
+  #            -> ml -> status & csv
+  #            -> wav
+  ################
+  audio:
+    - block: audio16
+      then:
+        - block: spl
+          name: fast
+          then:
+            - name: status
+              input:
+                leq: -1
+            - name: csv-gz
+
+        - block: spl
+          name: fast
+          then:
+            - name: csv-gz
+
+        - name: ml
+          then:
+            - name: status
+              input:
+                embedding: -1
+                classification: -1
+            - name: csv
+              input: embedding,classification
+              group: ml
+              n_rows: 60
+
+  ################
+  # Upload Pipeline
+  # interval
+  #   \--> check /data/* -> upload -> status (upload speed)
+  #   \--> call status block upload
+  ################
+  upload:
+    - block: interval
+      seconds: 5
+      then:
+        - block: glob
+          pattern: {{ upload_dir }}/**.tar
+          output: # XXX: inefficient
+            file:
+              source: data
+              slice: 0
+          then:
+            - block: upload
+              endpoint: /upload
+              data:
+                data_dir: '{{ input.file|dirname|relpath(upload_dir) }}'
+              files:
+                - '{{ input.file }}'
+
+        - block: status
+          then:
+            - block: upload
+              endpoint: /status
+              files:
+               - '{{ input.data }}'
+
+  ################
+  # Disk Monitor Pipeline
+  # interval
+  #   \--> check disk usage -> select candidate files -> delete
+  ################
+  diskmonitor:
+    - block: interval
+      seconds: 5
+      then:
+        - block: concat
+          items: # XXX: how ???
+            - block: data_files
+              group: logs
+            - block: data_files
+              group: audio
+              limit:

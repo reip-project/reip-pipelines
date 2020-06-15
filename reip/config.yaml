@@ -1,0 +1,26 @@
+#######################
+# Generic block schema - not part of the actual document
+#######################
+schema:
+  generic-block:
+    block: the block id (includes component names)
+    name: the block config alias
+    # modify input
+    input:
+      some_input_key: :-1, :, :, ::-1 # numpy slice
+      last:
+        from: another_key
+        slice: -1
+    # modify output
+    output:
+      some_output_key: :-1, :, :, ::-1 # numpy slice
+    # output next steps
+    then:
+      - a block
+      - another block to output to
+
+vars:
+
+components:
+
+pipelines:
