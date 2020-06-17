@@ -3,8 +3,6 @@ import time
 import ray
 import readi
 import confuse
-# from sonycnode.pipeline.blocks import Block
-from sonycnode.utils import misc
 
 
 ray.init()

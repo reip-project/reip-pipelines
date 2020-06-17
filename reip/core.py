@@ -2,6 +2,7 @@ from . import blocks
 import readi
 import confuse
 
+components = readi.Collection('reip_blocks')
 components.register_subclasses(blocks.Block)
 
 class Config(confuse.Configuration):

@@ -2,7 +2,8 @@ import soundfile as sf
 from ..block import Block
 
 
-class Writer(Block):
+class AudioWriter(Block):
+    '''Writes audio data to file.'''
     output_key = 'file'
     def __init__(self, filename, **kw):
         self.filename = filename

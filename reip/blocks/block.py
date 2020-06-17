@@ -41,22 +41,31 @@ class Block:
         self._run = ray.remote(_run)
 
     def __call__(self, inp):
+        '''Run the block on an input.'''
         self.run(inp)
 
     def run(self, inp):
         return self.send_output(**self._run.remote(inp))
 
     def transform(self, x):
+        '''Transform the block input to the desired output.'''
         return x
 
-    def send_output(self, out):
+    def send_output(self, **out):
+        '''Send output to downstream blocks.'''
         return [b(out) for b in self.output_nodes]
 
     def root(self):
+        '''Get the first block in the chain.'''
         inblock = nextblock = self
         while nextblock:
             inblock, nextblock = nextblock, nextblock.input_block
         return inblock
+
+
+    ###############################
+    # Context Manager Scaffolding
+    ###############################
 
     def open(self):
         return self

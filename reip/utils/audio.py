@@ -1,3 +1,9 @@
+'''
+Audio Utilities
+===============
+
+
+'''
 import numpy as np
 
 def get_np_pa_conversion():

@@ -1,6 +1,6 @@
 import librosa
 import numpy as np
-from ..block import Block
+from reip.blocks import Block
 
 class SPL(Block):
     def __init__(self, sr=22050, n_fft=2048, hop_length=512, weighting='z', calibration=0, **kw):

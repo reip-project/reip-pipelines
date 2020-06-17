@@ -1,9 +1,8 @@
-from sonycnode.pipeline.blocks import Block
-from sonycnode.utils import misc
-
+from .block import Block
 
 
 class CSVSink(Block):
+    '''Write data to csv.'''
     name = 'csv'
     def __init__(self, *a, output_file=None, **kw):
         self.output_file = output_file

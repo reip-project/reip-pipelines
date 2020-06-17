@@ -20,11 +20,10 @@ class RecordError(Exception):
 
 
 class AudioSource(Block):
+    '''Reads audio from an audio input.'''
     callback_update = 0
 
-    @misc.onceproperty
-    def pa(cls): # pylint: disable=E0213
-        return pyaudio.PyAudio()
+    pa = pyaudio.PyAudio()
 
     def __init__(self, *a, valid_device=None, channels=None, sr=44100,
                  frames_per_buffer=None, duration=None, timeout=None, fmt=np.int16, **kw):

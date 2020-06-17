@@ -5,11 +5,12 @@ from ..utils.ml import *
 
 
 class Tflite(Block):
+    '''Run a tflite model on the data input.'''
     def __init__(self, *a, filename, **kw):
         super().__init__(*a, **kw)
         self.model = load_tflite_model_function(filename)
 
-    def run(self, **kw):
+    def transform(self, **kw):
         return self.model(self.get_input_features(**kw))
 
     def get_input_features(self, x):
@@ -18,8 +19,9 @@ class Tflite(Block):
 
 
 class AudioTflite(Tflite):
-    def __init__(self, *a, sr=None, duration=1, hop_size=0.1, n_fft=1024, n_mels=64,
-                 mel_hop_len=160, fmax=None, **kw):
+    '''Run a tflite model on the audio input.'''
+    def __init__(self, *a, sr=None, duration=1, hop_size=0.1, n_fft=1024,
+                 n_mels=64, mel_hop_len=160, fmax=None, **kw):
         super().__init__(*a, **kw)
         self.sr = sr
         self.duration = duration
@@ -35,7 +37,8 @@ class AudioTflite(Tflite):
         elif sr and self.sr and sr != self.sr:
             data, sr = librosa.resample(data, sr, self.sr), self.sr
 
-        frames = padframe(data, int(sr * self.duration), int(sr * self.hop_size)).T, sr
+        frames = padframe(
+            data, int(sr * self.duration), int(sr * self.hop_size)).T
         return npgenarray((
             self.melstft(frame, sr)
             for frame in frames),
@@ -50,4 +53,5 @@ class AudioTflite(Tflite):
         # log mel spectrogram
         return librosa.power_to_db(
             librosa.feature.melspectrogram(
-                S=S, sr=sr, n_mels=self.n_mels, fmax=self.fmax, htk=True), amin=1e-10)
+                S=S, sr=sr, n_mels=self.n_mels, fmax=self.fmax, htk=True),
+            amin=1e-10)

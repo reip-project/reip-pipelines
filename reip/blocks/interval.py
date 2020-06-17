@@ -1,3 +1,14 @@
+'''
+Sources
+=======
+
+.. autosummary::
+    :toctree: generated/
+
+    Interval
+
+'''
+
 import time
 import sched
 from .block import Block
@@ -6,6 +17,7 @@ class _IgnoreScheduler(Exception): # dummy exception - no one would throw this
     '''Default ignored exception. Something no one would actually throw.'''
 
 class Interval(Block):
+    '''Fire every `X` seconds.'''
     name = 'interval'
     def __init__(self, interval=1, ignore=None, priority=0, initial_delay=0):
         self.interval = interval
