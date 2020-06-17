@@ -25,3 +25,4 @@ class Interval(Block):
 
     def __call__(self, **kw):
         self.schedule(**kw, __interval=self.initial_delay)
+        sc.run()
