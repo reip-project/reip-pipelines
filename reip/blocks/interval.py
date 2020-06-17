@@ -10,9 +10,9 @@ class Interval(Block):
     def __init__(self, interval=1, ignore=None, priority=0, initial_delay=0):
         self.interval = interval
         self.initial_delay = interval if initial_delay is None else initial_delay
-        sc = sched.scheduler(time.time, time.sleep)
+        self.sc = sched.scheduler(time.time, time.sleep)
 
-        self.schedule = lambda *a, __interval=self.interval, **kw: sc.enter(
+        self.schedule = lambda *a, __interval=self.interval, **kw: self.sc.enter(
             __interval, priority, emit, a, kw)
 
         ignore = ignore or _IgnoreScheduler
@@ -25,4 +25,4 @@ class Interval(Block):
 
     def __call__(self, **kw):
         self.schedule(**kw, __interval=self.initial_delay)
-        sc.run()
+        self.sc.run()
