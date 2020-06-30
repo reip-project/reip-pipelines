@@ -16,10 +16,11 @@ from .block import Block
 class _IgnoreScheduler(Exception): # dummy exception - no one would throw this
     '''Default ignored exception. Something no one would actually throw.'''
 
-class Interval(Block):
+class interval(Block):
     '''Fire every `X` seconds.'''
     name = 'interval'
-    def __init__(self, interval=1, ignore=None, priority=0, initial_delay=0):
+    def __init__(self, interval=1, ignore=None, priority=0, initial_delay=0, **kw):
+        super().__init__(**kw)
         self.interval = interval
         self.initial_delay = interval if initial_delay is None else initial_delay
         self.sc = sched.scheduler(time.time, time.sleep)

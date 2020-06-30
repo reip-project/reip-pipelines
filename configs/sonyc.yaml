@@ -125,7 +125,7 @@ pipelines:
     - block: audio16
       then:
         - block: spl
-          name: fast
+          name: slow
           then:
             - name: status
               input:

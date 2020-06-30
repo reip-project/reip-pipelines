@@ -41,15 +41,12 @@ class Block:
             return self.to_outputs(self.transform(**self.to_inputs(inp)))
         self._run = ray.remote(_run)
 
-    # def __call__(self, inp):
-    #
-    #     self.run(inp)
+    def __call__(self, inp):
+        '''Run the block on an input.'''
+        self.run(inp)
 
     def run(self, inp):
-        '''Run the block on an input.'''
         return self.send_output(**self._run.remote(inp))
-
-
 
     def transform(self, x):
         '''Transform the block input to the desired output.'''

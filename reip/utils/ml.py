@@ -11,12 +11,25 @@ import librosa
 
 
 
-framepadlen = lambda xlen, flen, hlen: int(
-    np.ceil(1. * (xlen - flen) / hlen) * hlen + flen)
+
+def load_resample(fname=None, y=None, sr=None, target_sr=None):
+    '''Get the audio data at a specified target sample rate.'''
+    if y is None:
+        y, sr = librosa.load(fname, sr=target_sr)
+    elif sr and target_sr and sr != target_sr:
+        y, sr = librosa.resample(y, sr, target_sr), target_sr
+    return y, sr
+
+
+def framepadlen(xlen, flen, hlen):
+    '''Calculate the padding for a specific frame and hop size.'''
+    return int(np.ceil(1. * (xlen - flen) / hlen) * hlen + flen)
+
 
 def padframe(y, framelen, hoplen):
+    '''Get framed array with zero padding to fill the first/last frames.'''
     return librosa.util.frame(
-        librosa.util.pad_center(y, framepadlen(y.size, framelen, hoplen)),
+        librosa.util.pad_center(y, framepadlen(len(y), framelen, hoplen)),
         framelen, hoplen)
 
 

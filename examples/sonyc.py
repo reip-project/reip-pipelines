@@ -1,6 +1,5 @@
 import reip
 import reip.blocks as B
-import reip.status as S
 import wrappingpaper as wp
 
 
@@ -18,9 +17,11 @@ class C:
     status_interval = 3
     diskmonitor_interval = 10
 
+    spl = dict(nfft=2048, duration=1)
+    calibration = 74.52
 
 # set some module-wide defaults for blocks
-B.audio.spl.defaults(nfft=2048, duration=1)
+B.audio.spl.defaults(**C.spl)
 B.upload.defaults(url=C.upload_server)
 
 
@@ -30,15 +31,15 @@ B.upload.defaults(url=C.upload_server)
 
 audio = B.audio.source(channels=1, sr=48000, chunk=4800)
 
-spl_slow = B.audio.spl()
-spl_fast = B.block(spl_slow, duration=1/8.)
+spl_slow = B.audio.spl(calibration=C.calibration)
+spl_fast = spl_slow.copy(duration=1/8.)
 
-ml_emb = B.tflite.stft(filename='/path/to/emb_model.tf')
-ml_cls = ml_emb | B.tflite(filename='/path/to/cls_model.tf')
+ml_emb = B.tflite.stft('/path/to/emb_model.tf')
+ml_cls = ml_emb | B.tflite('/path/to/cls_model.tf')
 
 to_status_and_csv = (
     B.X[-1] | B.add_status(),
-    B.csv() | B.targz(C.data_dir),
+    B.csv() | B.tar.gz(C.data_dir),
 )
 
 ##############
@@ -58,21 +59,24 @@ get_status = B.get_status(
     git='sonycnode',
 )
 
-upload_files = B.watch.create(C.data_dir) | B.upload.file('/upload') | B.rm() # ??
 upload_status = B.interval(C.status_interval) | get_status | B.upload.file('/status')
+upload_files = B.watch.create(C.data_dir) | B.upload.file('/upload') | B.rm() # ??
 
 
 ##############
 # Disk monitor
 ##############
 
-check_usage = B.get_status(storage=C.data_dir) > B.X > 0.95
+check_usage = (
+    B.get_status(storage=C.data_dir) |
+    B.X['storage'][C.data_dir] > 0.95)
+
 monitor_disk_usage = (
     B.interval(C.diskmonitor_interval) |
     B.while_(check_usage, B.ls(C.data_dir) | (
         B.filter.fnmatch('*/logs/*') | B.rm(),
-        B.filter.fnmatch('*/data/audio/*')[::-2][:5] | B.rm(),
-        B.sample(dist='left-tail')[:2] | B.filter.fnmatch('*/data/spl/*') | B.rm(),
+        B.filter.fnmatch('*/data/audio/*') | B.X[::-2][:5] | B.rm(),
+        B.sample(dist='left-tail') | B.X[:2] | B.filter.fnmatch('*/data/spl/*') | B.rm(),
     )))
 
 

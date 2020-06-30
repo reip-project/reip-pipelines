@@ -19,7 +19,7 @@ class RecordError(Exception):
 
 
 
-class AudioSource(Block):
+class source(Block):
     '''Reads audio from an audio input.'''
     callback_update = 0
 
@@ -69,8 +69,7 @@ class AudioSource(Block):
         self.callback_update = (self.callback_update + 1) % 1000
         if status_flags:
             self.log.error('Input overflow status: %s', status_flags)
-        self.send_output({
-            'data': self.to_array(buf),
+        self.send_output(self.to_array(buf), {
             'time': time_info['input_buffer_adc_time'] or time.time()
         })
         return None, pyaudio.paContinue
