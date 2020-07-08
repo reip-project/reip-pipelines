@@ -56,6 +56,14 @@ class Source(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    def last(self):
+        raise NotImplementedError
+
+    @abstractmethod
+    def _next(self):
+        raise NotImplementedError
+
+    @abstractmethod
     def _get(self):
         raise NotImplementedError
 
@@ -67,7 +75,8 @@ class Source(ABC):
 
         if self.strategy == Source.Skip:
             while not self.empty() and self._skipped < self.skip:
-                self._get()  # discard buffer
+                self._get()
+                self._next()  # discard the buffer
                 self._skipped += 1
                 self._skipped_total += 1
 
@@ -77,15 +86,20 @@ class Source(ABC):
                     self._skipped = 0
 
         elif self.strategy == Source.Latest:
-            while not self.empty():
-                buffer = self._get()
-                if not self.empty():
-                    self._skipped_total += 1
+            while not self.last():
+                self._get()
+                self._next()  # discard the buffer
+                self._skipped_total += 1
+
+            buffer = self._get()
 
         elif self.strategy == Source.All:
             if not self.empty():
                 buffer = self._get()
         else:
-            raise ValueError
+            raise ValueError("Unknown strategy")
 
         return buffer
+
+    def done(self):
+        self._next()

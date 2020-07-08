@@ -3,6 +3,9 @@ import threading
 import traceback
 import queue
 import time
+import ctypes
+
+libc = ctypes.CDLL('libc.so.6')
 
 # To find block instance by name?
 BlockFactory = {}
@@ -92,6 +95,7 @@ class Block(ABC):
                         if buffer_in is not None:
                             p0 = time.time()
                             buffer_out = self.process(*buffer_in)
+                            self.source.done()
                             self._process_time += time.time() - p0
                             self._processed += 1
                             if self.has_sink and buffer_out is not None:
@@ -106,6 +110,8 @@ class Block(ABC):
 
                 if self._process_delay is not None:
                     w0 = time.time()
+                    # libc.usleep(1)
+                    # libc.nanosleep(1)
                     time.sleep(self._process_delay)
                     self._wait_time += time.time() - w0
 

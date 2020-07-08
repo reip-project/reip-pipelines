@@ -1,6 +1,6 @@
 from interface import Sink, Source, ImmutableDict
 import numpy as np
-
+import copy
 
 class Pointer:
     def __init__(self, ring_size):
@@ -52,10 +52,15 @@ class RingReader(Source):
     def empty(self):
         return self.ring.head.counter == self.ring.readers[self.id].counter
 
-    def _get(self):
-        buffer = self.ring.ring[self.ring.readers[self.id].pos]
+    def last(self):
+        return (self.ring.head.counter - self.ring.readers[self.id].counter) == 1
+
+    def _next(self):
         self.ring.readers[self.id].counter += 1
-        return buffer
+
+    def _get(self):
+        return self.ring.ring[self.ring.readers[self.id].pos]
+        # return copy.deepcopy(buffer)
 
 
 if __name__ == '__main__':
@@ -72,13 +77,16 @@ if __name__ == '__main__':
 
     while not r0.empty():
         print(r0.get()[0])
+        r0.done()
 
     print("r1:")
 
     while not r1.empty():
         print(r1.get()[0])
+        r1.done()
 
     print("r2:")
 
     while not r2.empty():
         print(r2.get()[0])
+        r2.done()

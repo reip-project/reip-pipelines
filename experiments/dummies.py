@@ -11,7 +11,7 @@ class Generator(Block):
         self.array = None
         super().__init__(name, Block.SINK, **kw)
         # self._process_delay = None
-        self._process_delay = 1e-6
+        # self._process_delay = 1e-6
 
     def initialize(self):
         self.array = np.ones(self.shape, dtype=np.uint8)
@@ -43,7 +43,7 @@ class Transformer(Block):
         self.offset = offset
         super().__init__(name, Block.SOURCE | Block.SINK, **kw)
         # self._process_delay = None
-        self._process_delay = 1e-6
+        # self._process_delay = 1e-6
 
     def initialize(self):
         pass
@@ -51,7 +51,8 @@ class Transformer(Block):
     def process(self, data, meta):
         meta = dict(meta)
         meta["offset"] = self.offset
-        return data + self.offset, meta
+        return data, meta
+        # return data + self.offset, meta
 
     def finish(self):
         pass
@@ -62,7 +63,7 @@ class Consumer(Block):
         self.prefix = prefix
         super().__init__(name, Block.SOURCE | Block.SINK, **kw)
         # self._process_delay = None
-        self._process_delay = 1e-6
+        # self._process_delay = 1e-6
 
     def initialize(self):
         pass
