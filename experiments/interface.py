@@ -19,7 +19,7 @@ class ImmutableDict(Mapping):
 
 class Sink(ABC):
     def __init__(self):
-        self._dropped = 0
+        self.dropped = 0
 
     @abstractmethod
     def full(self):
@@ -31,7 +31,7 @@ class Sink(ABC):
 
     def put(self, buffer, **kw):
         if self.full():
-            self._dropped += 1
+            self.dropped += 1
         else:
             self._put(buffer)
 
@@ -48,8 +48,8 @@ class Source(ABC):
     def __init__(self, strategy=0, skip=0):
         self.strategy = strategy
         self.skip = skip
-        self._skipped = 0
-        self._skipped_total = 0
+        self._skip_id = 0
+        self.skipped = 0
 
     @abstractmethod
     def empty(self):
@@ -60,7 +60,7 @@ class Source(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def _next(self):
+    def next(self):
         raise NotImplementedError
 
     @abstractmethod
@@ -74,22 +74,22 @@ class Source(ABC):
         buffer = None
 
         if self.strategy == Source.Skip:
-            while not self.empty() and self._skipped < self.skip:
+            while not self.empty() and self._skip_id < self.skip:
                 self._get()
-                self._next()  # discard the buffer
-                self._skipped += 1
-                self._skipped_total += 1
+                self.next()  # discard the buffer
+                self._skip_id += 1
+                self.skipped += 1
 
-            if self._skipped == self.skip:
+            if self._skip_id == self.skip:
                 if not self.empty():
                     buffer = self._get()
-                    self._skipped = 0
+                    self._skip_id = 0  # might not process this buffer in multi_source block
 
         elif self.strategy == Source.Latest:
             while not self.last():
                 self._get()
-                self._next()  # discard the buffer
-                self._skipped_total += 1
+                self.next()  # discard the buffer
+                self.skipped += 1
 
             buffer = self._get()
 
@@ -100,6 +100,3 @@ class Source(ABC):
             raise ValueError("Unknown strategy")
 
         return buffer
-
-    def done(self):
-        self._next()
