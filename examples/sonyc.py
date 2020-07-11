@@ -59,7 +59,7 @@ get_status = B.get_status(
     git='sonycnode',
 )
 
-upload_status = B.interval(C.status_interval) | get_status | B.upload.file('/status')
+upload_status = B.interval(C.status_interval) | get_status | B.upload.file(endpoint='/status')
 upload_files = B.watch.create(C.data_dir) | B.upload.file('/upload') | B.rm() # ??
 
 
