@@ -88,8 +88,11 @@ class Task(Block):
         time.sleep(self._process_delay)
 
     def _join_children(self, auto_terminate=True):
+        if auto_terminate:
+            for block in self._block_factory.values():
+                block.terminate = True
         for block in self._block_factory.values():
-            block.join(auto_terminate=auto_terminate)
+            block.join()
 
     def print_stats(self):
         for name, block in self._block_factory.items():
