@@ -43,6 +43,7 @@ class Consumer(Block):
     def process(self, buffers):
         data, meta = buffers[0]
         meta = dict(meta)
+        # self.timestamp(meta)
         meta["prefix"] = self.prefix
         return [(self.prefix + str(self.processed), meta)]
 

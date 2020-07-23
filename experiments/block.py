@@ -182,6 +182,7 @@ class Block(ABC):
 
                         self._p0 = time.time()
                         buffers_out = self.process(buffers_in)
+                        # check_types(buffers_out)
                         self._process_time += time.time() - self._p0
                         self.processed += 1
                         for source in self.sources:

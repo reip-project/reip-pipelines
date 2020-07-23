@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from interface import *
 from block import *
+from dummies import *
 import multiprocessing
 import traceback
 import queue
@@ -208,3 +209,38 @@ class Task(ABC):
 
         for name, block in self._block_factory.items():
             print("Block %s processed %d buffers" % (block.name, block.processed))
+
+
+class TestTask(Task):
+    def __init__(self, name, **kw):
+        super().__init__(name, **kw)
+
+    def build(self):
+        gen = self.add(Generator("data_gen", (720, 1280, 3), max_rate=None))
+        trans = self.add(Transformer("data_trans", 10))
+        eat = self.add(Consumer("data_eat", "test"))
+
+        gen.sink = RingBuffer(1000)
+        trans.sink = RingBuffer(1000)
+        eat.sink = queue.Queue()
+        # eat.sink = self[2].producer
+        # eat.source = self[2].client
+
+        gen.child(trans, strategy=Source.Skip, skip=1).child(eat, strategy=Source.All)
+
+
+if __name__ == '__main__':
+    task = TestTask("test")
+
+    task.spawn()
+
+    with task:
+        time.sleep(0.1)
+
+    task.join()
+    task.print_stats()
+
+    files = []
+    while not task["data_eat"].sink.empty():
+        files.append(task["data_eat"].sink.get()[0])
+    print(len(files), "files", files)
