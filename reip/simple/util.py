@@ -7,6 +7,7 @@ class _TimerDict(OrderedDict):
     def __init__(self, *a, **kw):
         super().__init__(*a, **kw)
         self.descriptions = {}
+        self.counts = {}
 
 
 class Timer:
@@ -39,6 +40,7 @@ class Timer:
         t = time.time() - t0
         self._times.descriptions[name] = description
         self._times[name] = self._times.get(name, 0) + t
+        self._times.counts[name] = self._times.counts.get(name, 0) + 1
 
         if output:
             print("{} {} in {:.3f} sec".format(
@@ -87,7 +89,9 @@ class Timer:
 
             x = 'Total time: {:.3f} secs.{}\n'.format(
                 total_time, ''.join(
-                    '\n\t{:.3f} - {}'.format(t, times.descriptions.get(k, k))
+                    '\n\t{:.3f}s total - {} (average={:.4f}, n={})'.format(
+                        t, times.descriptions.get(k, k),
+                        t / times.counts.get(k, 1), times.counts.get(k, 0))
                     for k, t in time_items))
         else:
             x = 'empty.'
