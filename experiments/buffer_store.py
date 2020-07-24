@@ -50,40 +50,31 @@ class BufferStore(Sink):
         self.tail = SharedPointer(self.size)
         self.customers = []
         self.pipes = []
-        # self.client = None
         self.client = plasma.connect("/tmp/plasma")
         print("Store Connected")
         super().__init__(**kw)
 
     def full(self):
-        return (self.head.value - self.tail.value) >= (self.size - 1)
-
-    def _put(self, buffer):
-        # if self.client is None:
-        #     self.client = plasma.connect("/tmp/plasma")
-        #     print("Store Connected")
-
         if len(self.customers) > 0:
             new_value = min([customer.value for customer in self.customers])
 
             to_delete = []
             for v in range(self.tail.value, new_value):
-                if self.client.contains(self.data_ids[v % self.size]):
-                    to_delete.append(self.data_ids[v % self.size])
-                if self.client.contains(self.meta_ids[v % self.size]):
-                    to_delete.append(self.meta_ids[v % self.size])
-            print("Deleting:", to_delete)
-            self.client.delete(to_delete)
+                to_delete.append(self.data_ids[v % self.size])
+                to_delete.append(self.meta_ids[v % self.size])
 
-            self.tail.value = new_value
+            if len(to_delete) > 0:
+                print("Deleting:", to_delete)
+                self.client.delete(to_delete)
+                self.tail.value = new_value
 
+        return (self.head.value - self.tail.value) >= (self.size - 1)
+
+    def _put(self, buffer):
         data, meta = buffer
-        # if isinstance(data, np.ndarray):
-        #     data.flags.writeable = False
 
         save_data(self.client, data, id=self.data_ids[self.head.pos])
         save_meta(self.client, meta, id=self.meta_ids[self.head.pos])
-        # self.slots[self.head.pos] = (data, ImmutableDict(meta))
 
         self.head.value += 1
 
@@ -118,8 +109,6 @@ class Customer(Source):
         meta = load_meta(self.client, self.store.meta_ids[self.store.customers[self.id].pos])
 
         return data, meta
-        # return self.ring.slots[self.ring.readers[self.id].pos]
-        # return copy.deepcopy(self.ring.slots[self.ring.readers[self.id].pos])
 
 
 def run(customers):
@@ -154,6 +143,8 @@ def run(customers):
         print(c2.get())
         c2.next()
 
+    time.sleep(1.5)
+    # raise RuntimeError("Foo")
     print("Done")
 
 
@@ -182,3 +173,5 @@ if __name__ == '__main__':
     bs.put((str(200), {"buffer": 200}))
 
     process.join()
+
+    time.sleep(5)
