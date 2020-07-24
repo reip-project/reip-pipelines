@@ -4,8 +4,8 @@ from .interface import *
 
 
 class Pointer:
-    def __init__(self, ring_size):
-        self.counter = 0
+    def __init__(self, ring_size, counter=0):
+        self.counter = counter
         self.ring_size = ring_size
 
     @property
@@ -32,15 +32,11 @@ class RingBuffer(Sink):
     def _put(self, buffer):
         if len(self.readers) > 0:
             self.tail.counter = min([reader.counter for reader in self.readers])
-        data, meta = buffer
-        if isinstance(data, np.ndarray):
-            data.flags.writeable = False
-        self.slots[self.head.pos] = (data, ImmutableDict(meta))
+        self.slots[self.head.pos] = asimmutable(buffer)
         self.head.counter += 1
 
     def gen_source(self, **kw):
-        self.readers.append(Pointer(self.size))
-        self.readers[-1].counter = self.tail.counter
+        self.readers.append(Pointer(self.size, self.tail.counter))
         return RingReader(self, len(self.readers) - 1, **kw)
 
 

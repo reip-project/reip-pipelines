@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 import threading
+import multiprocessing as mp
 import traceback
 import queue
 import time
@@ -8,27 +9,23 @@ from .ring_buffer import RingBuffer
 from .interface import Sink, Source
 
 
-# class _LinksProp(util.patchprop):
-#     '''Make sure that items assigned to this property's keys are of a certain type.'''
-#     def __init__(self, bases=(), name='object'):
-#         self._bases, self.__name__ = bases, name
-#         super().__init__()
-#
-#     def __setitem__(self, key, value):
-#         if not isinstance(value, self._bases):
-#             raise ValueError("{} must be one of types: {}".format(
-#                 self.__name__, self._bases))
-#         return super().__setitem__(key, value)
+WORKER_CLASSES = {'thread': threading.Thread, 'process': mp.Process}
 
 
 class Block(ABC):
     _worker = None
-    _worker_cls = threading.Thread
-    __type_name__ = 'Block'
+    __type_name__ = 'Block'  # for log messages
 
-    def __init__(self, max_rate=None, num_sinks=0, num_sources=0, verbose=1, name=None, delay=1e-6):
+    def __init__(self, max_rate=None, num_sinks=0, num_sources=0, verbose=1,
+                 name=None, delay=1e-6, run_mode='thread'):
+        ''''''
         self.name = name or self.__class__.__name__
         self.timer = util.Timer('{} {}'.format(self.__type_name__, self.name))
+
+        if run_mode not in WORKER_CLASSES:
+            raise ValueError('Invalid run_mode {}. Must be one of {}'.format(
+                run_mode, set(WORKER_CLASSES)))
+        self._worker_cls = WORKER_CLASSES[run_mode]
 
         self.max_rate = max_rate
         self.sinks = [None] * num_sinks
@@ -49,6 +46,7 @@ class Block(ABC):
         t = time.time()
         time.sleep(delay)
         self._dt = time.time() - t
+        self._spawn_delay = delay
         self._process_delay = delay
         self._terminate_delay = delay
 
@@ -91,13 +89,6 @@ class Block(ABC):
     def child(self, other, **kw):
         if not isinstance(other, Block):
             raise ValueError("Not a {}".format(self.__type_name__))
-        if len(self.sinks) == 0:
-            raise ValueError("{} {} doesn't have any sinks".format(
-                self.__type_name__, self.name))
-        if len(other.sources) == 0:
-            raise ValueError("{} {} doesn't have any sources".format(
-                other.__type_name__, other.name))
-
         other.source = self.sink.gen_source(**kw) # XXX
         return other
 
@@ -105,18 +96,21 @@ class Block(ABC):
         return other.child(self, **kw)
 
     def queue(self, length=None):
-        self.sinks[0] = RingBuffer(length) if length else queue.Queue() # XXX.
+        '''Set the queue size.'''
+        self.sink = RingBuffer(length) if length else queue.Queue()
         return self
 
     # Operation
 
     def init(self):
+        '''Any start up tasks on the worker.'''
         pass
 
     def process(self, buffers):
         return buffers
 
     def finish(self):
+        '''Any cleanup to do.'''
         pass
 
     # Context Managing
@@ -131,11 +125,10 @@ class Block(ABC):
         self.start()
         return self
 
-    def __exit__(self, type, value, traceback):
+    def __exit__(self, exc_type, exc_val, exc_tb):
         self.stop()
-        if type:
+        if exc_type:
             self.join(auto_terminate=True)
-        return False
 
     def spawn(self, wait=True):
         # check sources
@@ -148,17 +141,16 @@ class Block(ABC):
                 raise RuntimeError("Sink %d in block %s not connected" % (i, self.name))
 
         # start worker
-        self._worker = self._worker_cls(target=self._run, name=self.name)
-        self._worker.daemon = True
         if self._verbose:
             print("Spawning {} {}...".format(self.__type_name__, self.name))
-        self.ready = False
-        self.done = False
+        self.ready = self.done = False
+        self._worker = self._worker_cls(target=self._run, name=self.name)
+        self._worker.daemon = True
         self._worker.start()
 
         if wait: # wait for worker to initialize
             while not self.ready:
-                time.sleep(1e-6)
+                time.sleep(self._spawn_delay)
 
     # @profile
     def _run(self):
@@ -173,8 +165,7 @@ class Block(ABC):
                 self.ready = True
 
                 while not self.terminate:
-                    # if not multiprocessing.parent_process().is_alive():
-                    #     break
+                    # run the actual block processing code
                     if self.running:
                         self._run_step()
 
@@ -182,12 +173,13 @@ class Block(ABC):
                     if self._process_delay:
                         t_ = time.time()
                         time.sleep(self._process_delay)
-                        self.timer.lap(t_, 'wait', 'Waiting')
+                        self.timer.lap(t_, 'wait', 'Waiting')  # less overhead
 
                 # close
                 with self.timer('finish', 'Finishing', self._verbose):
                     self.finish()
 
+            # sleep at close
             if self._terminate_delay is not None:
                 time.sleep(self._terminate_delay)
 
@@ -195,39 +187,48 @@ class Block(ABC):
         except Exception as e:
             self.error = True
             self.exception = e
+            print('Exception in', self.name, '({}) {}'.format(type(e), str(e)))
             # traceback.print_exc()
             raise
 
     def _run_step(self):
+        buffers_in = self._gather_sources()
+        if buffers_in is None:
+            return
+
+        # throttle
+        with self.timer('rate', 'Rate limit'):
+            self._throttle()
+
+        # run block code
+        self._p0 = time.time()  # for throttling
+        with self.timer('process', 'Processing'):
+            buffers_out = self.process(buffers_in)
+        self.processed += 1
+
+        # notify and increment the source
+        for source in self.sources:
+            source.next()
+
+        # send buffers to sinks
+        for sink, buf in zip(self.sinks, buffers_out):
+            sink.put(buf, block=False)
+
+    def _gather_sources(self):
+        # wait for all buffers to be ready
         buffers_in = []
         for source in self.sources:
             buf = source.get(block=False)
             if buf is None:
                 return
             buffers_in.append(buf)
-
-        # throttle
-        with self.timer('rate', 'Rate limit'):
-            while self._throttle():
-                time.sleep(self._process_delay)
-
-        # run block code
-        self._p0 = time.time()
-        with self.timer('process', 'Processing'):
-            buffers_out = self.process(buffers_in)
-        self.processed += 1
-
-        # notify the source
-        for source in self.sources:
-            source.next()
-        # send buffers to sinks
-        for sink, buf in zip(self.sinks, buffers_out):
-            sink.put(buf, block=False)
+        return buffers_in
 
     def _throttle(self):
-        return (
-            self.max_rate and self._p0 and
-            (time.time() + 0.25 * self._dt < self._p0 + (1./self.max_rate)))
+        if self.max_rate and self._p0:
+            secs = 1. / self.max_rate - ((time.time() - self._p0) + 0.25 * self._dt)
+            if secs > 0:
+                time.sleep(secs)
 
     def join(self, auto_terminate=True):
         if self._worker is None:
