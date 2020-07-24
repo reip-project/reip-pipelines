@@ -1,5 +1,8 @@
 from interface import Sink, Source
 from abc import ABC, abstractmethod
+from ring_buffer import RingBuffer
+from buffer_store import BufferStore
+import multiprocessing as mp
 import threading
 import traceback
 import queue
@@ -10,11 +13,13 @@ import time
 
 
 class Block(ABC):
-    def __init__(self, name, max_rate=None, num_sinks=0, num_sources=0):
+    def __init__(self, name, max_rate=None, num_sinks=0, num_sources=0, sink_size=100):
         self.name = name
         self.max_rate = max_rate
+        self.sink_size = sink_size
         self.sinks = [None] * num_sinks
         self.sources = [None] * num_sources
+        self.task = None
 
         self.ready = False
         self.running = False
@@ -65,7 +70,7 @@ class Block(ABC):
     @sink.setter
     def sink(self, new_sink):
         if not issubclass(type(new_sink), Sink):
-            if isinstance(new_sink, queue.Queue):
+            if isinstance(new_sink, queue.Queue) or isinstance(new_sink, mp.queues.Queue):
                 self.sinks[self._select] = new_sink
             else:
                 raise ValueError("Not a sink")
@@ -90,6 +95,13 @@ class Block(ABC):
         if len(other.sources) == 0:
             raise ValueError("Block %s doesn't have any sources" % other.name)
         else:
+            if self.sink is None:
+                if self.task != other.task:
+                    self.sink = BufferStore(self.sink_size)
+                    print("Store")
+                else:
+                    self.sink = RingBuffer(self.sink_size)
+                    print("Ring")
             other.source = self.sink.gen_source(**kw)
             return other
 
@@ -182,6 +194,7 @@ class Block(ABC):
 
                         self._p0 = time.time()
                         buffers_out = self.process(buffers_in)
+                        # check_types(buffers_out)
                         self._process_time += time.time() - self._p0
                         self.processed += 1
                         for source in self.sources:
@@ -218,7 +231,7 @@ class Block(ABC):
             self.terminate = True
 
         print("Joining block %s..." % self.name)
-        self._thread.join()
+        self._thread.join(timeout=0.5)
         if self._debug:
             print("Joined thread", self.name)
 

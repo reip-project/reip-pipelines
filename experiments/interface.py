@@ -75,7 +75,7 @@ class Source(ABC):
 
         if self.strategy == Source.Skip:
             while not self.empty() and self._skip_id < self.skip:
-                self._get()
+                # self._get()
                 self.next()  # discard the buffer
                 self._skip_id += 1
                 self.skipped += 1
@@ -87,7 +87,7 @@ class Source(ABC):
 
         elif self.strategy == Source.Latest:
             while not self.last():
-                self._get()
+                # self._get()
                 self.next()  # discard the buffer
                 self.skipped += 1
 

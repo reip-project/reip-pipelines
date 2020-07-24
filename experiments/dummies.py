@@ -15,8 +15,8 @@ class Generator(Block):
         self.array = np.ones(self.shape, dtype=np.uint8)
 
     def process(self, buffers):
-        return [(self.array, {"shape": self.shape})]
-        # return [(self.array * self.processed, {"shape": self.shape})]
+        # return [(self.array, {"shape": self.shape})]
+        return [(self.array * self.processed, {"shape": self.shape})]
 
     def finish(self):
         self.array = None
@@ -43,6 +43,7 @@ class Consumer(Block):
     def process(self, buffers):
         data, meta = buffers[0]
         meta = dict(meta)
+        # self.timestamp(meta)
         meta["prefix"] = self.prefix
         return [(self.prefix + str(self.processed), meta)]
 

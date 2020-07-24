@@ -27,11 +27,11 @@ class RingBuffer(Sink):
         super().__init__(**kw)
 
     def full(self):
+        if len(self.readers) > 0:
+            self.tail.counter = min([reader.counter for reader in self.readers])
         return (self.head.counter - self.tail.counter) >= (self.size - 1)
 
     def _put(self, buffer):
-        if len(self.readers) > 0:
-            self.tail.counter = min([reader.counter for reader in self.readers])
         data, meta = buffer
         if isinstance(data, np.ndarray):
             data.flags.writeable = False
