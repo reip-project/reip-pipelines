@@ -15,7 +15,7 @@ class UniqueID:
     def Gen():
         UniqueID._id += 1
         t = "%20s" % str(UniqueID._id)
-        print(t.encode("utf-8"))
+        # print(t.encode("utf-8"))
         return plasma.ObjectID(t.encode("utf-8"))
 
 

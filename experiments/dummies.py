@@ -45,6 +45,7 @@ class Consumer(Block):
         meta = dict(meta)
         # self.timestamp(meta)
         meta["prefix"] = self.prefix
+        # return [(self.prefix + str(data.ravel()[0]), meta)]
         return [(self.prefix + str(self.processed), meta)]
 
 

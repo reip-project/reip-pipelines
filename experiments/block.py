@@ -237,7 +237,7 @@ class Block(ABC):
 
     def print_stats(self):
         print("Block %s processed %d buffers" % (self.name, self.processed))
-        print("Dropped:", [sink.dropped for sink in self.sinks if not isinstance(sink, queue.Queue)])
+        print("Dropped:", [sink.dropped for sink in self.sinks if not isinstance(sink, queue.Queue) and not isinstance(sink, mp.queues.Queue)])
         service_time = self._total_time - (self._init_time + self._process_time + self._finish_time + self._wait_time + self._rate_time)
         print("Total time %.3f sec:\n\t%.3f - Initialization\n\t%.3f - Processing\n\t%.3f - Finishing up\n\t%.3f - Waiting\n\t%.3f - Rate limit\n\t%.3f - Service time" %
               (self._total_time, self._init_time, self._process_time, self._finish_time, self._wait_time, self._rate_time, service_time))
