@@ -1,5 +1,5 @@
 from interface import *
-from plasma import save_data, load_data, save_meta, load_meta
+from plasma import save_data, load_data, save_meta, load_meta, save_both, load_both
 import pyarrow as pa
 import numpy as np
 import pyarrow.plasma as plasma
@@ -15,7 +15,7 @@ class UniqueID:
     def Gen():
         UniqueID._id += 1
         t = "%20s" % str(UniqueID._id)
-        print(t.encode("utf-8"))
+        # print(t.encode("utf-8"))
         return plasma.ObjectID(t.encode("utf-8"))
 
 
@@ -46,6 +46,7 @@ class BufferStore(Sink):
         self.size = size + 1  # need extra slot because head == tail means empty
         self.data_ids = [UniqueID.Gen() for i in range(self.size)]
         self.meta_ids = [UniqueID.Gen() for i in range(self.size)]
+        self.both_ids = [UniqueID.Gen() for i in range(self.size)]
         self.head = SharedPointer(self.size)
         self.tail = SharedPointer(self.size)
         self.customers = []
@@ -60,8 +61,9 @@ class BufferStore(Sink):
 
             to_delete = []
             for v in range(self.tail.value, new_value):
-                to_delete.append(self.data_ids[v % self.size])
-                to_delete.append(self.meta_ids[v % self.size])
+                # to_delete.append(self.data_ids[v % self.size])
+                # to_delete.append(self.meta_ids[v % self.size])
+                to_delete.append(self.both_ids[v % self.size])
 
             if len(to_delete) > 0:
                 print("Deleting:", to_delete)
@@ -73,8 +75,9 @@ class BufferStore(Sink):
     def _put(self, buffer):
         data, meta = buffer
 
-        save_data(self.client, data, id=self.data_ids[self.head.pos])
-        save_meta(self.client, meta, id=self.meta_ids[self.head.pos])
+        # save_data(self.client, data, id=self.data_ids[self.head.pos])
+        # save_meta(self.client, meta, id=self.meta_ids[self.head.pos])
+        save_both(self.client, data, meta, id=self.both_ids[self.head.pos])
 
         self.head.value += 1
 
@@ -105,8 +108,9 @@ class Customer(Source):
             self.client = plasma.connect("/tmp/plasma")
             print("Customer Connected")
 
-        data = load_data(self.client, self.store.data_ids[self.store.customers[self.id].pos])
-        meta = load_meta(self.client, self.store.meta_ids[self.store.customers[self.id].pos])
+        # data = load_data(self.client, self.store.data_ids[self.store.customers[self.id].pos])
+        # meta = load_meta(self.client, self.store.meta_ids[self.store.customers[self.id].pos])
+        data, meta = load_both(self.client, self.store.both_ids[self.store.customers[self.id].pos])
 
         return data, meta
 
