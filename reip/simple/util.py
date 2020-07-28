@@ -90,7 +90,7 @@ class Timer:
             x = 'Total time: {:.3f} secs.{}\n'.format(
                 total_time, ''.join(
                     '\n\t{:.3f}s total - {} (average={:.4f}, n={})'.format(
-                        t, times.descriptions.get(k, k),
+                        t, times.descriptions.get(k) or k,
                         t / times.counts.get(k, 1), times.counts.get(k, 0))
                     for k, t in time_items))
         else:

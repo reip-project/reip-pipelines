@@ -76,10 +76,10 @@ class Sink(ABC):
             if timeout and time.time() - t0 > timeout:
                 return None  # QUESTION: TimeoutError instead?
 
-    async def put(self, block=True, timeout=None, **kw):
+    async def put(self, buffer, block=True, timeout=None):
         if block:
             await self.wait(timeout)
-        return self.put_nowait()
+        return self.put_nowait(buffer)
 
     def put_nowait(self, buffer):
         if self.full():

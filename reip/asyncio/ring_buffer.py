@@ -41,9 +41,9 @@ class RingBuffer(Sink):
 
 
 class RingReader(Source):
-    def __init__(self, ring, id, **kw):
+    def __init__(self, ring, index, **kw):
         self.ring = ring
-        self.id = id
+        self.id = index
         super().__init__(**kw)
 
     def empty(self):

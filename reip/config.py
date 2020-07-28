@@ -1,9 +1,9 @@
-from . import blocks
+import reip
 import readi
 import confuse
 
 components = readi.Collection('reip_blocks')
-components.register_subclasses(blocks.Block)
+components.register_subclasses(reip.Block)
 
 class Config(confuse.Configuration):
     def __init__(self, appname='pipes', *a, **kw):
