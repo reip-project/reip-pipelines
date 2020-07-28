@@ -9,20 +9,26 @@ setuptools.setup(
     description='',
     long_description=open('README.md').read().strip(),
     long_description_content_type='text/markdown',
-    author='Bea Steers',
+    author='Bea Steers, Yurii Piadyk',
     author_email='bea.steers@gmail.com',
     url='https://github.com/{}/{}'.format(USERNAME, NAME),
     packages=setuptools.find_packages(),
     # entry_points={'console_scripts': ['{name}={name}:main'.format(name=NAME)]},
     install_requires=[
         'numpy',
+        # audio
         'pyaudio',
+        'soundfile',
         'librosa',
-        'readi',
         'tflite',
+        # plotting
+        'matplotlib',
+        # utils
+        # 'pycrypto',
+        # general
         'ray',
-        'confuse@https://github.com/beetbox/confuse/archive/master.zip',
-        'pycrypto',
+        # 'readi',
+        # 'confuse@https://github.com/beetbox/confuse/archive/master.zip',
         'fire',
     ],
     extras_require={
