@@ -2,6 +2,7 @@ from interface import Sink, Source
 from abc import ABC, abstractmethod
 from ring_buffer import RingBuffer
 from buffer_store import BufferStore
+from stopwatch import StopWatch
 import multiprocessing as mp
 import threading
 import traceback
@@ -12,7 +13,7 @@ import time
 # libc = ctypes.CDLL('libc.so.6')
 
 
-class Block(ABC):
+class Block:
     def __init__(self, name, max_rate=None, num_sinks=0, num_sources=0, sink_size=100):
         self.name = name
         self.max_rate = max_rate
@@ -20,6 +21,7 @@ class Block(ABC):
         self.sinks = [None] * num_sinks
         self.sources = [None] * num_sources
         self.task = None
+        self._sw = StopWatch(name)
 
         self.ready = False
         self.running = False
@@ -123,9 +125,8 @@ class Block(ABC):
         self.start()
         return self
 
-    @abstractmethod
     def process(self, buffers):
-        raise NotImplementedError
+        return buffers
 
     def stop(self):
         if not self.running:
@@ -164,9 +165,12 @@ class Block(ABC):
         try:
             if self._debug:
                 print("Started thread", self.name)
-            self._t0 = time.time()
+            # self._t0 = time.time()
+            self._sw.tick()
+            self._sw.tick("init")
             self.init()
-            self._init_time = time.time() - self._t0
+            self._sw.tock("init")
+            # self._init_time = time.time() - self._t0
             if self._verbose:
                 print("Block %s Initialized in %.3f sec" % (self.name, self._init_time))
             self.ready = True
@@ -187,15 +191,19 @@ class Block(ABC):
 
                     if valid:
                         if self.max_rate is not None and self._p0 is not None:
-                            r0 = time.time()
+                            # r0 = time.time()
+                            self._sw.tick("rate limit")
                             while time.time() + 0.25 * self._dt < self._p0 + (1. / self.max_rate):
                                 time.sleep(self._process_delay)
-                            self._rate_time += time.time() - r0
+                            self._sw.tock("rate limit")
+                            # self._rate_time += time.time() - r0
 
-                        self._p0 = time.time()
+                        # self._p0 = time.time()
+                        self._sw.tick("process")
                         buffers_out = self.process(buffers_in)
                         # check_types(buffers_out)
-                        self._process_time += time.time() - self._p0
+                        self._sw.tock("process")
+                        # self._process_time += time.time() - self._p0
                         self.processed += 1
                         for source in self.sources:
                             source.next()
@@ -204,16 +212,21 @@ class Block(ABC):
                                 self.sinks[i].put(buf, block=False)
 
                 if self._process_delay is not None:
-                    w0 = time.time()
+                    # w0 = time.time()
+                    self._sw.tick("wait")
                     # libc.usleep(1)
                     # libc.nanosleep(1)
                     time.sleep(self._process_delay)
-                    self._wait_time += time.time() - w0
+                    self._sw.tock("wait")
+                    # self._wait_time += time.time() - w0
 
-            f0 = time.time()
+            # f0 = time.time()
+            self._sw.tick("finish")
             self.finish()
-            self._finish_time = time.time() - f0
-            self._total_time = time.time() - self._t0
+            self._sw.tock("finish")
+            # self._finish_time = time.time() - f0
+            self._sw.tock()
+            # self._total_time = time.time() - self._t0
             if self._verbose:
                 print("Block %s Finished after %.3f sec" % (self.name, self._total_time))
             if self._terminate_delay is not None:
@@ -238,6 +251,7 @@ class Block(ABC):
     def print_stats(self):
         print("Block %s processed %d buffers" % (self.name, self.processed))
         print("Dropped:", [sink.dropped for sink in self.sinks if not isinstance(sink, queue.Queue) and not isinstance(sink, mp.queues.Queue)])
-        service_time = self._total_time - (self._init_time + self._process_time + self._finish_time + self._wait_time + self._rate_time)
-        print("Total time %.3f sec:\n\t%.3f - Initialization\n\t%.3f - Processing\n\t%.3f - Finishing up\n\t%.3f - Waiting\n\t%.3f - Rate limit\n\t%.3f - Service time" %
-              (self._total_time, self._init_time, self._process_time, self._finish_time, self._wait_time, self._rate_time, service_time))
+        print(self._sw)
+        # service_time = self._total_time - (self._init_time + self._process_time + self._finish_time + self._wait_time + self._rate_time)
+        # print("Total time %.3f sec:\n\t%.3f - Initialization\n\t%.3f - Processing\n\t%.3f - Finishing up\n\t%.3f - Waiting\n\t%.3f - Rate limit\n\t%.3f - Service time" %
+        #       (self._total_time, self._init_time, self._process_time, self._finish_time, self._wait_time, self._rate_time, service_time))

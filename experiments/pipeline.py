@@ -109,25 +109,26 @@ if __name__ == '__main__':
     client.delete(client.list())
     print(client.list())
 
-    # cam = Camera("Camera", resolution=(720, 1280, 3), fps=None)
-    # f = Writer("File", prefix="vid", max_rate=None)
-    # f.f.parent(cam.fmt, strategy=Source.Skip, skip=0)
-    # all = [cam, f]
+    # cam = Camera("Camera", resolution=(1, 1, 3), fps=None)
+    cam = Camera("Camera", resolution=(720, 1280, 3), fps=None)
+    f = Writer("File", prefix="vid", max_rate=None)
+    f.f.parent(cam.fmt, strategy=Source.Skip, skip=0)
+    all = [cam, f]
 
-    cam1 = Camera("wide")
-    cam2 = Camera("zoom", resolution=(720, 1280, 3), fps=240)
-    mic = Microphone("array")
-
-    vid = Video("vid", cam1, cam2)
-    aud = Audio("aud", mic)
-
-    f_vid = Writer("f_vid", prefix="video")
-    f_aud = Writer("f_aud", prefix="audio")
-
-    vid.inf[0].child(f_vid.f, strategy=Source.Skip, skip=0)
-    aud.spl.child(f_aud.f, strategy=Source.Skip, skip=0)
-
-    all = [cam1, cam2, mic, vid, aud, f_vid, f_aud]
+    # cam1 = Camera("wide")
+    # cam2 = Camera("zoom", resolution=(720, 1280, 3), fps=240)
+    # mic = Microphone("array")
+    #
+    # vid = Video("vid", cam1, cam2)
+    # aud = Audio("aud", mic)
+    #
+    # f_vid = Writer("f_vid", prefix="video")
+    # f_aud = Writer("f_aud", prefix="audio")
+    #
+    # vid.inf[0].child(f_vid.f, strategy=Source.Skip, skip=0)
+    # aud.spl.child(f_aud.f, strategy=Source.Skip, skip=0)
+    #
+    # all = [cam1, cam2, mic, vid, aud, f_vid, f_aud]
 
     for t in all:
         t.start()
@@ -147,23 +148,23 @@ if __name__ == '__main__':
     for t in all:
         t.join()
 
-    # files = []
-    # while not f.f.sink.empty():
-    #     files.append(f.f.sink.get()[0])
+    files = []
+    while not f.f.sink.empty():
+        files.append(f.f.sink.get()[0])
+
+    print(files)
+
+    # vid_files = []
+    # aud_files = []
     #
-    # print(files)
-
-    vid_files = []
-    aud_files = []
-
-    while not f_vid.f.sink.empty():
-        vid_files.append(f_vid.f.sink.get()[0])
-
-    while not f_aud.f.sink.empty():
-        aud_files.append(f_aud.f.sink.get()[0])
-
-    print(vid_files)
-    print(aud_files)
+    # while not f_vid.f.sink.empty():
+    #     vid_files.append(f_vid.f.sink.get()[0])
+    #
+    # while not f_aud.f.sink.empty():
+    #     aud_files.append(f_aud.f.sink.get()[0])
+    #
+    # print(vid_files)
+    # print(aud_files)
 
     # t = Timer()
 

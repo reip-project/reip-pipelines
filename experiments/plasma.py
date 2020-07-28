@@ -91,6 +91,87 @@ def load_meta(client, id):
     return meta
 
 
+def save_both(client, data, meta, id=None):
+    t0 = time.time()
+    print("Saving data with meta...")
+    if data is None:
+        meta["type"] = "void"
+        object_size = 0
+    elif type(data) is str:
+        meta["type"] = "string"
+        data = data.encode("utf-8")
+        object_size = len(data)
+    elif type(data) is np.ndarray:
+        meta["type"] = "array"
+        tensor = pa.Tensor.from_numpy(data)
+        object_size = pa.ipc.get_tensor_size(tensor)
+    else:
+        raise ValueError("Unsupported data type")
+
+    print(object_size)
+    if type(meta) is dict:
+        meta = pa.serialize(meta).to_buffer().to_pybytes()
+        # object_id = client.put(meta, object_id=id or plasma.ObjectID(np.random.bytes(20)))
+    else:
+        raise ValueError("Unsupported meta type")
+
+    object_id = id or plasma.ObjectID(np.random.bytes(20))
+
+    # if client.contains(object_id):
+    #     print("Deleting previous buffer")
+    #     client.delete([object_id])
+
+    buf = client.create(object_id, object_size, metadata=meta)
+    stream = pa.FixedSizeBufferWriter(buf)
+    if type(data) is bytes:
+        stream.write(data)
+    elif data is not None:
+        stream.set_memcopy_threads(4)
+        pa.ipc.write_tensor(tensor, stream)
+    client.seal(object_id)
+
+    # if data is None or type(data) is str:
+    #     client.create_and_seal(object_id, (data or "").encode("utf-8"), metadata=meta.encode("utf-8"))
+    # else:
+    #     buf = client.create(object_id, object_size, metadata=meta.encode("utf-8"))
+    #     stream = pa.FixedSizeBufferWriter(buf)
+    #     stream.set_memcopy_threads(6)
+    #     pa.ipc.write_tensor(tensor, stream)
+    #     client.seal(object_id)
+
+    print("Saving data with meta took", time.time() - t0)
+    return object_id
+
+
+def load_both(client, id):
+    t0 = time.time()
+    print("Loading data with meta...")
+
+    # if not client.contains(id):
+    #     raise ValueError("Object doesn't exist: %s" % id)
+
+    meta, data = client.get_buffers([id], timeout_ms=1, with_meta=True)[0] #.to_pybytes().decode("utf-8")
+    meta = pa.deserialize(meta)
+    if type(meta) != dict:
+        raise ValueError("Unsupported meta type")
+
+    # meta = client.get_metadata([id], timeout_ms=1)[0].to_pybytes().decode("utf-8")
+
+    if meta["type"] == "void":
+        data = None
+    elif meta["type"] == "string":
+        data = data.to_pybytes().decode("utf-8")
+    elif meta["type"] == "array":
+        reader = pa.BufferReader(data)
+        tensor = pa.ipc.read_tensor(reader)
+        data = tensor.to_numpy()
+    else:
+        raise ValueError("Unsupported data type", meta["type"])
+
+    print("Loading data with meta took", time.time() - t0)
+    return data, meta
+
+
 def test():
     client = plasma.connect("/tmp/plasma")
     print(client.store_capacity())
@@ -99,20 +180,25 @@ def test():
     print(client.list())
 
     print("Generating...")
-    # data = np.ones(10 ** 9)
+    data = np.ones(1 * 10 ** 9, dtype=np.uint8)
     # data = "Hello"
-    data = None
+    # data = None
     print("Done")
 
     id = save_data(client, data)
     data2 = load_data(client, id)
     print(data2)
+    client.delete([id])
 
     meta = {"Foo": 10}
 
     id2 = save_meta(client, meta)
     meta2 = load_meta(client, id2)
     print(meta2)
+
+    id3 = save_both(client, data, meta)
+    data3, meta3 = load_both(client, id3)
+    print(data3, meta3)
 
 
 if __name__ == '__main__':
