@@ -180,8 +180,8 @@ def test():
     print(client.list())
 
     print("Generating...")
-    data = np.ones(1 * 10 ** 9, dtype=np.uint8)
-    # data = "Hello"
+    # data = np.ones(1 * 10 ** 9, dtype=np.uint8)
+    data = "Hello"
     # data = None
     print("Done")
 

@@ -84,6 +84,7 @@ class Task(mp.Process):
 
     def remote(self, func, *args, **kwargs):
         self._parent_pipe.send((func.__name__, args, kwargs))
+        # handle exception
         return self._parent_pipe.recv()
 
     # @Decorators.remote

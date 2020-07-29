@@ -1,5 +1,4 @@
 from interface import Sink, Source
-from abc import ABC, abstractmethod
 from ring_buffer import RingBuffer
 from buffer_store import BufferStore
 from stopwatch import StopWatch
@@ -34,14 +33,7 @@ class Block:
         self._thread = None
         self._debug = True
         self._verbose = True
-        self._t0 = 0
         self._p0 = None
-        self._init_time = 0
-        self._process_time = 0
-        self._wait_time = 0
-        self._rate_time = 0
-        self._finish_time = 0
-        self._total_time = 0
 
         t = time.time()
         time.sleep(1e-6)
@@ -163,16 +155,17 @@ class Block:
 
     def _run(self):
         try:
+            self._sw.tick()
+
             if self._debug:
                 print("Started thread", self.name)
-            # self._t0 = time.time()
-            self._sw.tick()
-            self._sw.tick("init")
-            self.init()
-            self._sw.tock("init")
-            # self._init_time = time.time() - self._t0
+
+            with self._sw("init"):
+                self.init()
+
             if self._verbose:
-                print("Block %s Initialized in %.3f sec" % (self.name, self._init_time))
+                print("Block %s Initialized in %.4f sec" % (self.name, self._sw["init"]))
+
             self.ready = True
             # self.start()
 
@@ -191,19 +184,13 @@ class Block:
 
                     if valid:
                         if self.max_rate is not None and self._p0 is not None:
-                            # r0 = time.time()
-                            self._sw.tick("rate limit")
-                            while time.time() + 0.25 * self._dt < self._p0 + (1. / self.max_rate):
-                                time.sleep(self._process_delay)
-                            self._sw.tock("rate limit")
-                            # self._rate_time += time.time() - r0
+                            with self._sw("limit"):
+                                while time.time() + 0.25 * self._dt < self._p0 + (1. / self.max_rate):
+                                    time.sleep(self._process_delay)
 
-                        # self._p0 = time.time()
-                        self._sw.tick("process")
-                        buffers_out = self.process(buffers_in)
+                        with self._sw("process"):
+                            buffers_out = self.process(buffers_in)
                         # check_types(buffers_out)
-                        self._sw.tock("process")
-                        # self._process_time += time.time() - self._p0
                         self.processed += 1
                         for source in self.sources:
                             source.next()
@@ -211,24 +198,19 @@ class Block:
                             for i, buf in enumerate(buffers_out):
                                 self.sinks[i].put(buf, block=False)
 
-                if self._process_delay is not None:
-                    # w0 = time.time()
-                    self._sw.tick("wait")
+                with self._sw("wait"):
                     # libc.usleep(1)
                     # libc.nanosleep(1)
                     time.sleep(self._process_delay)
-                    self._sw.tock("wait")
-                    # self._wait_time += time.time() - w0
 
-            # f0 = time.time()
-            self._sw.tick("finish")
-            self.finish()
-            self._sw.tock("finish")
-            # self._finish_time = time.time() - f0
+            with self._sw("finish"):
+                self.finish()
+
             self._sw.tock()
-            # self._total_time = time.time() - self._t0
+
             if self._verbose:
-                print("Block %s Finished after %.3f sec" % (self.name, self._total_time))
+                print("Block %s Finished after %.4f sec" % (self.name, self._sw[""]))
+
             if self._terminate_delay is not None:
                 time.sleep(self._terminate_delay)
             self.done = True
@@ -249,9 +231,6 @@ class Block:
             print("Joined thread", self.name)
 
     def print_stats(self):
-        print("Block %s processed %d buffers" % (self.name, self.processed))
-        print("Dropped:", [sink.dropped for sink in self.sinks if not isinstance(sink, queue.Queue) and not isinstance(sink, mp.queues.Queue)])
+        dropped = [sink.dropped for sink in self.sinks if not isinstance(sink, (queue.Queue, mp.queues.Queue))]
+        print("Block %s processed %d buffers (Dropped:" % (self.name, self.processed), dropped, ")")
         print(self._sw)
-        # service_time = self._total_time - (self._init_time + self._process_time + self._finish_time + self._wait_time + self._rate_time)
-        # print("Total time %.3f sec:\n\t%.3f - Initialization\n\t%.3f - Processing\n\t%.3f - Finishing up\n\t%.3f - Waiting\n\t%.3f - Rate limit\n\t%.3f - Service time" %
-        #       (self._total_time, self._init_time, self._process_time, self._finish_time, self._wait_time, self._rate_time, service_time))

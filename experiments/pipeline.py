@@ -110,7 +110,7 @@ if __name__ == '__main__':
     print(client.list())
 
     # cam = Camera("Camera", resolution=(1, 1, 3), fps=None)
-    cam = Camera("Camera", resolution=(720, 1280, 3), fps=None)
+    cam = Camera("Camera", resolution=(720, 1280, 30), fps=None)
     f = Writer("File", prefix="vid", max_rate=None)
     f.f.parent(cam.fmt, strategy=Source.Skip, skip=0)
     all = [cam, f]

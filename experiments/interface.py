@@ -21,11 +21,11 @@ class Sink(ABC):
     def __init__(self):
         self.dropped = 0
 
-    @abstractmethod
+    # @abstractmethod
     def full(self):
         raise NotImplementedError
 
-    @abstractmethod
+    # @abstractmethod
     def _put(self, buffer):
         raise NotImplementedError
 
