@@ -1,4 +1,3 @@
-from abc import ABC, abstractmethod
 from collections import Mapping
 
 
@@ -17,15 +16,13 @@ class ImmutableDict(Mapping):
         return iter(self._data)
 
 
-class Sink(ABC):
+class Sink:
     def __init__(self):
         self.dropped = 0
 
-    # @abstractmethod
     def full(self):
         raise NotImplementedError
 
-    # @abstractmethod
     def _put(self, buffer):
         raise NotImplementedError
 
@@ -35,12 +32,11 @@ class Sink(ABC):
         else:
             self._put(buffer)
 
-    @abstractmethod
     def gen_source(self, **kw):
         raise NotImplementedError
 
 
-class Source(ABC):
+class Source:
     All = 0
     Latest = 1
     Skip = 2
@@ -51,19 +47,15 @@ class Source(ABC):
         self._skip_id = 0
         self.skipped = 0
 
-    @abstractmethod
     def empty(self):
         raise NotImplementedError
 
-    @abstractmethod
     def last(self):
         raise NotImplementedError
 
-    @abstractmethod
     def next(self):
         raise NotImplementedError
 
-    @abstractmethod
     def _get(self):
         raise NotImplementedError
 

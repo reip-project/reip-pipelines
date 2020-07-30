@@ -15,11 +15,12 @@ class StopWatch:
         def __exit__(self, exc_type, exc_val, exc_tb):
             self._sw.tock(self._name)
 
-    def __init__(self, title="", max_samples=1000):
+    def __init__(self, title="", max_samples=1e+6):
         self._max_samples = max_samples
         self._title = title
         self._samples = {}
         self._ticks = {}
+        self._sums = {}
         self._dt = self._estimate_dt()[0]
 
     def _estimate_dt(self, n=100):
@@ -35,15 +36,17 @@ class StopWatch:
     def tick(self, name=""):
         if name not in self._samples.keys():
             self._samples[name] = []
+            self._sums[name] = 0
         self._ticks[name] = time.time()
 
     def tock(self, name=""):
-        t = time.time()
-        l = self._samples[name]
         # Correct for time.time() execution time (dt) and Lap class overhead (approx 1 us)
-        l.append((self._ticks[name], t - self._dt - 1e-6))
-        if len(l) > self._max_samples:
-            self._samples[name] = l[len(l)//2:]
+        t = (self._ticks[name], time.time() - self._dt - 1e-6)
+        self._sums[name] += max(0, t[1] - t[0])
+        s = self._samples[name]
+        s.append(t)
+        if len(s) > self._max_samples:
+            self._samples[name] = s[len(s)//2:]
 
     def __call__(self, name=""):
         return self.Lap(self, name)
@@ -53,26 +56,29 @@ class StopWatch:
             raise ValueError("Measurement unavailable for lap %s" % name)
         samples = np.array(self._samples[name])
         intervals = samples[:, 1] - samples[:, 0]
-        total = max(0, np.sum(intervals))
+        total = self._sums[name]
+        # total = max(0, np.sum(intervals))
         count = intervals.shape[0]
         return total, total/count, np.std(intervals), count
 
     def __getitem__(self, key):
-        return self._stats(key)[1]
+        return self._sums[key] / len(self._samples[key])
+        # return self._stats(key)[1]
 
     def __str__(self):
         total = None
         if "" in self._samples.keys():
-            total = self._stats()[0]
+            total = self._sums[""]
             s = "Total %.4f sec in %s:\n" % (total, self._title)
 
             if "service" not in self._samples.keys():
-                added = np.sum([self._stats(k)[0] for k, v in self._samples.items() if k != ""])
+                added = np.sum([self._sums[k] for k, v in self._samples.items() if k != ""])
                 self._samples["service"] = [(0, total - added)]
+                self._sums["service"] = total - added
         else:
             s = ""
 
-        s += "".join([("  %.4f" + ((" (%4.1f)" % (100. * self._stats(k)[0] / total)) if total is not None else "") +
+        s += "".join([("  %.4f" + ((" (%4.1f)" % (100. * self._sums[k] / total)) if total is not None else "") +
                       " - " + k + "  \t(avg = %.6f +- %.6f, n = %d)\n") %
                       self._stats(k) for k, v in self._samples.items() if k != ""])
         return s
@@ -101,7 +107,7 @@ if __name__ == '__main__':
 
     with sw():
         t0 = time.time()
-        with sw("mini"):  # ~6 us overhead with ~1.5 us overestimate (corrected for)
+        with sw("mini"):  # ~10 us overhead with ~1.5 us overestimate (corrected for)
             t1 = time.time()
             time.sleep(1e-6)
             t2 = time.time()
