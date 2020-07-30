@@ -1,6 +1,7 @@
-from abc import ABC, abstractmethod
 from interface import *
 from block import *
+from stopwatch import StopWatch
+from base import *
 from dummies import *
 import multiprocessing as mp
 from ctypes import c_bool
@@ -9,6 +10,139 @@ import queue
 import time
 import sys
 import functools
+
+
+class Task2(Manager, Worker, mp.Process):
+    def __init__(self, name, manager=None, debug=True, verbose=False):
+        mp.Process.__init__(self, target=self._run, name=name, daemon=True)
+        Worker.__init__(self, name, manager=manager)  # overrides Process.name, Process.start() and Process.terminate()
+        Manager.__init__(self)  # overrides Worker.__enter__() and Worker.__exit__() (< by order of inheritance ^)
+        self._manager_conn, self._worker_conn = mp.Pipe()
+        self.debug = debug
+        self.verbose = verbose
+        self._sw = StopWatch(name)
+        self._was_running = False
+
+    @property
+    def exception(self):
+        if self._manager_conn.poll():
+            self._exception = self._manager_conn.recv()
+        return self._exception
+
+    def remote(self, func, *args, **kwargs):
+        self._manager_conn.send((func.__name__, args, kwargs))
+        ret = self._manager_conn.recv()
+        if type(ret) is tuple and len(ret) == 2:
+            if isinstance(ret[0], Exception) and type(ret[1]) is str:
+                self._exception = ret[0]
+                # print(RED + ret[1] + END)
+                raise Exception("Remote exception in Task %s" % self.name) from ret[0]
+        return ret
+
+    def _poll(self):
+        if self._worker_conn.poll():
+            func, args, kwargs = self._worker_conn.recv()
+            ret = getattr(self, func)(*args, **kwargs)
+            self._worker_conn.send(ret)
+
+    # Worker implementation
+
+    def spawn(self, wait_ready=True):
+        if self.verbose:
+            print("Spawning task %s.." % self.name)
+
+        self._ready.value, self._done.value = False, False
+        self._running.value, self._terminate.value = False, False
+        self._error.value, self._exception = False, None
+
+        mp.Process.start(self)
+
+        if wait_ready:
+            while not self.ready:
+                time.sleep(1e-5)
+
+    def run(self):
+        if self.verbose:
+            print("Spawned task", self.name)
+
+        try:
+            mp.Process.run(self)
+            self._worker_conn.send(None)
+        except Exception as e:
+            self._error.value, self._done.value = True, True
+            self._exception = e
+            tb = traceback.format_exc()
+            print(RED + tb + END)
+            try:
+                self.join_all()
+            except Exception as e2:
+                print(RED + "Task %s failed to join blocks after ^ exception:\n" % self.name, e2, END)
+            self._worker_conn.send((e, tb))
+            # raise e  # You can still rise this exception if you need to
+
+        if self.verbose:
+            print("Exiting task %s.." % self.name)
+
+    def _run(self):
+        self._sw.tick()
+
+        with self._sw("spawn"):
+            self.spawn_all()
+
+        if self.debug:
+            print("Task %s spawned blocks in %.4f sec" % (self.name, self._sw["spawn"]))
+
+        self._ready.value = True
+        # self.start()
+
+        while not self._terminate.value:
+            if self.running:
+                self.start_all()
+                self._was_running = True
+                with self._sw("running"):
+                    time.sleep(1e-4)
+            else:
+                if self._was_running:
+                    self.stop_all()
+                    self._was_running = False
+                with self._sw("waiting"):
+                    time.sleep(1e-4)
+            self._poll()
+
+        with self._sw("join"):
+            self.join_all()
+
+        if self.debug:
+            print("Task %s joined blocks in %.4f sec" % (self.name, self._sw["join"]))
+
+        self._sw.tock()
+        self._done.value = True
+
+        if self.debug:
+            print("Task %s Done after %.4f sec" % (self.name, self._sw[""]))
+
+        while True:  # need better solution for preserving stats
+            self._poll()
+
+    def join(self, auto_terminate=True):
+        if auto_terminate:
+            self.terminate()
+
+        mp.Process.join(self, timeout=0.1)
+
+        if self.verbose:
+            print("Joined task", self.name)
+
+    # Manager implementation
+
+    def get_stats(self):
+        stats = Manager.get_stats(self)
+        stats.append((self.name, self._sw))
+        return stats
+
+    def print_stats(self):
+        Manager.print_stats(self)
+        print(self._sw)
 
 
 class Task(mp.Process):
@@ -64,35 +198,15 @@ class Task(mp.Process):
             self._child_pipe.send((e, tb))
             # raise e  # You can still rise this exception if you need to
 
-    # @staticmethod
-    # def remote(func):
-    #     @functools.wraps(func)
-    #     def wrapper_remote(*args, **kwargs):
-    #         return func(*args, **kwargs)
-    #     return wrapper_remote
-
-    class Decorators:
-        @classmethod
-        def remote(cls, func):
-            @functools.wraps(func)
-            def wrapper(self, *args, **kwargs):
-                print("In wrapper of", self.name, func.__name__)
-                self._parent_pipe.send((func.__name__, args, kwargs))
-                return self._parent_pipe.recv()
-                # return func(self, *args, **kwargs)
-            return wrapper
-
     def remote(self, func, *args, **kwargs):
         self._parent_pipe.send((func.__name__, args, kwargs))
         # handle exception
         return self._parent_pipe.recv()
 
-    # @Decorators.remote
     def resume(self):
         print("resume", self.name)
         self._start()
 
-    # @Decorators.remote
     def pause(self):
         print("pause", self.name)
         self._stop()

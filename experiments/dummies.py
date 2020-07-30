@@ -15,8 +15,8 @@ class Generator(Block):
         self.array = np.ones(self.shape, dtype=np.uint8)
 
     def process(self, buffers):
-        return [(self.array, {"shape": self.shape})]
-        # return [(self.array * self.processed, {"shape": self.shape})]
+        # return [(self.array, {"shape": self.shape})]
+        return [(self.array * self.processed, {"shape": self.shape})]
 
     def finish(self):
         self.array = None
@@ -31,8 +31,8 @@ class Transformer(Block):
         data, meta = buffers[0]
         meta = dict(meta)
         meta["offset"] = self.offset
-        return [(data, meta)]
-        # return [(data + self.offset, meta)]
+        # return [(data, meta)]
+        return [(data + self.offset, meta)]
 
 
 class Consumer(Block):

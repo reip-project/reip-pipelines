@@ -102,6 +102,59 @@ class Writer(Task):
         self.f.sink = mp.Queue()
 
 
+def test1(client):
+    with Manager() as p:
+        Generator("cam", (720, 1280, 3), max_rate=None)
+        Transformer("inf", offset=1)
+        Consumer("f", prefix="test")
+        p.cam.to(p.inf).to(p.f)
+        # p.cam.to(p.f)
+        p.f.sink = queue.Queue()
+
+    p.spawn_all()
+
+    p.start_all()
+    time.sleep(0.1)
+    p.stop_all()
+
+    p.join_all()
+
+    print()
+    p.print_stats()
+
+    files = []
+    while not p.f.sink.empty():
+        files.append(p.f.sink.get()[0])
+    print(len(files), files)
+
+
+def test2(client):
+    with Manager() as p:
+        with Task2("camera") as t:
+            # Generator("cam", (1, 1280, 3), max_rate=None)
+            Generator("cam", (2000, 2500, 3), max_rate=None)
+            # Generator("cam", (720, 1280, 1), max_rate=None)
+            t.cam.to(Transformer("inf", offset=1))
+        Consumer("f", prefix="test")
+        t.inf.to(p.f)
+        p.f.sink = queue.Queue()
+
+    p.spawn_all()
+
+    p.start_all()
+    time.sleep(1)
+    p.stop_all()
+
+    p.join_all()
+
+    print()
+    p.print_stats()
+
+    files = []
+    while not p.f.sink.empty():
+        files.append(p.f.sink.get()[0])
+    print(len(files), files)
+
 if __name__ == '__main__':
     client = plasma.connect("/tmp/plasma")
     print(client.store_capacity())
@@ -109,8 +162,11 @@ if __name__ == '__main__':
     client.delete(client.list())
     print(client.list())
 
+    test2(client)
+    exit(0)
+
     # cam = Camera("Camera", resolution=(1, 1, 3), fps=None)
-    cam = Camera("Camera", resolution=(720, 1280, 30), fps=None)
+    cam = Camera("Camera", resolution=(720, 1280, 3), fps=None)
     f = Writer("File", prefix="vid", max_rate=None)
     f.f.parent(cam.fmt, strategy=Source.Skip, skip=0)
     all = [cam, f]

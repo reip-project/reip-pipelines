@@ -2,11 +2,14 @@ import multiprocessing as mp
 from ctypes import c_bool
 import time
 
+RED = '\033[91m'
+END = '\033[0m'
+
 
 class Worker:
     def __init__(self, name, manager=None):
         self.name = name
-        self._manager = manager or Manager.default
+        self._manager = manager or Manager.default  # Too much to pickle (contains all workers)
         self._manager.add(self)
         # (manager or Manager.default).add(self)
         self._ready = mp.Value(c_bool, False, lock=False)
@@ -36,6 +39,14 @@ class Worker:
     def exception(self):
         return self._exception
 
+    def __enter__(self):
+        print("Worker in")
+        self.start()
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        print("Worker out")
+        self.stop()
+
     def spawn(self, wait_ready=True):
         raise NotImplementedError
 
@@ -46,8 +57,7 @@ class Worker:
             self._running.value = True
 
     def remote(self, func, *args, **kwargs):
-        return func(self, *args, **kwargs)
-        # return getattr(self, func.__name__)(*args, **kwargs)
+        return func(*args, **kwargs)
 
     def run(self):
         raise NotImplementedError
@@ -67,12 +77,18 @@ class Worker:
     def join(self, auto_terminate=True):
         raise NotImplementedError
 
+    def get_stats(self):
+        return None
+
+    def print_stats(self):
+        pass
+
 
 class Manager:
     default = None  # the default Manager instance
     _previous = None  # the previous default Manager instance
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self):
         self.workers = []
 
     # Global instance management
@@ -82,9 +98,11 @@ class Manager:
         return cls.default
 
     def __enter__(self):
+        print("Manager in")
         return self.as_default()
 
     def __exit__(self, exc_type, exc_val, exc_tb):
+        print("Manager out")
         self.restore_previous()
 
     def as_default(self):
@@ -121,11 +139,10 @@ class Manager:
         for worker in self.workers:
             worker.start()
 
-    def run_all_once(self):
-        raise NotImplementedError
-
-    def run_all(self):
-        raise NotImplementedError
+    def check_errors(self):
+        for worker in self.workers:
+            if worker.error:
+                raise Exception("Worker failed") from worker.exception
 
     def stop_all(self):
         for worker in self.workers:
@@ -144,9 +161,16 @@ class Manager:
 
     def join_all(self, auto_terminate=True):
         if auto_terminate:
-            self.terminate_all(wait_done=True)
+            self.terminate_all()
         for worker in self.workers:
-            worker.join(auto_terminate=auto_terminate)
+            worker.join(auto_terminate=False)
+
+    def get_stats(self):
+        return [worker.remote(worker.get_stats) for worker in self.workers]
+
+    def print_stats(self):
+        for worker in self.workers:
+            worker.remote(worker.print_stats)
 
 
 # Create an initial default Manager

@@ -57,13 +57,11 @@ class StopWatch:
         samples = np.array(self._samples[name])
         intervals = samples[:, 1] - samples[:, 0]
         total = self._sums[name]
-        # total = max(0, np.sum(intervals))
         count = intervals.shape[0]
         return total, total/count, np.std(intervals), count
 
     def __getitem__(self, key):
         return self._sums[key] / len(self._samples[key])
-        # return self._stats(key)[1]
 
     def __str__(self):
         total = None

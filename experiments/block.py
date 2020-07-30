@@ -2,22 +2,20 @@ from interface import Sink, Source
 from ring_buffer import RingBuffer
 from buffer_store import BufferStore
 from stopwatch import StopWatch
-from base import Worker
+from base import *
 import multiprocessing as mp
+import multiprocessing.queues
 import threading
 import traceback
 import queue
 import time
 
-RED_ = '\033[91m'
-_END = '\033[0m'
-
 
 class Block(Worker, threading.Thread):
     def __init__(self, name, manager=None, num_sinks=0, num_sources=0, max_rate=None,
                  sink_size=100, debug=True, verbose=False):
-        threading.Thread.__init__(self, target=self._run, name=name)
-        Worker.__init__(self, name, manager=manager)
+        threading.Thread.__init__(self, target=self._run, name=name, daemon=True)
+        Worker.__init__(self, name, manager=manager)  # overrides Thread.name and Thread.start() (by inheritance order)
         self.max_rate = max_rate
         self.debug = debug
         self.verbose = verbose
@@ -28,8 +26,8 @@ class Block(Worker, threading.Thread):
         self._sw = StopWatch(name)
         self._select = 0
         self._t0 = 0
-        self._process_delay = 1e-5
-        self._terminate_delay = 1e-4
+        self._process_delay = 1e-6
+        self._terminate_delay = 1e-5
 
     # Construction
 
@@ -94,17 +92,6 @@ class Block(Worker, threading.Thread):
         # raise Exception("Test")
         pass
 
-    def __enter__(self):
-        self.start()
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.stop()
-
-    # Resolved by order of inheritance (Worker before threading.Thread)
-    # # Resolve ambiguity of start() method between Thread and Worker
-    # def start(self):
-    #     return Worker.start(self)
-
     def spawn(self, wait_ready=True):
         for i, source in enumerate(self.sources):
             if source is None:
@@ -135,7 +122,7 @@ class Block(Worker, threading.Thread):
         except Exception as e:
             self._error.value, self._done.value = True, True
             self._exception = e
-            print(RED_ + traceback.format_exc() + _END)
+            print(RED + traceback.format_exc() + END)
             # raise e  # You can still raise this exception if you need to
 
         if self.verbose:
@@ -205,16 +192,19 @@ class Block(Worker, threading.Thread):
 
     def join(self, auto_terminate=True):
         if auto_terminate:
-            self._terminate.value = True
+            self.terminate()
 
-        threading.Thread.join(self, timeout=(0.1 + self._terminate_delay))
+        threading.Thread.join(self, timeout=0.1)
 
         if self.verbose:
             print("Joined block", self.name)
 
-    def print_stats(self):
+    def get_stats(self):
         dropped = [sink.dropped for sink in self.sinks if not isinstance(sink, (queue.Queue, mp.queues.Queue))]
-        print("Block %s processed %d buffers (Dropped:" % (self.name, self.processed), dropped, ")")
+        return self.name, dropped, self._sw
+
+    def print_stats(self):
+        print("Block %s processed %d buffers (Dropped:" % (self.name, self.processed), self.get_stats()[1], ")")
         print(self._sw)
 
 
