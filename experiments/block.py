@@ -2,26 +2,24 @@ from interface import Sink, Source
 from ring_buffer import RingBuffer
 from buffer_store import BufferStore
 from stopwatch import StopWatch
-from base import *
-import multiprocessing as mp
 import multiprocessing.queues
+from base import *
 import threading
 import traceback
 import queue
-import time
 
 
-class Block(Worker, threading.Thread):
-    def __init__(self, name, manager=None, num_sinks=0, num_sources=0, max_rate=None,
+class Block(Worker):
+    def __init__(self, name, graph=None, num_sinks=0, num_sources=0, max_rate=None,
                  sink_size=100, debug=True, verbose=False):
-        threading.Thread.__init__(self, target=self._run, name=name, daemon=True)
-        Worker.__init__(self, name, manager=manager)  # overrides Thread.name and Thread.start() (by inheritance order)
+        Worker.__init__(self, name, graph=graph, debug=verbose)
         self.max_rate = max_rate
         self.debug = debug
         self.verbose = verbose
         self.processed = 0
         self.sinks = [None] * num_sinks
         self.sources = [None] * num_sources
+        self._thread = None
         self._sink_size = sink_size
         self._sw = StopWatch(name)
         self._select = 0
@@ -70,12 +68,14 @@ class Block(Worker, threading.Thread):
             raise ValueError("Block %s doesn't have any sources" % other.name)
 
         if self.sink is None:
-            if self._manager != other._manager:
+            if self._graph_name != other._graph_name:
                 self.sink = BufferStore(self._sink_size)
-                print("Store")
+                if self.verbose:
+                    print("Store")
             else:
                 self.sink = RingBuffer(self._sink_size)
-                print("Ring")
+                if self.verbose:
+                    print("Ring")
 
         other.source = self.sink.gen_source(**kw)
         return other
@@ -83,14 +83,21 @@ class Block(Worker, threading.Thread):
     # Operation
 
     def init(self):
+        # raise Exception("Test")
         pass
 
     def process(self, buffers):
+        # raise Exception("Test")
         return buffers
 
     def finish(self):
         # raise Exception("Test")
         pass
+
+    def reset(self):
+        Worker.reset(self)
+        self._sw.reset()
+        self.processed = 0
 
     def spawn(self, wait_ready=True):
         for i, source in enumerate(self.sources):
@@ -100,30 +107,25 @@ class Block(Worker, threading.Thread):
             if sink is None:
                 raise RuntimeError("Sink %d in block %s not connected" % (i, self.name))
 
-        self._ready.value, self._done.value = False, False
-        self._running.value, self._terminate.value = False, False
-        self._error.value, self._exception = False, None
-
         if self.verbose:
             print("Spawning block %s.." % self.name)
 
-        threading.Thread.start(self)
+        self.reset()
+        self._thread = threading.Thread(target=self._target, name=self.name, daemon=True)
+        self._thread.start()
 
         if wait_ready:
-            while not self.ready:
-                time.sleep(1e-5)
+            self.wait_ready()
 
-    def run(self):
+    def _target(self):
         if self.verbose:
             print("Spawned block", self.name)
-
         try:
-            threading.Thread.run(self)
+            self._run()
         except Exception as e:
-            self._error.value, self._done.value = True, True
-            self._exception = e
-            print(RED + traceback.format_exc() + END)
-            # raise e  # You can still raise this exception if you need to
+            self._exception = (e, traceback.format_exc())
+            self._error.value = True
+            self._done.value = True
 
         if self.verbose:
             print("Exiting block %s.." % self.name)
@@ -138,20 +140,21 @@ class Block(Worker, threading.Thread):
             print("Block %s Initialized in %.4f sec" % (self.name, self._sw["init"]))
 
         self._ready.value = True
-        # self.start()
+        # self.start()  # auto_start?
 
         while not self._terminate.value:
             if self.running:
                 buffers_in = []
                 valid = True
 
-                for source in self.sources:
-                    buf = source.get(block=False)
-                    if buf is None:
-                        valid = False
-                        break
-                    else:
-                        buffers_in.append(buf)
+                with self._sw("collect"):  # recurrent stopwatch overhead (~10 us)
+                    for source in self.sources:
+                        buf = source.get(block=False)
+                        if buf is None:
+                            valid = False
+                            break
+                        else:
+                            buffers_in.append(buf)
 
                 if valid:
                     if self.max_rate is not None and self._t0 is not None:
@@ -169,10 +172,11 @@ class Block(Worker, threading.Thread):
                         source.next()
 
                     if len(self.sinks) > 0:
-                        for i, buf in enumerate(buffers_out):
-                            self.sinks[i].put(buf, block=False)
+                        with self._sw("write"):  # recurrent stopwatch overhead (~10 us)
+                            for i, buf in enumerate(buffers_out):
+                                self.sinks[i].put(buf, block=False)
 
-            with self._sw("wait"):  # recurrent stopwatch overhead (~10 us)
+            with self._sw("sleep"):  # recurrent stopwatch overhead (~10 us)
                 time.sleep(self._process_delay)
 
         with self._sw("finish"):
@@ -194,31 +198,21 @@ class Block(Worker, threading.Thread):
         if auto_terminate:
             self.terminate()
 
-        threading.Thread.join(self, timeout=0.1)
+        self._thread.join(timeout=0.1)
 
         if self.verbose:
             print("Joined block", self.name)
 
-    def get_stats(self):
+    def stats(self):
+        # raise Exception("Test")
         dropped = [sink.dropped for sink in self.sinks if not isinstance(sink, (queue.Queue, mp.queues.Queue))]
-        return self.name, dropped, self._sw
+        return self.name, self.processed, dropped, self._sw
 
-    def print_stats(self):
-        print("Block %s processed %d buffers (Dropped:" % (self.name, self.processed), self.get_stats()[1], ")")
-        print(self._sw)
+    def __str__(self):
+        s = "Block %s processed %d buffers (Dropped: %s)\n" % (self.name, self.processed, str(self.stats()[2]))
+        return s + str(self._sw)
 
 
 if __name__ == '__main__':
     b = Block("Test", verbose=True, max_rate=None)
-
-    b.spawn()
-
-    with b:
-        time.sleep(0.1)
-
-    b.join()
-
-    if b.error:
-        raise Exception("Block failed") from b.exception
-
-    b.print_stats()
+    b.run(duration=0.1)

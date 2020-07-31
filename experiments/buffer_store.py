@@ -65,7 +65,7 @@ class BufferStore(Sink):
                 # to_delete.append(self.meta_ids[v % self.size])
                 to_delete.append(self.both_ids[v % self.size])
 
-            if len(to_delete) > self.size / 10:
+            if len(to_delete) > self.size / 5:
                 # print("Deleting:", len(to_delete))
                 self.client.delete(to_delete)
                 self.tail.value = new_value

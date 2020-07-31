@@ -10,106 +10,15 @@ import pyarrow as pa
 import numpy as np
 import pyarrow.plasma as plasma
 
-# class TestTask(Task):
-#     def __init__(self, name, **kw):
-#         super().__init__(name, **kw)
-#
-#     def build(self):
-#         gen = self.add(Generator("data_gen", (720, 1280, 3), max_rate=None))
-#         trans = self.add(Transformer("data_trans", 10))
-#         eat = self.add(Consumer("data_eat", "test"))
-#
-#         gen.sink = RingBuffer(1000)
-#         trans.sink = RingBuffer(1000)
-#         eat.sink = queue.Queue()
-#
-#         gen.child(trans, strategy=Source.Skip, skip=1).child(eat, strategy=Source.All)
-
-# class Test:
-#     def __init__(self, value):
-#         self.var = mp.Value('i', value, lock=False)
-#         print("init", self.var.value)
-#
-#     def change(self, add):
-#         self.var.value += add
-#
-#     def run(self, arg):
-#         print("run", self.var.value)
-#         time.sleep(0.5)
-#         self.change(arg)
-#         print("run2", self.var.value)
-
-
-class Inference(Block):
-    def __init__(self, name, classes, **kw):
-        self.classes = classes
-        super().__init__(name, num_sources=2, num_sinks=1, **kw)
-
-    def process(self, buffers):
-        data1, meta1 = buffers[0]
-        data2, meta2 = buffers[1]
-        meta = {"inference": self.classes, "cam1": dict(meta1), "cam2": dict(meta2)}
-        data = np.zeros((1, self.classes, 2))
-        data[:, :, 0] = data1[0, 0, 0]
-        data[:, :, 1] = data2[0, 0, 0]
-        time.sleep(0.05)
-        # return [(data, meta)]
-        return [(data, meta)]
-
-
-class SPL(Block):
-    def __init__(self, name, window, **kw):
-        self.window = window
-        super().__init__(name, num_sources=1, num_sinks=1, **kw)
-
-    def process(self, buffers):
-        data, meta = buffers[0]
-        meta = dict(meta)
-        data = np.ones(data.shape) * self.window
-        return [(data, meta)]
-
-
-class Camera(Task):
-    def build(self, resolution=(1080, 1920, 3), fps=30):
-        self.gen = Generator("cam", resolution, max_rate=fps)
-        self.fmt = Transformer("conv", offset=1)
-        self.gen.child(self.fmt)
-
-
-class Microphone(Task):
-    def build(self, sampling_rate=48000, channels=16):
-        self.gen = Generator("mic", (sampling_rate // 200, channels), max_rate=200)
-        self.fmt = Transformer("sync", offset=10)
-        self.gen.child(self.fmt)
-
-
-class Video(Task):
-    def build(self, cam1, cam2, classes=10):
-        self.inf = Inference("ssd", classes=classes)
-        self.inf[0].parent(cam1.fmt, strategy=Source.Latest)
-        self.inf[1].parent(cam2.fmt, strategy=Source.Latest)
-
-
-class Audio(Task):
-    def build(self, mic, window=1024):
-        self.spl = SPL("spl", window=window)
-        self.spl.parent(mic.fmt)
-
-
-class Writer(Task):
-    def build(self, prefix="test", max_rate=50):
-        self.f = Consumer("f", prefix=prefix, max_rate=max_rate)
-        self.f.sink = mp.Queue()
-
 
 def test1(client):
-    with Manager() as p:
+    with Graph() as p:
         Generator("cam", (720, 1280, 3), max_rate=None)
         Transformer("inf", offset=1)
         Consumer("f", prefix="test")
         p.cam.to(p.inf).to(p.f)
         # p.cam.to(p.f)
-        p.f.sink = queue.Queue()
+        p["f"].sink = queue.Queue()
 
     p.spawn_all()
 
@@ -129,11 +38,11 @@ def test1(client):
 
 
 def test2(client):
-    with Manager() as p:
-        with Task2("camera") as t:
+    with Graph("pipeline") as p:
+        with Task("camera") as t:
             # Generator("cam", (1, 1280, 3), max_rate=None)
-            Generator("cam", (2000, 2500, 3), max_rate=None)
-            # Generator("cam", (720, 1280, 1), max_rate=None)
+            # Generator("cam", (2000, 2500, 3), max_rate=None)
+            Generator("cam", (720, 1280, 1), max_rate=None)
             t.cam.to(Transformer("inf", offset=1))
         Consumer("f", prefix="test")
         t.inf.to(p.f)
@@ -142,18 +51,20 @@ def test2(client):
     p.spawn_all()
 
     p.start_all()
-    time.sleep(1)
+    time.sleep(0.1)
     p.stop_all()
 
-    p.join_all()
-
+    p.terminate_all()
     print()
     p.print_stats()
+
+    p.join_all()
 
     files = []
     while not p.f.sink.empty():
         files.append(p.f.sink.get()[0])
     print(len(files), files)
+
 
 if __name__ == '__main__':
     client = plasma.connect("/tmp/plasma")

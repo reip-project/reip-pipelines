@@ -23,6 +23,11 @@ class StopWatch:
         self._sums = {}
         self._dt = self._estimate_dt()[0]
 
+    def reset(self):
+        self._samples = {}
+        self._ticks = {}
+        self._sums = {}
+
     def _estimate_dt(self, n=100):
         dts = []
         for i in range(n):
@@ -51,7 +56,7 @@ class StopWatch:
     def __call__(self, name=""):
         return self.Lap(self, name)
 
-    def _stats(self, name=""):
+    def stats(self, name=""):
         if name not in self._samples.keys():
             raise ValueError("Measurement unavailable for lap %s" % name)
         samples = np.array(self._samples[name])
@@ -78,7 +83,7 @@ class StopWatch:
 
         s += "".join([("  %.4f" + ((" (%4.1f)" % (100. * self._sums[k] / total)) if total is not None else "") +
                       " - " + k + "  \t(avg = %.6f +- %.6f, n = %d)\n") %
-                      self._stats(k) for k, v in self._samples.items() if k != ""])
+                      self.stats(k) for k, v in self._samples.items() if k != ""])
         return s
 
     def plot(self):
@@ -90,7 +95,7 @@ class StopWatch:
             samples = np.array(self._samples[k])
             intervals = samples[:, 1] - samples[:, 0]
             plt.hist(intervals, bins=100, label=K)
-            plt.title((K + ": %.4f sec (avg = %.6f +- %.6f, n = %d)") % self._stats(k))
+            plt.title((K + ": %.4f sec (avg = %.6f +- %.6f, n = %d)") % self.stats(k))
             plt.legend()
         plt.tight_layout()
 
