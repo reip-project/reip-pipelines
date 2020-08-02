@@ -1,75 +1,81 @@
 import time
+import queue
 import pyaudio
-import librosa
 import numpy as np
 
-from ..block import Block
-from ...utils import audio as audioutils
+import reip
 
 
-def buffer2np(channels, fmt=np.int16):
-    return lambda x: np.frombuffer(x, fmt).reshape(-1, channels)
+class Mic(reip.Block):
+    def __init__(self, device=None, sr=None, block_duration=1, channels=None, **kw):
+        self.device = device
+        self.sr = sr
+        self.block_duration = block_duration
+        self.channels = channels
+        self.kw = kw
+        super().__init__(n_source=0)
 
-def wait_for_device(valid_device):
-    return 0, {}
+    def search_devices(self, query, min_input=1, min_output=0):
+        '''Search for an audio device by name.'''
+        if query is None:
+            return self._pa.get_device_info_by_index(0)
+        devices = (
+            dict(self._pa.get_device_info_by_index(i), index=i)
+            for i in range(self._pa.get_device_count()))
+        return next((
+            d for d in devices
+            if query in d['name']
+            and d['maxInputChannels'] >= min_input
+            and d['maxOutputChannels'] >= min_output
+        ), None)
 
+    def init(self):
+        '''Start pyaudio and start recording'''
+        # initialize pyaudio
+        self._pa = pyaudio.PyAudio()
+        device = self.search_devices(self.device)
+        print('Using audio device:', device['name'], device)
 
-class RecordError(Exception):
-    pass
+        # get parameters from device
+        self.device = device
+        self.sr = int(self.sr or device['defaultSampleRate'])
+        self.channels = self.channels or device['maxInputChannels']
+        self.blocksize = int(self.block_duration * self.sr)
 
-
-
-class source(Block):
-    '''Reads audio from an audio input.'''
-    callback_update = 0
-
-    pa = pyaudio.PyAudio()
-
-    def __init__(self, *a, valid_device=None, channels=None, sr=44100,
-                 frames_per_buffer=None, duration=None, timeout=None, fmt=np.int16, **kw):
-        super().__init__(*a, **kw)
-        self.index, self.info = wait_for_device(valid_device)
-        self.channels = channels or self.info.get('maxInputChannels')
-        self.duration = duration
-        self.timeout = timeout
-        self.to_array = buffer2np(self.channels, audioutils.pa2npfmt(fmt))
-        self._stream = self.pa.open(
-            start=False, input=True,
-            input_device_index=self.index,
-            rate=sr, format=audioutils.np2pafmt(fmt),
+        # start audio streamer
+        self._q = queue.Queue()
+        self._stream = self._pa.open(
+            input_device_index=device['index'],
+            frames_per_buffer=self.blocksize,
+            format=pyaudio.paInt16,
             channels=self.channels,
-            frames_per_buffer=frames_per_buffer or int(sr / 4),
-            stream_callback=self.__callback)
+            rate=self.sr,
+            input=True, output=False,
+            stream_callback=self._stream_callback)
 
-    def open(self):
-        self._stream.start_stream()
-        return self
-
-    def close(self):
-        self._stream.stop_stream()
-        return self
-
-    def run(self):
-        '''Record audio for a certain amount of time - or indefinitely.'''
-        with self:
-            t0 = time.time()
-            timeout, duration = self.timeout, self.duration
-            curr_update = last_update = self.callback_update
-            while True:
-                time.sleep(timeout or duration)
-                last_update, curr_update = curr_update, self.callback_update
-                if timeout and curr_update - last_update == 0:
-                    raise RecordError('No updates in the last {} second(s).'.format(
-                        timeout))
-                if duration and time.time() - t0 >= duration:
-                    return True
-
-    def __callback(self, buf, frame_count, time_info, status_flags):
-        '''Callback for async recording using dual buffer.'''
-        self.callback_update = (self.callback_update + 1) % 1000
+    def _stream_callback(self, buf, frame_count, time_info, status_flags):
+        '''Append frames to the queue - blocking API is suuuuuper slow.'''
         if status_flags:
-            self.log.error('Input overflow status: %s', status_flags)
-        self.send_output(self.to_array(buf), {
-            'time': time_info['input_buffer_adc_time'] or time.time()
-        })
+            print('Input overflow status:', status_flags)
+        t0 = time_info['input_buffer_adc_time'] or time.time()
+        self._q.put((buf, t0))
         return None, pyaudio.paContinue
+
+    def process(self, meta=None):
+        # buff = self._stream.read(self.blocksize, exception_on_overflow=False)
+        pcm, t0 = self._q.get()
+        pcm = np.frombuffer(pcm, dtype=np.int16)
+        pcm = pcm / float(np.iinfo(pcm.dtype).max)
+        pcm = pcm.reshape(-1, self.channels or 1)
+        return [pcm], {
+            'input_latency': self._stream.get_input_latency(),
+            'output_latency': self._stream.get_output_latency(),
+            'time': t0,
+            'sr': self.sr,
+        }
+
+    def finish(self):
+        '''Stop pyaudio'''
+        self._stream.stop_stream()
+        self._stream.close()
+        self._pa.terminate()
