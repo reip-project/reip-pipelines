@@ -106,8 +106,7 @@ class Block:
                     # check_block(self, 'sleep', *self.sinks)
 
                 # sleep to allow other threads to run
-                self._sw.sleep(0.5)  # adds timer
-                # self._delay
+                self._sw.sleep(self._delay)  # adds timer
 
         except Exception as e:
             self._exception = e

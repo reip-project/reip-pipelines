@@ -107,9 +107,9 @@ def sonyc():
 
 def camera_test():
     with reip.Task():
-        # x = B.dummy.SomeArray((720, 1280, 3), queue=30, blocking=True)
-        x = B.dummy.SomeArray((2, 2, 3), queue=30, blocking=True)
-        x = B.Sleep(1)(x)
+        x = B.dummy.SomeArray((720, 1280, 3))
+        # x = B.dummy.SomeArray((2, 2, 3), queue=30, blocking=True)
+        # x = B.Sleep(1)(x)
     x = B.dummy.SomeTransform()(x)#.to(B.Debug('asdf'))
     print(reip.Graph.default)
     reip.run()
