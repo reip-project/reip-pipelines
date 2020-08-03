@@ -16,50 +16,208 @@ pip install reip
 ## Usage
 
 
+#### Chain Interface
+Javascript-esque method chaining.
+```python
+import reip
+import reip.blocks as B
 
+# record audio and buffer into chunks of 10
+audio = B.audio.Mic(block_duration=1)
+audio10s = (
+    audio.to(B.Debug('Audio'))
+    .to(B.Rebuffer(duration=10)))
+# plot a spectrogram
+spec_img = (
+    audio10s.to(B.audio.Stft())
+    .to(B.Debug('Spec'))
+    .to(B.Specshow('plots/{time}.png')))
+# to wavefile
+wav = (
+    audio10s.to(B.Debug('Audio 222'))
+    .to(B.audio.AudioFile('audio/{time}.wav')))
 
-
-
-### Possible YAML Solution
-
-This is very much still up in the air. In fact, if we choose an existing visual editor (e.g. nodered) this will most likely all change.
-
-```yaml
-vars:
-
-components:
-  compute:
-    block: ...
-
-pipelines:
-  main:
-    block: interval
-    seconds: 3
-    then:
-      block: compute
-      then:
-        block: echo
-
+print(reip.Graph.default)
+reip.run()
 
 ```
+
+#### Function Interface
+Mimicking a Keras interface.
+```python
+import reip.blocks as B
+
+# record audio and buffer into chunks of 10
+audio = B.audio.Mic(block_duration=1)
+audio10s = B.Rebuffer(duration=10)(audio)
+
+# to spectrogram
+stft = B.audio.Stft()(audio)
+specshow = B.Specshow('plots/{time}.png')(spec)
+# to wavefile
+wav10s = B.audio.AudioFile('audio/{time}.wav')(audio10s)
+
+print(reip.Graph.default)
+reip.run()
+
+```
+
+## Concepts
+
+### Block
+A block is an isolated piece of computation that takes a variable number of inputs and a metadata dictionary (`(*Xs, meta={})`) and returns a variable number of outputs and a metadata dictionary `([X], {})`.
+
+Like Tensorflow, there is a graph definition stage, and a graph execution stage.
+
+All blocks exist as separate threads and pass data in between each other using queues.
+
+These threads can either be run on the current process (the top-level default graph) or on a separate process (a Task).
+
+If they are run in a separate process, the data is serialized using `pyarrow` and is passed to the other process using a Plasma Object Store.
+
+#### Building your own Blocks
+
+```python
+
+class Custom(reip.Block):
+    def init(self):
+        '''Initialize the block.
+
+        __init__ is called during graph execution.
+        This function is for initialization that you
+        don't want to have to pickle to send to
+        another task.
+        '''
+
+    def process(self, *Xs, meta=None):
+        '''The main processing code that gets called with
+        every input added to the queue.
+
+        For now, it should return a tuple of a list
+        (data buffers, e.g. numpy arrays or strings)
+        and a dictionary of any metadata you might want
+        to pass to the next block.
+        '''
+        return Xs, meta
+
+    def finish(self):
+        '''Any cleanup that you want to do.'''
+
+```
+
+
+### Graph
+A collection of blocks that operate together.
+
+Here's how graph contexts work.
 
 ```python
 import reip
 
-pipelines = reip.pipeline('config.yaml')
+# you always start with a default graph.
+top_graph = reip.Graph.default
 
-if __name__ == '__main__':
-  pipelines.cli()
+print(top_graph)
+# [~Graph (0 children) ~]
+
+# create some block, it get's automatically
+# added to the default graph.
+reip.blocks.Debug()
+
+# the block automatically shows up 'o'
+print(top_graph)
+# [~Graph (1 children)
+#     [Block(4363961616): Debug (1 in, 1 out)]~]
+
+
+# create a nested graph and set as default within
+# the context. New blocks will be added  to this
+# graph.
+with reip.Graph() as g:
+    reip.blocks.Csv()
+    print(g)
+    # [~Graph (1 children)
+    #     [Block(5007675152): Csv (1 in, 1 out)]~]
+
+# the graph `g` is added to the top graph. ^-^
+print(top_graph)
+# [~Graph (2 children)
+#     [Block(4363961616): Debug (1 in, 1 out)]
+#     [~Graph (1 children)
+#         [Block(5007675152): Csv (1 in, 1 out)]~]~]
+
+
+# create a separate graph (by setting graph=False).
+# this will not be added to the top graph.
+with reip.Graph(graph=False) as separate_graph:  
+    reip.blocks.TarGz()
+    print(separate_graph)
+    # [~Graph (1 children)
+    #     [Block(4687358032): TarGz (1 in, 1 out)]~]
+
+# pass separate_graph into a block.
+reip.blocks.Interval(graph=separate_graph)
+
+# it gets added to separate_graph, not the default.
+print(separate_graph)
+# [~Graph (2 children)
+#     [Block(4432609104): TarGz (1 in, 1 out)]
+#     [Block(4391746128): Interval (0 in, 1 out)]~]
+
+# separate_graph is not here. x.x
+print(top_graph)
+# [~Graph (2 children)
+#     [Block(4363961616): Debug (1 in, 1 out)]
+#     [~Graph (1 children)
+#         [Block(5007675152): Csv (1 in, 1 out)]~]~]
+```
+And you can modify the default without using contexts.
+```python
+# after exiting the `with` context the previous
+# default is set.
+assert reip.Graph.default is top_graph
+
+# but you can change the default like this too
+separate_graph.as_default()
+assert reip.Graph.default is separate_graph
+
+# and reset it back.
+separate_graph.restore_previous()
+assert reip.Graph.default is top_graph
+
 ```
 
-## Examples
-
- - [SONYC (yaml)](configs/sonyc.yaml)
- - [SONYC (python)](examples/sonyc.py)
+```python
 
 
+```
 
-## API
+
+### Task
+A Task is a Graph that executes in a separate process.
+
+All of the same principles of Graphs apply to Tasks. They can be set as the default and blocks will automatically add themselves to it.
+
+```python
+import reip
+
+top_graph = reip.Graph.default
+
+with reip.Graph() as g:
+    with reip.Task() as t:
+        reip.blocks.Csv()
+print(top_graph)
+# [~Graph (1 children)
+#     [~Graph (1 children)
+#         [~Task (1 children)
+#             [Block(4997015120): Csv (1 in, 1 out)]~]~]~]
+
+```
+
+Currently, Tasks will add to the default graph and not other tasks. This was done because I figured nested processes would get messy, but idk. That may change once we test it.
+
+
+## API - out of date, will update
 
 The goal of the API is to provide a simple and easily understandable interface to build out ad-hoc data processing pipelines.
 
