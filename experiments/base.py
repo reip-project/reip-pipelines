@@ -70,7 +70,7 @@ class Worker:
         else:
             self._running.value = True
 
-    def run(self, duration=None):
+    def run(self, duration=None, loop_func=None):
         self.spawn()
 
         if self.error:
@@ -81,8 +81,13 @@ class Worker:
             try:
                 t = time.time()
                 while (duration is None or time.time() - t < duration) and not self.error:
-                    time.sleep(1e-3)
-                    # do something else
+                    if loop_func:
+                        loop_func()
+                    else:
+                        time.sleep(1e-3)
+            except Exception as e:
+                self.join()
+                raise
             except KeyboardInterrupt:
                 pass
         self.join()
@@ -191,7 +196,7 @@ class Graph:
                     raise Exception("Worker %s failed" % worker.name) from worker.exception[0]
         return False
 
-    def run(self, duration=None):
+    def run(self, duration=None, loop_func=None):
         self.spawn_all()
         self.check_errors()
 
@@ -199,10 +204,16 @@ class Graph:
         try:
             t = time.time()
             while (duration is None or time.time() - t < duration) and not self.check_errors(silent=True):
-                time.sleep(1e-3)
-                # do something else
+                if loop_func:
+                    loop_func()
+                else:
+                    time.sleep(1e-3)
+        except Exception as e:
+            self.join_all()
+            raise
         except KeyboardInterrupt:
             pass
+
         self.stop_all()
 
         self.terminate_all()

@@ -83,15 +83,18 @@ class Block(Worker):
     # Operation
 
     def init(self):
-        # raise Exception("Test")
+        # if self.name == "Block1":
+        #     raise Exception("Test")
         pass
 
     def process(self, buffers):
-        # raise Exception("Test")
+        # if self.name == "Block1":
+        #     raise Exception("Test")
         return buffers
 
     def finish(self):
-        # raise Exception("Test")
+        # if self.name == "Block1":
+        #     raise Exception("Test")
         pass
 
     def reset(self):
@@ -204,7 +207,8 @@ class Block(Worker):
             print("Joined block", self.name)
 
     def stats(self):
-        # raise Exception("Test")
+        # if self.name == "Block1":
+        #     raise Exception("Test")
         dropped = [sink.dropped for sink in self.sinks if not isinstance(sink, (queue.Queue, mp.queues.Queue))]
         return self.name, self.processed, dropped, self._sw
 
@@ -215,4 +219,15 @@ class Block(Worker):
 
 if __name__ == '__main__':
     b = Block("Test", verbose=True, max_rate=None)
-    b.run(duration=0.1)
+
+    i = 0
+
+    def loop():
+        global i
+        print(i)
+        if i == 7:
+            raise Exception("Test")
+        i += 1
+        time.sleep(1e-2)
+
+    b.run(duration=0.1, loop_func=loop)

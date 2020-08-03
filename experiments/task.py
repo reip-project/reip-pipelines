@@ -36,6 +36,11 @@ class Task(Graph, Worker):
             ret = getattr(self, func)(*args, **kwargs)
             self._worker_conn.send(ret)
 
+    def add(self, worker):
+        if isinstance(worker, Task):
+            raise RuntimeError("Nested tasks are not supported (because pointless)")
+        Graph.add(self, worker)
+
     # Worker implementation
 
     def reset(self):
@@ -154,8 +159,21 @@ if __name__ == '__main__':
 
     # with Graph("Graph", debug=True) as g:
     with Task("Task", verbose=True) as t:
-        b = Block("Block", verbose=True, max_rate=None)
+        b1 = Block("Block1", verbose=True, max_rate=None)
+        b2 = Block("Block2", verbose=True, max_rate=None)
+        # Task("Foo")
 
-    # t.run(duration=0.1)
-    # g.run(duration=0.1)
-    Graph.default.run(duration=0.1)
+    i = 0
+
+    def loop():
+        global i
+        print(i)
+        if i == 300:
+            raise Exception("Test")
+        i += 1
+        time.sleep(1e-2)
+
+    # t.run(duration=0.1, loop_func=loop)
+    # g.run(duration=0.1, loop_func=loop)
+
+    Graph.default.run(duration=1, loop_func=loop)
