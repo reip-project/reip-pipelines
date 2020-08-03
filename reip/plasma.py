@@ -38,13 +38,27 @@ def get_plasma_path():
 def random_object_id():
     return plasma.ObjectID(np.random.bytes(20))
 
+def random_unique_object_id(existing):
+    while True:
+        id = random_object_id()
+        if id not in existing:
+            return id
+
+def n_random_unique_object_ids(client, size=10):
+    existing_ids = set(client.list())
+    return [
+        random_unique_object_id(existing_ids)
+        for i in range(size)]
+
 
 class PlasmaStore:
-    def __init__(self, plasma_socket=None):
+    def __init__(self, size, plasma_socket=None):
         self._plasma_socket_name = plasma_socket or get_plasma_path()
         self.client = plasma.connect(self._plasma_socket_name)
+        self.ids = n_random_unique_object_ids(self.client, size)
+        self.size = size
 
-    def refresh(self):
+    def refresh(self):  # TODO: HOW TO CALL THIS WHEN FORKING ???
         self.client = plasma.connect(self._plasma_socket_name)
 
     def __str__(self):
@@ -53,26 +67,26 @@ class PlasmaStore:
     def __len__(self):
         return len(self.client.list())
 
-    def __getstate__(self):
-        # don't pickle the plasma client
-        print(6666666, self.__dict__, flush=True)
-        return dict(self.__dict__, client=True)
-
-    def __setstate__(self, state):
-        print(66666666666, state)
-        if state['client'] is True: # create a new plasma client
-            state['client'] = plasma.connect(state['_plasma_socket_name'])
-            print(66666666666, state['client'], flush=True)
-        self.__dict__.update(state)
+    # def __getstate__(self):
+    #     # don't pickle the plasma client
+    #     print(6666666, self.__dict__, flush=True)
+    #     return dict(self.__dict__, client=True)
+    #
+    # def __setstate__(self, state):
+    #     print(66666666666, state)
+    #     if state['client'] is True: # create a new plasma client
+    #         state['client'] = plasma.connect(state['_plasma_socket_name'])
+    #         print(66666666666, state['client'], flush=True)
+    #     self.__dict__.update(state)
 
     def put(self, data, meta=None, id=None):
-        return save_both(self.client, data, meta or {}, id=id)
+        return save_both(self.client, data, meta or {}, id=self.ids[id])
 
     def get(self, id):
-        return load_both(self.client, id)
+        return load_both(self.client, self.ids[id])
 
     def delete(self, ids):
-        self.client.delete(ids)
+        self.client.delete([self.ids[id] for id in ids])
 
 
 def save_both(client, data, meta=None, id=None):

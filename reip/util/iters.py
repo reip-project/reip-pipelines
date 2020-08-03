@@ -4,22 +4,25 @@ import numpy as np
 
 
 def loop():
+    '''Infinite loop'''
     while True:
         yield
 
 def timed(it, duration=None):
+    '''Run a loop for a predetermined amount of time.'''
     if not duration:
         yield from it
         return
 
     t0 = time.time()
     for x in it:
-        yield x
         if time.time() - t0 >= duration:
-            return
+            break
+        yield x
 
 
 def throttled(it, rate=None, delay=1e-6):
+    '''Throttle a loop to take '''
     if not rate:
         yield from it
         return
@@ -28,9 +31,12 @@ def throttled(it, rate=None, delay=1e-6):
     for x in it:
         yield x
         t1, t0 = time.time(), t1
-        dt = (1. / rate) - (t1 - t0 + 0.5 * delay)
-        if dt:  # where's my walrus op ?
+        dt = max((1. / rate) - (t1 - t0 + 0.5 * delay), 0)
+        if dt:
             time.sleep(dt)
+        # wraps around for _ in because that may take a non-trivial amount of time
+        # e.g. (time.sleep(1) for _ in loop())
+        t1 = time.time()
 
 
 def peakiter(it, n=1):
@@ -49,7 +55,7 @@ def npgenarray(it, shape, **kw):
     if isinstance(shape, int):
         (x0,), it = peakiter(it)
         shape = (shape,) + x0.shape
-    X = np.zeros(shape, **kw)
+    X = np.empty(shape, **kw)
     for i, x in enumerate(it):
         X[i] = x
     return X
@@ -57,3 +63,8 @@ def npgenarray(it, shape, **kw):
 
 def npmaparray(func, X):
     return npgenarray((func(x) for x in X), len(X))
+
+
+# if __name__ == '__main__':
+# for _ in timed(throttled(loop(), 1), 10):
+#     ...

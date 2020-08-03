@@ -28,9 +28,10 @@ t2 = ' '*2
 
 def indent(x, w=4, n=1, ch=' '):
     '''Indent text using spaces.'''
-    return ''.join(' ' * w * n + l for l in str(x).splitlines(keepends=True))
+    return ''.join(ch * w * n + l for l in str(x).splitlines(keepends=True))
 
 def tabindent(x, n=1):
+    '''Indent text using tabs.'''
     return indent(x, w=1, n=n, ch='\t')
 
 def comment(txt, ch='#', n=1, spaces=1):
@@ -54,14 +55,15 @@ def l_(*line):
     return ' '.join(map(str, line))
 
 
-def fw_(*line, w=20):
+def fw_(*line, w=20, right=False):
     '''As a fixed width string'''
-    return f'{l_(*line):<{w}}'
+    return f"{l_(*line):{'>' if right else '<'}{w}}"
 
 def tbl(*rows, buffer=2):
+    '''Format as a table. Calculates column widths.'''
     rows = [[str(c) for c in cs] for cs in rows]
     widths = [max((len(c) for c in cs), default=0) for cs in zip(*rows)]
-    return b_(*([fw_(c, w=w + buffer) for c, w in zip(cs, widths)] for cs in rows ))
+    return b_(*([fw_(c, w=w + buffer) for c, w in zip(cs, widths)] for cs in rows))
 
 
 if __name__ == '__main__':

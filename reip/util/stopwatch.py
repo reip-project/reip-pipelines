@@ -27,7 +27,12 @@ class Stopwatch:
         self._counts = {}
 
     def _estimate_dt(self, n=100):
-        dts = np.array([time.time() - time.time() for _ in range(n)])
+        dts = []
+        for i in range(n):
+            t0 = time.time()
+            t1 = time.time()
+            dts.append(t1 - t0)
+        dts = np.array(dts)
         dt = np.min(dts[dts > np.mean(dts) / 2])
         return dt, dts
 

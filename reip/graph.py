@@ -11,7 +11,7 @@ from reip.util import text
 
 class BaseContext:
     default = None  # the default instance
-    _previous = None  # the previous default instance
+    _previous = False  # the previous default instance
 
     def __init__(self, *blocks, name=None, graph=None):
         self.name = name or f'{self.__class__.__name__}_{id(self)}'
@@ -32,10 +32,29 @@ class BaseContext:
 
     @classmethod
     def get(cls, instance=None):
+        '''If `instance` is `None`, the default instance will be returned.
+        Otherwise `instance` is returned.'''
         return cls.default if instance is None else instance
 
     @classmethod
     def add_if_available(cls, instance=None, member=None):
+        '''Add a member (Block, Task) to the graph in instance.
+
+        This is used inside of
+
+        Arguments:
+            instance (reip.Graph): A graph or task to be added to.
+                If instance is None, the default graph/task will be used.
+                If instance is False, nothing will be added.
+            member (reip.Graph, reip.Block): A graph, task, or block to add to
+                instance.
+                If `member is instance`, nothing will be added. In other words,
+                A graph cannot be added to itself.
+
+        Returns:
+            The name of `instance`. This prevents Blocks from having a reference
+            to the entire graph.
+        '''
         if instance is False:  # disable graph
             return None
         instance = cls.get(instance)  # get default if None
@@ -44,10 +63,6 @@ class BaseContext:
         instance.add(member)
         return instance.name
 
-    @classmethod
-    def get_default(cls):
-        return cls.default
-
     def __enter__(self):
         return self.as_default()
 
@@ -55,13 +70,19 @@ class BaseContext:
         self.restore_previous()
 
     def as_default(self):
+        '''Set this graph as the default graph and track the previous default.'''
         self._previous, self.__class__.default = self.__class__.default, self
         return self
 
     def restore_previous(self):
-        if self._previous is not None:
+        '''Restore the previously set graph.'''
+        if self._previous is not False:
             self.__class__.default, self._previous = self._previous, None
+        self._previous = False
         return self
+
+    # def rename_child(self, old_name, new_name):
+    #     pass
 
 
 class Graph(BaseContext):
@@ -84,6 +105,17 @@ class Graph(BaseContext):
             self.join()
             # if self.context_id is None:
             self.print_stats()
+
+    # def restart_failed_blocks(self):
+    #     # From Docker:
+    #     # block.restart in {'no', 'always', 'unless-stopped', 'on-failure'}
+    #     for block in self.blocks:
+    #         if block.done:
+    #             if (block.restart_policy == 'always'
+    #                     or (block.restart_policy == 'on-failure' and block.error)):
+    #                 block.spawn()
+    #             elif self.exit_policy == 'one':
+    #                 return True
 
     # state
 
@@ -120,7 +152,7 @@ class Graph(BaseContext):
             self.wait_until_ready()
 
     def wait_until_ready(self):
-        while not self.ready and not self.error and not self.terminated:
+        while not self.ready and not self.error and not self.done:
             time.sleep(self._delay)
 
     def join(self, terminate=True, **kw):

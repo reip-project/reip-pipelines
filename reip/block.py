@@ -1,5 +1,6 @@
 import time
 import threading
+import traceback
 
 import reip
 from reip.buffer_store import BufferStore
@@ -111,7 +112,10 @@ class Block:
         except Exception as e:
             self._exception = e
             self.error = True
-            print(text.red(f'Exception occurred in {self}: ({type(e).__name__}) {e}'))
+            print(text.red(text.b_(
+                f'Exception occurred in {self}: ({type(e).__name__}) {e}',
+                traceback.format_exc(),
+            )))
         except KeyboardInterrupt:
             print(text.b_(text.yellow('\nInterrupting'), self))
         finally:
@@ -180,11 +184,11 @@ class Block:
             self.wait_until_ready()
 
     def wait_until_ready(self):
-        while not self.ready:
+        while not self.ready and not self.error and not self.done:
             time.sleep(self._delay)
 
     def wait_until_done(self):
-        while not self.done:
+        while not self.done and not self.error:
             time.sleep(self._delay)
 
     def join(self, terminate=True, timeout=0.5):
@@ -196,8 +200,8 @@ class Block:
         print(text.blue('Joining'), self, '...')
         self._thread.join(timeout=timeout)
         # raise any exception
-        if self._exception is not None:
-            raise Exception(f'Exception in {self}') from self._exception
+        # if self._exception is not None:
+        #     raise Exception(f'Exception in {self}') from self._exception
 
     # State management
 
@@ -222,12 +226,14 @@ class Block:
 
     def print_stats(self):
         total_time = self._sw.stats()[0] if '' in self._sw._samples else 0
-        print(text.blue(text.block_text(
-            f'Stats for {self}',
-            f'Processed {self.processed} buffers in {total_time:.2f} sec.'
+        print(text.block_text(
+            f'Stats for {text.red(self) if self.error else text.green(self)}',
+            text.red(f'({type(self._exception).__name__}) {self._exception}')
+            if self._exception else None,
+            f'Processed {self.processed} buffers in {total_time:.2f} sec. '
             f'({self.processed / total_time if total_time else 0:.2f} x/s)',
             f'Dropped: {[getattr(sink, "dropped", None) for sink in self.sinks]}',
-            self._sw)))
+            self._sw, ch=text.blue('*')))
 
 
 def prepare_input(inputs):

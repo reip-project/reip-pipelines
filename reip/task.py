@@ -33,11 +33,14 @@ class Task(reip.Graph):
                 for _ in timed(loop(), duration):
                     if super().terminated or super().error:
                         break
+
+                    # if self.restart_failed_blocks():  # return true if a block is failed?
+                    #     break
                     time.sleep(self._delay)
 
-                for b in self.blocks:
-                    if b.error:
-                        raise b._exception
+                # for b in self.blocks:
+                #     if b.error:
+                #         raise b._exception
 
                 # send empty (successful) result
                 self.remote._local.put((None, None, None))
@@ -61,6 +64,9 @@ class Task(reip.Graph):
                 self.error = super().error  # get child errors before closing, just in case
                 # if self.context_id is None:
                 super().print_stats()
+
+    def restart_failed_blocks(self):
+        return self.remote.super.restart_failed_blocks()._
 
     # process management
 

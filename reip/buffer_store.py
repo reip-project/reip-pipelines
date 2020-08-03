@@ -82,7 +82,6 @@ class BufferStore(Sink):
         self.size = size + 1  # need extra slot because head == tail means empty
         self.delete_rate = delete_rate
         self.stores = {}
-        self.ids = [random_object_id() for i in range(self.size)]
         self.head = Pointer(self.size)
         self.tail = Pointer(self.size)
         self.readers = []
@@ -103,8 +102,7 @@ class BufferStore(Sink):
             # get the number of stale entries
             new_value = min(reader.counter for reader in self.readers)
             to_delete = [
-                self.ids[v % self.size]
-                for v in range(self.tail.counter, new_value)]
+                v % self.size for v in range(self.tail.counter, new_value)]
 
             # delete items if there's enough
             if len(to_delete) > self.size / self.delete_rate:
@@ -116,14 +114,14 @@ class BufferStore(Sink):
         '''Send data to stores.'''
         data, meta = buffer
         for store in self.stores.values():
-            store.put(data, dict(meta or {}), id=self.ids[self.head.pos])
+            store.put(data, dict(meta or {}), id=self.head.pos)
         self.head.counter += 1
 
     def gen_source(self, same_context=True, **kw):
         # create the store if it doesn't exist already
         if same_context not in self.stores:  # use True/False as store keys
             self.stores[same_context] = (
-                DictStore() if same_context else PlasmaStore())
+                Store(self.size) if same_context else PlasmaStore(self.size))
 
             if not same_context:  # convert pointers to shared pointers if needed.
                 self.head = self.head.as_shared()
@@ -163,12 +161,12 @@ class Customer(Source):
         if not self._refreshed:
             self.source.stores[reader.same_context].refresh()
             self._refreshed = True
-        return self.source.stores[reader.same_context].get(self.source.ids[reader.pos])
+        return self.source.stores[reader.same_context].get(reader.pos)
 
 
-class DictStore:
-    def __init__(self):
-        self.items = {}
+class Store:
+    def __init__(self, size):
+        self.items = [None] * size
 
     def refresh(self):
         pass

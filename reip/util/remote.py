@@ -167,6 +167,11 @@ class RemoteProxy(RemoteView):
         # print('Starting listening...', self, flush=True)
         return self._run() if block else self._spawn()
 
+    def poll_until_clear(self):
+        ''''''
+        while not self._remote.empty():
+            self.poll()
+
     def poll(self):
         '''Check for and execute the next command in the queue, if available.'''
         if not self._remote.empty():
