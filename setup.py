@@ -18,7 +18,7 @@ setuptools.setup(
         'numpy',
         # audio
         'pyaudio',
-        'soundfile',
+        # 'soundfile',
         'librosa',
         'tflite',
         # plotting
@@ -26,7 +26,7 @@ setuptools.setup(
         # utils
         # 'pycrypto',
         # general
-        'ray',
+        # 'ray',
         # 'readi',
         # 'confuse@https://github.com/beetbox/confuse/archive/master.zip',
         'fire',
