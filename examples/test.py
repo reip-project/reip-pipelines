@@ -80,7 +80,7 @@ def record_and_spl():
 
 def sonyc():
     # audio source
-    audio = B.audio.Mic(block_duration=1).to(B.Debug('Audio 1'))
+    audio = B.audio.Mic(block_duration=1)
     audio10s = audio.to(B.Rebuffer(duration=10))
 
     # audio(10s) -> wav file
@@ -93,13 +93,22 @@ def sonyc():
     # as separate process
     with reip.Task():
         # audio -> embedding -> csv -> tar.gz
-        emb = audio.to(B.Debug('Audio 2')).to(B.audio.TfliteStft(
-            os.path.join(MODEL_DIR, 'quantized_default_int8.tflite'))).to(B.Debug('Embedding'))
+        emb_path = os.path.join(MODEL_DIR, 'quantized_default_int8.tflite')
+        emb = audio.to(B.audio.TfliteStft(emb_path)).to(B.Debug('Embedding'))
         emb.to(B.Csv('emb/{time}.csv', max_rows=10)).to(B.TarGz('emb.gz/{time}.tar.gz'))
         # audio -> embedding -> classes -> csv -> tar.gz
-        clsf = emb.to(B.Tflite(
-            os.path.join(MODEL_DIR, 'mlp_ust.tflite'))).to(B.Debug('Classification'))
-        clsf.to(B.Csv('clsf/{time}.csv', max_rows=10)).to(B.TarGz('clsf.gz/{time}.tar.gz'))
+        clsf_path = os.path.join(MODEL_DIR, 'mlp_ust.tflite')
+        clsf = emb.to(B.Tflite(clsf_path)).to(B.Debug('Classification'))
+        clsf.to(B.Csv('clsf/{time}.csv', headers=[
+            'engine',
+            'machinery_impact',
+            'non_machinery_impact',
+            'powered_saw',
+            'alert_signal',
+            'music',
+            'human_voice',
+            'dog',
+        ], max_rows=10)).to(B.TarGz('clsf.gz/{time}.tar.gz'))
 
     print(reip.Task.default)
     reip.run()
