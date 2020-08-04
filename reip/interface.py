@@ -94,7 +94,7 @@ class Source:
             raise ValueError("Unknown strategy '{}'".format(strategy))
 
         self._strategy = strategy
-        self._strategy_get = self.strategies[strategy].__get__(self)
+        self._strategy_get = self.strategies[strategy]
 
     def empty(self):
         raise NotImplementedError
@@ -123,4 +123,4 @@ class Source:
     def get_nowait(self):
         if self.empty():
             return None
-        return self._strategy_get()
+        return self._strategy_get(self)
