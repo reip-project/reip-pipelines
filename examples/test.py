@@ -80,22 +80,33 @@ def record_and_spl():
 
 def sonyc():
     # audio source
-    audio = B.audio.Mic(block_duration=1)
-    audio10s = audio.to(B.Rebuffer(duration=10))
+    audio1s = B.audio.Mic(block_duration=1)
+    audio10s = audio1s.to(B.Rebuffer(duration=10))
 
     # audio(10s) -> wav file
-    audio10s.to(B.audio.AudioFile('audio/{time}.wav')).to(B.TarGz('audio.gz/{time}.wav'))
+    (audio10s.to(B.audio.AudioFile('audio/{time}.wav'))
+     .to(B.TarGz('audio.gz/{time}.wav')))
 
-    # # audio -> spl -> csv -> tar.gz
-    # spl = audio.to(SPL(calibration=72.54)).to(Debug('SPL'))
-    # spl.to(Csv('spl/{time}.csv', max_rows=10)).to(TarGz('spl.gz/{time}.tar.gz'))
+    # audio -> spl -> csv -> tar.gz
+    weightings = 'ZAC'
+    spl = (
+        audio1s.to(B.audio.SPL(calibration=72.54, weighting=weightings))
+        .to(B.Debug('SPL')))
+
+    (spl.to(B.Csv('spl/{time}.csv', headers=[
+        f'l{w}eq' for w in weightings.lower()], max_rows=10))
+     .to(B.TarGz('spl.gz/{time}.tar.gz')))
 
     # as separate process
     with reip.Task():
         # audio -> embedding -> csv -> tar.gz
         emb_path = os.path.join(MODEL_DIR, 'quantized_default_int8.tflite')
-        emb = audio.to(B.audio.TfliteStft(emb_path)).to(B.Debug('Embedding'))
-        emb.to(B.Csv('emb/{time}.csv', max_rows=10)).to(B.TarGz('emb.gz/{time}.tar.gz'))
+        emb = (
+            audio1s.to(B.audio.TfliteStft(emb_path))
+            .to(B.Debug('Embedding')))
+
+        (emb.to(B.Csv('emb/{time}.csv', max_rows=10))
+         .to(B.TarGz('emb.gz/{time}.tar.gz')))
         # audio -> embedding -> classes -> csv -> tar.gz
         clsf_path = os.path.join(MODEL_DIR, 'mlp_ust.tflite')
         clsf = emb.to(B.Tflite(clsf_path)).to(B.Debug('Classification'))

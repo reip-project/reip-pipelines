@@ -17,7 +17,7 @@ class Block:
 
     def __init__(self, queue=100, n_source=1, n_sink=1, name=None,
                  blocking=False, graph=None, max_rate=None,
-                 wait_all_sources=False):
+                 wait_all_sources=True):
         self.name = name or f'{self.__class__.__name__}_{id(self)}'
         self.sources = [None for _ in range(n_source)]
         self.sinks = [BufferStore(queue) for _ in range(n_sink)]
