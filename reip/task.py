@@ -5,8 +5,7 @@ from ctypes import c_bool
 
 import reip
 from reip.util.iters import timed, loop
-from reip.util.remote import RemoteProxy
-from reip.util import text
+from reip.util import remote, text
 
 
 class Task(reip.Graph):
@@ -16,7 +15,7 @@ class Task(reip.Graph):
 
     def __init__(self, *blocks, graph=None):
         super().__init__(*blocks, graph=graph)
-        self.remote = RemoteProxy(self)
+        self.remote = remote.RemoteProxy(self)
         self._terminated = mp.Value(c_bool, False)
         self._error = mp.Value(c_bool, False)
 
@@ -24,49 +23,42 @@ class Task(reip.Graph):
 
     def _run(self, duration=None):
         print(text.b_(text.green('Starting'), self), flush=True)
-        with self.remote.listen():  # I tried to have this done automatically thru hooks, but.. not working.
-            try:
-                # main loop
-                super().spawn(wait=False)
-                super().wait_until_ready()
-                print(text.b_(text.green('Ready'), self), flush=True)
-                for _ in timed(loop(), duration):
-                    if super().terminated or super().error:
-                        break
+        self.remote.listening = True  # XXX: let the main process know that it's listening
+        try:
+            # initialize
+            super().spawn()
+            print(text.b_(text.green('Ready'), self), flush=True)
 
-                    # if self.restart_failed_blocks():  # return true if a block is failed?
-                    #     break
-                    time.sleep(self._delay)
+            # main loop
+            for _ in timed(loop(), duration):
+                if super().terminated or super().error:
+                    break
 
-                # for b in self.blocks:
-                #     if b.error:
-                #         raise b._exception
+                self.remote.poll_until_clear()
+                time.sleep(self._delay)
 
-                # send empty (successful) result
-                self.remote._local.put((None, None, None))
+            # send empty (successful) result
+            self.remote._local.put((None, None, None))
 
-            except Exception as e:
-                # any exception, print tb
-                print(text.b_(
-                    text.red(f'Exception occurred in {self}'),
-                    text.red(traceback.format_exc()),
-                ), flush=True)
-                self.error = True
+        except Exception as e:
+            # any exception, print tb
+            print(text.b_(
+                text.red(f'Exception occurred in {self}'),
+                text.red(traceback.format_exc()),
+            ), flush=True)
+            self.error = True
 
-                # send exception
-                self.remote._local.put((None, None, e))
-            except KeyboardInterrupt as e:
-                print(text.b_(
-                    text.yellow('Interrupting'), self, text.yellow('--')))
-            finally:
-                super().terminate()
-                super().join(terminate=False)
-                self.error = super().error  # get child errors before closing, just in case
-                # if self.context_id is None:
-                super().print_stats()
-
-    def restart_failed_blocks(self):
-        return self.remote.super.restart_failed_blocks()._
+            # send exception
+            self.remote._local.put((None, None, e))
+        except KeyboardInterrupt as e:
+            print(text.b_(
+                text.yellow('Interrupting'), self, text.yellow('--')))
+        finally:
+            super().terminate()
+            super().join(terminate=False)
+            self.error = super().error  # get child errors before closing, just in case
+            self.remote.poll_until_clear()
+            self.remote.listening = False
 
     # process management
 
@@ -77,6 +69,8 @@ class Task(reip.Graph):
         print(text.b_(text.blue('Spawning'), self))
         self._process = mp.Process(target=self._run, daemon=True)
         self._process.start()
+        if wait:
+            self.wait_until_ready()
         self._check_errors()
 
     def join(self, terminate=True, timeout=0.5):
@@ -84,7 +78,7 @@ class Task(reip.Graph):
             return
 
         print(text.b_(text.blue('Joining'), self))
-        self.remote.super.join(terminate=terminate)._  # join children
+        self.remote.super.join(terminate=terminate, default=None)  # join children
         self._process.join(timeout=timeout)  # join process
         self._process = None
         self._check_errors()
@@ -95,34 +89,38 @@ class Task(reip.Graph):
         if result is not None:  # returns None if already closed.
             x, exc = result
             if self._exception is not None:
-                print(387234787342, self._exception, type(self._exception))
                 raise Exception(f'Exception in {self}') from self._exception
 
     def wait_until_ready(self):
-        while not self.ready:
+        while not self.ready and not self.error and not self.done:
+            self.remote.poll_until_clear()
             time.sleep(self._delay)
 
     # children state
 
     @property
     def ready(self):
-        return self.remote.super.ready._
+        return remote.retrieve(self.remote.super.ready, default=False)
 
     @property
     def running(self):
-        return self.remote.super.running._
+        return remote.retrieve(self.remote.super.running, default=False)
 
     @property
     def terminated(self):
-        return self._terminated.value or self.remote.super.terminated._
+        return (
+            self._terminated.value or
+            remote.retrieve(self.remote.super.terminated, default=True)) # default ???
 
     @property
     def done(self):
-        return self.remote.super.done._
+        return remote.retrieve(self.remote.super.done, default=True) # default ???
 
     @property
     def error(self):
-        return self._error.value or self.remote.super.error._
+        return (
+            self._error.value or
+            remote.retrieve(self.remote.super.error, default=False))
 
     @terminated.setter
     def terminated(self, value):
@@ -135,22 +133,25 @@ class Task(reip.Graph):
     # block control
 
     def pause(self):
-        return self.remote.super.pause()._
+        return self.remote.super.pause()
 
     def resume(self):
-        return self.remote.super.resume()._
+        return self.remote.super.resume()
 
     def terminate(self):
         self.terminated = True
-        return self.remote.super.terminate()._
+        return self.remote.super.terminate(default=None)
 
     # def _reset_state(self):
-    #     return self.remote.super._reset_state()._
+    #     return self.remote.super._reset_state()
 
     # debug
 
     def summary(self):
-        return self.remote.super.summary()._
+        return self.remote.super.summary()
+
+    def status(self):
+        return self.remote.super.status()
 
     def print_stats(self):
-        return self.remote.super.print_stats()._
+        return self.remote.super.print_stats()

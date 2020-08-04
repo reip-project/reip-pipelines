@@ -1,5 +1,28 @@
 '''
 
+
+Usage:
+>>> class MyObj:
+...     def __init__(self):
+...         self.remote = RemoteProxy(self)
+...         self.stopped = False
+...         self.data = []
+...
+...     def stop(self):
+...         self.stopped = True
+...
+...     def get_data(self):
+...         while not self.stopped:
+...             self.data.append(time.time())
+...             time.sleep(1)
+
+>>> obj = MyObj()
+>>> p = mp.Process(target=obj.get_data)
+>>> p.start()
+>>> time.sleep(3)
+>>> obj.remote.stop()
+>>> p.join()
+
 '''
 import time
 import random
@@ -7,12 +30,16 @@ import threading
 import traceback
 import warnings
 import multiprocessing as mp
-from ctypes import c_bool
+import reip
 
 __all__ = ['RemoteProxy']
 
 
 FAIL_UNPICKLEABLE = False
+
+
+def retrieve(view, **kw):
+    return view.retrieve(**kw)
 
 
 class RemoteView:
@@ -99,7 +126,6 @@ class RemoteProxy(RemoteView):
     '''
     _thread = None
     _delay = 0.1
-    _not_forking = False  # queues and mp.value can only be pickled with forks
     def __init__(self, instance, *a, default=..., **kw):
         super().__init__(*a, **kw)
         self._obj = instance
@@ -109,48 +135,23 @@ class RemoteProxy(RemoteView):
         self._listening = mp.Value('i', 0, lock=False)
         self._default = default
 
-        # NOTE: NOT WORKING ( ⚈̥̥̥̥̥́⌢⚈̥̥̥̥̥̀)
-
-        # # this gets run on the fork before a process is run
-        # mp.util.register_after_fork(self, self._after_fork)
-        # # this is run after the process is run, as cleanup.
-        # mp.util.Finalize(self, self.__class__._join, args=(self,), exitpriority=0)
-
     def __str__(self):
         return f'<Remote {self._obj} : {super().__str__()}>'
 
     def __getstate__(self):
-        if self._not_forking:  # can't pickle queues or mp.Value except when forking
-            return dict(self.__dict__, _thread=None, _listening=False,
-                        _local=None, _remote=None)
-        return dict(self.__dict__, _thread=None)  # can't pickle thread
-
-    # def _after_fork(self):
-    #     # automatically start listening thread when pickled and sent to a fork
-    #     self.listen(block=False)
-
-    # running state - to avoid dead locks, let the other process know
-
-    def __nonzero__(self):
-        return self.listening
-
-    @property
-    def listening(self):
-        '''Is the remote instance listening?'''
-        return bool(self._listening.value)
-
-    @listening.setter
-    def listening(self, value):
-        self._listening.value = int(value)
+        '''Don't pickle queues, locks, and shared values.'''
+        return dict(self.__dict__, _thread=None, _listening=False,
+                    _local=None, _remote=None)
 
     @property
     def is_main(self):  # TODO: cache this.
         '''Is the current process the main process or a child one?'''
         return mp.current_process().name == 'MainProcess'
 
-    # internal view mechanics
+    # internal view mechanics. These override RemoteView methods.
 
     def _extend(self, *keys, **kw):
+        # Create a new remote proxy object. Don't call RemoteProxy.__init__
         obj = self.__class__.__new__(self.__class__)
         obj.__dict__.update(self.__dict__)
         RemoteView.__init__(obj, *self._keys, *keys, **kw)
@@ -160,15 +161,15 @@ class RemoteProxy(RemoteView):
         '''Convert to a view so we don't pickle the object instance, just the keys.'''
         return RemoteView(*self._keys, frozen=True)
 
+    def __call__(self, *a, default=..., **kw):
+        '''Automatically retrieve when calling a function.'''
+        # You can no longer chain functions. They automatically retrieve.
+        return super().__call__(*a, **kw).retrieve(default=default)
+
     # remote calling interface
 
-    def listen(self, block=False):
-        '''Start listening. By default, this will launch in a background thread.'''
-        # print('Starting listening...', self, flush=True)
-        return self._run() if block else self._spawn()
-
     def poll_until_clear(self):
-        ''''''
+        '''Poll until the command queue is empty.'''
         while not self._remote.empty():
             self.poll()
 
@@ -179,49 +180,33 @@ class RemoteProxy(RemoteView):
             result_id, view = self._remote.get()
             try:  # call the function and send the return value
                 result = view.resolve_view(self._obj)
-                # print(345345, view, result)
-                try:
-                    # can't pickle mp.Value outside of forking,
-                    self._not_forking = True
-                    self._local.put((result_id, result, None))
-                    self._not_forking = False
-                except RuntimeError as e:
-                    if FAIL_UNPICKLEABLE:
-                        warnings.warn(f'Return value of {view} is unpickleable.')
-                        raise
-                    warnings.warn(
-                        f"You tried to send an unpickleable object returned by {view} "
-                        "via a pipe. We'll assume this was an oversight and "
-                        "will return `None`. The remote caller interface "
-                        "is meant more for remote operations rather than "
-                        "passing data. Check the return value for any "
-                        "unpickleable objects. "
-                        f"The return value: {result}")
             except BaseException as e:  # send any exceptions
                 print(
                     f'An exception was raised in {self}.',
                     traceback.format_exc(), flush=True)
                 self._local.put((result_id, None, e))
 
-    def get_result(self, result_id, wait=True):
-        # makes overlapping calls concurrency-safe
-        while result_id not in self._results and self.listening:
-            # print(result_id, self._results.keys(), self.listening, id(self), id(self._local), mp.current_process().pid)
-            if not self._local.empty():
-                out_id, x, exc = self._local.get()
-                self._results[out_id] = x, exc
-            elif not wait:
-                break
-            time.sleep(0.4)
-
-        return self._results.pop(result_id, None)
+            try:
+                self._local.put((result_id, result, None))
+            except RuntimeError as e:
+                if FAIL_UNPICKLEABLE:
+                    warnings.warn(f'Return value of {view} is unpickleable.')
+                    raise
+                warnings.warn(
+                    f"You tried to send an unpickleable object returned by {view} "
+                    "via a pipe. We'll assume this was an oversight and "
+                    "will return `None`. The remote caller interface "
+                    "is meant more for remote operations rather than "
+                    "passing data. Check the return value for any "
+                    "unpickleable objects. "
+                    f"The return value: {result}")
 
     # parent calling interface
 
-    def resolve(self, default=...):
-        if self.is_main:
+    def retrieve(self, default=...):
+        if not self.is_main:  # if you're in the main thread, just run the function.
             return self.resolve_view(self._obj)
-        if self.listening:
+        if self.listening:  # if the remote process is listening, run
             # send command and wait for response
             result_id = random.randint(0, 10000000)
             view = self._as_view()
@@ -242,17 +227,51 @@ class RemoteProxy(RemoteView):
         default = self._default if default is ... else default
         if default is ...:
             raise RuntimeError(f'Remote instance is not running for {self}')
-
-        # warnings.warn(f'Remote instance is not running for {self._obj} - {self._as_view()}. '
-        #               f'Returning default value `{default}`')
         return default
 
+    def get_result(self, result_id, wait=True):
+        '''Get the result from the queue. If there are overlapping calls, and
+        if you pull the result meant for a different thread, save it to
+        the results dictionary and keep pulling results until you get
+        your result id.
+        '''
+        # makes overlapping calls concurrency-safe
+        #
+        while result_id not in self._results and self.listening:
+            if not self._local.empty():
+                out_id, x, exc = self._local.get()
+                if out_id is result_id:
+                    return x, exc
+                self._results[out_id] = x, exc
+            if not wait:
+                break
+            time.sleep(self._delay)
+
+        return self._results.pop(result_id, None)
+
+    ########################################################################
+    # If we don't want to poll for commands in the background and we
+    # want all commands to happen in the main thread, then we can remove
+    # the methods below.
+    ########################################################################
+
+    # running state - to avoid dead locks, let the other process know if you will respond
 
     @property
-    def _(self):
-        return self.resolve(None)
+    def listening(self):
+        '''Is the remote instance listening?'''
+        return bool(self._listening.value)
+
+    @listening.setter
+    def listening(self, value):
+        self._listening.value = int(value)
 
     # remote background listening interface
+
+    def listen(self, block=False):
+        '''Start listening. By default, this will launch in a background thread.'''
+        # print('Starting listening...', self, flush=True)
+        return self._run() if block else self._spawn()
 
     def _spawn(self):
         if self._thread is None:
@@ -329,8 +348,6 @@ class _B(_A):
 
 
 if __name__ == '__main__':
-
-
     def test(a):
         print('str format')
         print(a.remote)
@@ -344,37 +361,37 @@ if __name__ == '__main__':
         print()
         # test attribute, call, return self
         print('remote update')
-        print(a.remote.asdf().asdf())
-        print(a.remote.asdf().asdf()._)
-        print(a.remote.x._, a.x, 40, 10, a.remote.x)
+        print(a.remote.asdf())
+        print(a.remote.asdf())
+        print(a.remote.x.retrieve(), a.x, 20, 20, a.remote.x)
         print()
 
         print('local update')
-        print(a.remote.asdf().asdf())
-        print(a.asdf().asdf())
-        print(a.remote.x._, a.x, 40, 40, a.remote.x)
+        print(a.remote.asdf())
+        print(a.asdf())
+        print(a.remote.x.retrieve(), a.x, 40, 40, a.remote.x)
         print()
         # test property accessing attribute works
         print('property')
-        print(a.remote.zxcv._, a.zxcv, 4., 4., a.remote.zxcv)
+        print(a.remote.zxcv.retrieve(), a.zxcv, 4., 4., a.remote.zxcv)
         print()
 
         print('property')
-        print(a.remote.super.zxcv._, super(type(a), a).zxcv, 8., 8., a.remote.super.zxcv)
+        print(a.remote.super.zxcv.retrieve(), super(type(a), a).zxcv, 8., 8., a.remote.super.zxcv)
         print()
 
         print('local update')
         a.terminate()
-        print(a.remote.term._, a.term, False, True)
+        print(a.remote.term.retrieve(), a.term, False, True)
         a.start()
-        print(a.remote.term._, a.term, False, False)
+        print(a.remote.term.retrieve(), a.term, False, False)
         print()
 
         print('remote update')
-        a.remote.terminate()._
-        print(a.remote.term._, a.term, True, False)
-        a.remote.start()._
-        print(a.remote.term._, a.term, False, False)
+        a.remote.terminate()
+        print(a.remote.term.retrieve(), a.term, True, False)
+        a.remote.start()
+        print(a.remote.term.retrieve(), a.term, False, False)
         print()
         print(flush=True)
 
@@ -382,7 +399,8 @@ if __name__ == '__main__':
     def _run(obj):  # some remote job
         # obj.remote.listen(block=True)
         while True:
-            time.sleep(1)
+            obj.remote.poll()
+            time.sleep(0.0001)
 
     obj = _B()
 
