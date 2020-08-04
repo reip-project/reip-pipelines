@@ -185,7 +185,7 @@ class Store:
 
     def delete(self, ids):
         for i in ids:
-            self.items.pop(i, None)
+            self.items[i] = None
 
 
 
