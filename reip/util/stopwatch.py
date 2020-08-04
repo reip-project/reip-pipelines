@@ -53,6 +53,9 @@ class Stopwatch:
         if len(s) > self._max_samples:
             self._samples[name] = s[len(s)//2:]
 
+    def elapsed(self, name=''):
+        return time.time() - self._ticks[name]
+
     def last(self, name=''):
         ts = self._samples.get(name)
         return ts[-1][1] - ts[-1][0] if ts else None

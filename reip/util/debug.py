@@ -19,5 +19,5 @@ def print_stack(message=None, fn=None):
             (f.function, f.lineno, f.filename, f'>>> {f.code_context[0].strip()}')
             for f in stack[2:]
             if not fn or fn in f.filename
-        ))
+        )), ch=text.yellow('*')
     ))
