@@ -85,37 +85,37 @@ class BaseContext:
     #     pass
 
 
+# import blessed
+
 class Graph(BaseContext):
-    _delay = 0.2
+    _delay = 1e-6
+    _main_delay = 1
 
     # run graph
 
     def run(self, duration=None):
         print(text.b_(text.green('Starting'), self), flush=True)
         try:
-            self.spawn(wait=False)
+            self.spawn()
             print(text.b_(text.green('Ready'), self), flush=True)
+
+            # term = blessed.Terminal()
+            # with term.cbreak(), term.hidden_cursor(), term.fullscreen():
             for _ in timed(loop(), duration):
                 if self.terminated or self.error:
                     break
-                time.sleep(self._delay)
+                # print(term.home + term.normal + self.status())
+                # print(self.status())
+                time.sleep(self._main_delay)
+
+            # curses.nocbreak()
+            # stdscr.keypad(False)
+            # curses.echo()
+            # curses.endwin()
         except KeyboardInterrupt:
             print(text.b_(text.yellow('Interrupting'), self, '--'))
         finally:
             self.join()
-            # if self.context_id is None:
-            self.print_stats()
-
-    # def restart_failed_blocks(self):
-    #     # From Docker:
-    #     # block.restart in {'no', 'always', 'unless-stopped', 'on-failure'}
-    #     for block in self.blocks:
-    #         if block.done:
-    #             if (block.restart_policy == 'always'
-    #                     or (block.restart_policy == 'on-failure' and block.error)):
-    #                 block.spawn()
-    #             elif self.exit_policy == 'one':
-    #                 return True
 
     # state
 
@@ -175,6 +175,13 @@ class Graph(BaseContext):
 
     def summary(self):
         return '\n'.join(s for s in (b.summary() for b in self.blocks) if s)
+
+    def status(self):
+        return text.b_(
+            f'[{self.name}]',
+            text.indent('\n'.join(
+                s for s in (b.status() for b in self.blocks) if s))
+        )
 
     def print_stats(self):
         for block in self.blocks:
