@@ -28,9 +28,11 @@ class Sleep(reip.Block):
 
 
 class Debug(reip.Block):
-    def __init__(self, message='Debug', value=False, **kw):
+    def __init__(self, message='Debug', value=False, period=None, **kw):
         self.message = message
         self.value = value
+        self.period = period
+        self._last_time = 0
         super().__init__(**kw)
 
     def _format(self, x):
@@ -41,11 +43,13 @@ class Debug(reip.Block):
         return type(x), x if self.value else ''
 
     def process(self, *xs, meta=None):
-        print(text.block_text(
-            text.blue(self.message),
-            'buffers:', *[
-                ('\t', i) + tuple(self._format(x))
-                for i, x in enumerate(xs)],
-            ('meta:', meta)
-        ), flush=True)
+        if not self.period or time.time() - self._last_time > self.period:
+            self._last_time = time.time()
+            print(text.block_text(
+                text.blue(self.message),
+                'buffers:', *[
+                    ('\t', i) + tuple(self._format(x))
+                    for i, x in enumerate(xs)],
+                ('meta:', meta)
+            ), flush=True)
         return xs, meta

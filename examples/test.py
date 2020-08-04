@@ -85,17 +85,20 @@ def sonyc():
 
     # audio(10s) -> wav file
     (audio10s.to(B.audio.AudioFile('audio/{time}.wav'))
-     .to(B.TarGz('audio.gz/{time}.wav')))
+     .to(B.TarGz('audio.gz/{time}.tar.gz')))
 
     # audio -> spl -> csv -> tar.gz
     weightings = 'ZAC'
     spl = (
         audio1s.to(B.audio.SPL(calibration=72.54, weighting=weightings))
-        .to(B.Debug('SPL')))
+        .to(B.Debug('SPL', period=4)))
 
     (spl.to(B.Csv('spl/{time}.csv', headers=[
         f'l{w}eq' for w in weightings.lower()], max_rows=10))
      .to(B.TarGz('spl.gz/{time}.tar.gz')))
+
+    # to spectrogram png
+    audio10s.to(B.audio.Stft()).to(B.Debug('Spec')).to(B.audio.Specshow('plots/{time}.png'))
 
     # as separate process
     with reip.Task():
@@ -103,13 +106,13 @@ def sonyc():
         emb_path = os.path.join(MODEL_DIR, 'quantized_default_int8.tflite')
         emb = (
             audio1s.to(B.audio.TfliteStft(emb_path))
-            .to(B.Debug('Embedding')))
+            .to(B.Debug('Embedding', period=4)))
 
         (emb.to(B.Csv('emb/{time}.csv', max_rows=10))
          .to(B.TarGz('emb.gz/{time}.tar.gz')))
         # audio -> embedding -> classes -> csv -> tar.gz
         clsf_path = os.path.join(MODEL_DIR, 'mlp_ust.tflite')
-        clsf = emb.to(B.Tflite(clsf_path)).to(B.Debug('Classification'))
+        clsf = emb.to(B.Tflite(clsf_path)).to(B.Debug('Classification', period=4))
         clsf.to(B.Csv('clsf/{time}.csv', headers=[
             'engine',
             'machinery_impact',
