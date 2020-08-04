@@ -12,16 +12,19 @@ __all__ = ['Block']
 
 class Block:
     '''This is the base instance of a block.'''
+    _thread = None
     _delay = 1e-6
 
     def __init__(self, queue=100, n_source=1, n_sink=1, name=None,
-                 blocking=False, graph=None, max_rate=None):
+                 blocking=False, graph=None, max_rate=None,
+                 wait_all_sources=False):
         self.name = name or f'{self.__class__.__name__}_{id(self)}'
         self.sources = [None for _ in range(n_source)]
         self.sinks = [BufferStore(queue) for _ in range(n_sink)]
         self.context_id = reip.Task.add_if_available(graph, self)
         self.max_rate = max_rate
-        self._put_blocking = blocking
+        self.__put_blocking = blocking
+        self.__wait_all_sources = wait_all_sources
         # signals
         self._reset_state()
         # block timer
@@ -100,11 +103,10 @@ class Block:
                 if self.terminated:
                     break
 
-
-                # check_block(self, 'trans', [s.empty() for s in self.sources], *self.sources)
-                if self.running and all(not s.empty() for s in self.sources):
+                if self.running and (
+                        not self.__wait_all_sources or
+                        all(not s.empty() for s in self.sources)):
                     self.__run_step()
-                    # check_block(self, 'sleep', *self.sinks)
 
                 # sleep to allow other threads to run
                 self._sw.sleep(self._delay)  # adds timer
@@ -133,42 +135,36 @@ class Block:
     def __run_step(self):
         # get items from queue
         with self._sw('source'):
-            inputs = [s.get() for s in self.sources]
+            inputs = [s.get_nowait() for s in self.sources]
 
         # transform input to output
         with self._sw('process'):
             bufs, meta_in = prepare_input(inputs)
             outputs = self.process(*bufs, meta=meta_in)
-            self.processed += 1
         # print(text.green(f"{self} processing took {self._sw.last('process'):.2f}s"))
 
         # feed output to sink, skip if None
         with self._sw('sink'):
-            if outputs is not reip.RETRY:
+            if outputs is reip.RETRY:
+                pass
+            elif outputs is None:
                 for s in self.sources:
                     s.next()
-                if outputs is not None:
-                    outs, meta = prepare_output(outputs, input_meta=meta_in)
-                    for sink, out in zip(self.sinks, outs):
-                        if sink is not None:
-                            sink.put((out, meta), self._put_blocking)
+            else:
+                outs, meta = prepare_output(outputs, input_meta=meta_in)
+                for s, out in zip(self.sources, outs):
+                    if out is not reip.RETRY:
+                        s.next()
+
+                self.processed += 1
+                for sink, out in zip(self.sinks, outs):
+                    if sink is not None:
+                        sink.put((out, meta), self.__put_blocking)
 
     # Thread management
 
-    def summary(self):
-        return text.block_text(
-            text.green(str(self)),
-            'Sources:',
-            text.indent(text.b_(*(f'- {s}' for s in self.sources))),
-            '',
-            'Sinks:',
-            text.indent(text.b_(*(f'- {s}' for s in self.sinks)), 2),
-            ch=text.blue('*'), n=40,
-        )
-
-    _thread = None
     def spawn(self, wait=True):
-        print(text.blue('Spawning'), self, '...')
+        print(text.l_(text.blue('Spawning'), self, '...'))
         print(self.summary())
 
         for i, s in enumerate(self.sources):
@@ -187,17 +183,13 @@ class Block:
         while not self.ready and not self.error and not self.done:
             time.sleep(self._delay)
 
-    def wait_until_done(self):
-        while not self.done and not self.error:
-            time.sleep(self._delay)
-
     def join(self, terminate=True, timeout=0.5):
         if terminate:
             self.terminate()
         if self._thread is None:
             return
 
-        print(text.blue('Joining'), self, '...')
+        print(text.l_(text.blue('Joining'), self, '...'))
         self._thread.join(timeout=timeout)
         # raise any exception
         # if self._exception is not None:
@@ -224,15 +216,38 @@ class Block:
             'sw': self._sw,
         }
 
+    def summary(self):
+        return text.block_text(
+            text.green(str(self)),
+            'Sources:',
+            text.indent(text.b_(*(f'- {s}' for s in self.sources))),
+            '',
+            'Sinks:',
+            text.indent(text.b_(*(f'- {s}' for s in self.sinks)), 2),
+            ch=text.blue('*'), n=40,
+        )
+
+    def status(self):
+        '''
+        e.g. `[Block_123412341 24,580 buffers, 1,230 x/s]`
+        '''
+        n = self.processed
+        total_time = self._sw.elapsed()
+        return f'[{self.name} {n:,} buffers, {n / total_time:,.2f} x/s]'
+
     def print_stats(self):
         total_time = self._sw.stats()[0] if '' in self._sw._samples else 0
         print(text.block_text(
+            # block title
             f'Stats for {text.red(self) if self.error else text.green(self)}',
+            # any exception, if one was raised.
             text.red(f'({type(self._exception).__name__}) {self._exception}')
             if self._exception else None,
+            # basic stats
             f'Processed {self.processed} buffers in {total_time:.2f} sec. '
             f'({self.processed / total_time if total_time else 0:.2f} x/s)',
             f'Dropped: {[getattr(sink, "dropped", None) for sink in self.sinks]}',
+            # timing info
             self._sw, ch=text.blue('*')))
 
 
