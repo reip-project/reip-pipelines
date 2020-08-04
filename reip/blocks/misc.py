@@ -28,23 +28,24 @@ class Sleep(reip.Block):
 
 
 class Debug(reip.Block):
-    def __init__(self, message='Debug', value=True, **kw):
+    def __init__(self, message='Debug', value=False, **kw):
         self.message = message
         self.value = value
         super().__init__(**kw)
 
+    def _format(self, x):
+        if isinstance(x, np.ndarray):
+            if x.size > 40 or x.ndim > 2:
+                return x.shape, x.dtype, x if self.value else '' # , f'{np.isnan(x).sum()} nans'
+            return x.shape, x.dtype, x
+        return type(x), x if self.value else ''
+
     def process(self, *xs, meta=None):
         print(text.block_text(
             text.blue(self.message),
-            'buffers:',
-            *[
-                ('\t', i) + (
-                    (x.shape, x.dtype, x if self.value else '')
-                    if isinstance(x, np.ndarray) and (x.size > 40 or x.ndim > 2) else
-                    (type(x), x if self.value else '')
-                )
-                for i, x in enumerate(xs)
-            ],
+            'buffers:', *[
+                ('\t', i) + tuple(self._format(x))
+                for i, x in enumerate(xs)],
             ('meta:', meta)
         ), flush=True)
         return xs, meta

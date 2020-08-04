@@ -25,5 +25,4 @@ class SomeTransform(reip.Block):
         super().__init__(**kw)
 
     def process(self, *data, meta=None):
-        1/0
         return data, {'offset': self.offset}

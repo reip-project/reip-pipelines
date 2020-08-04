@@ -4,12 +4,16 @@ import numpy as np
 
 class Tflite(reip.Block):
     '''Run a tflite model on the data input.'''
-    def __init__(self, filename, **kw):
+    def __init__(self, filename, labels=None, **kw):
         super().__init__(**kw)
         self.model = load_tflite_model_function(filename)
+        self.labels = labels
 
     def process(self, X, meta):
-        return [self.model(self.get_input_features(X, meta))], meta
+        return (
+            [self.model(self.get_input_features(X, meta))],
+            {'labels': self.labels}
+        )
 
     def get_input_features(self, data, meta):
         return data

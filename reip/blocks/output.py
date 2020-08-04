@@ -5,9 +5,10 @@ import reip
 
 class Csv(reip.Block):
     _fname = _file = _writer = None
-    def __init__(self, filename='{time}.csv', max_rows=1000, **kw):
+    def __init__(self, filename='{time}.csv', headers=None, max_rows=1000, **kw):
         self.filename = filename
         self.max_rows = max_rows
+        self.headers = headers
         self.n_rows = 0
         self.kw = kw
         super().__init__()
@@ -28,6 +29,8 @@ class Csv(reip.Block):
             self._file = open(fname, 'w', newline='')
             self._writer = csv.writer(self._file, **self.kw)
             self.n_rows = 0
+            if self.headers:
+                self._writer.writerow(self.headers)
         return self._writer, closed_file
 
     def close_writer(self):

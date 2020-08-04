@@ -6,8 +6,8 @@ from reip.util.iters import npgenarray
 
 class TfliteStft(B.Tflite):
     '''Run a tflite model on the audio input.'''
-    def __init__(self, filename, sr=None, duration=1, hop_size=0.1, n_fft=1024,
-                 n_mels=64, mel_hop_len=160, fmax=None, **kw):
+    def __init__(self, filename, sr=8000, duration=1, hop_size=0.1, n_fft=1024,
+                 n_mels=64, mel_hop_len=160, **kw):
         super().__init__(filename, **kw)
         self.sr = sr
         self.duration = duration
@@ -15,7 +15,6 @@ class TfliteStft(B.Tflite):
         self.n_fft = n_fft
         self.n_mels = n_mels
         self.mel_hop_len = mel_hop_len
-        self.fmax = fmax
 
     def get_input_features(self, data, meta):
         # load audio
@@ -24,9 +23,11 @@ class TfliteStft(B.Tflite):
         # frame and extract stft
         frames = padframe(
             y, int(sr * self.duration), int(sr * self.hop_size)).T
-        return npgenarray(
+
+        X = npgenarray(
             (self.melstft(frame, sr) for frame in frames),
-            len(frames))
+            len(frames))[..., None]
+        return X
 
     def melstft(self, X, sr):
         # magnitude spectrum
@@ -37,7 +38,7 @@ class TfliteStft(B.Tflite):
         # log mel spectrogram
         return librosa.power_to_db(
             librosa.feature.melspectrogram(
-                S=S, sr=sr, n_mels=self.n_mels, fmax=self.fmax, htk=True),
+                S=S, sr=sr, n_mels=self.n_mels, htk=True),
             amin=1e-10)
 
 
@@ -51,8 +52,10 @@ def load_resample(fname=None, y=None, sr=None, target_sr=None):
     '''Get the audio data at a specified target sample rate.'''
     if y is None:
         y, sr = librosa.load(fname, sr=target_sr)
-    elif sr and target_sr and sr != target_sr:
-        y, sr = librosa.resample(y, sr, target_sr), target_sr
+    else:
+        y = y.reshape(-1, y.shape[1])[:,0]
+        if sr and target_sr and sr != target_sr:
+            y, sr = librosa.resample(y, sr, target_sr), target_sr
     return y, sr
 
 
@@ -63,6 +66,5 @@ def framepadlen(xlen, flen, hlen):
 
 def padframe(y, framelen, hoplen):
     '''Get framed array with zero padding to fill the first/last frames.'''
-    return librosa.util.frame(
-        librosa.util.pad_center(y, framepadlen(len(y), framelen, hoplen)),
-        framelen, hoplen)
+    y = librosa.util.pad_center(y, framepadlen(len(y), framelen, hoplen))
+    return librosa.util.frame(y, framelen, hoplen)
