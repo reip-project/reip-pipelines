@@ -18,7 +18,7 @@ class FasterSimpleQueue(mp.queues.SimpleQueue):
     def put(self, obj):
         # serialize the data before acquiring the lock
         # obj = _ForkingPickler.dumps(obj)
-        obj = pa.serialize(obj).to_buffer().to_pybytes()
+        obj = pa.serialize(obj).to_buffer()
         if self._wlock is None:
             # writes to a message oriented win32 pipe are atomic
             self._writer.send_bytes(obj)
