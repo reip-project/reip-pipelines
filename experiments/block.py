@@ -1,5 +1,6 @@
 from interface import Sink, Source
 from ring_buffer import RingBuffer
+from buffer_producer import Producer
 from buffer_store import BufferStore
 from stopwatch import StopWatch
 import multiprocessing.queues
@@ -59,7 +60,7 @@ class Block(Worker):
             raise ValueError("Not a source")
         self.sources[self._select] = new_source
 
-    def to(self, other, **kw):
+    def to(self, other, plasma=True, faster_queue=True, **kw):
         if not isinstance(other, Block):
             raise ValueError("Not a block")
         if len(self.sinks) == 0:
@@ -69,11 +70,15 @@ class Block(Worker):
 
         if self.sink is None:
             if self._graph_name != other._graph_name:
-                self.sink = BufferStore(self._sink_size)
+                if plasma:
+                    self.sink = BufferStore(self._sink_size, name=self.name, debug=self.verbose)
+                else:
+                    self.sink = Producer(self._sink_size, faster_queue=faster_queue, name=self.name, debug=self.verbose)
+
                 if self.verbose:
-                    print("Store")
+                    print("Store" if plasma else "Producer")
             else:
-                self.sink = RingBuffer(self._sink_size)
+                self.sink = RingBuffer(self._sink_size, name=self.name, debug=self.verbose)
                 if self.verbose:
                     print("Ring")
 
@@ -114,6 +119,9 @@ class Block(Worker):
             print("Spawning block %s.." % self.name)
 
         self.reset()
+        for sink in self.sinks:
+            if not isinstance(sink, (queue.Queue, mp.queues.Queue)):
+                sink.spawn()
         self._thread = threading.Thread(target=self._target, name=self.name, daemon=True)
         self._thread.start()
 
@@ -202,6 +210,9 @@ class Block(Worker):
             self.terminate()
 
         self._thread.join(timeout=0.1)
+        for sink in self.sinks:
+            if not isinstance(sink, (queue.Queue, mp.queues.Queue)):
+                sink.join()
 
         if self.verbose:
             print("Joined block", self.name)
@@ -225,8 +236,8 @@ if __name__ == '__main__':
     def loop():
         global i
         print(i)
-        if i == 7:
-            raise Exception("Test")
+        # if i == 7:
+        #     raise Exception("Test")
         i += 1
         time.sleep(1e-2)
 

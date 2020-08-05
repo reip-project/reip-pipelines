@@ -28,7 +28,11 @@ class RingBuffer(Sink):
 
     def full(self):
         if len(self.readers) > 0:
-            self.tail.counter = min([reader.counter for reader in self.readers])
+            new_counter = min([reader.counter for reader in self.readers])
+            for c in range(self.tail.counter, new_counter):
+                self.slots[c % self.size] = None
+            self.tail.counter = new_counter
+            # self.tail.counter = min([reader.counter for reader in self.readers])
         return (self.head.counter - self.tail.counter) >= (self.size - 1)
 
     def _put(self, buffer):

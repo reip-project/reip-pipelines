@@ -42,7 +42,7 @@ def test2(client):
         with Task("camera") as t:
             # Generator("cam", (1, 1280, 3), max_rate=None)
             # Generator("cam", (2000, 2500, 3), max_rate=None)
-            Generator("cam", (720, 1280, 1), max_rate=None)
+            Generator("cam", (720, 1280, 30), max_rate=None)
             t.cam.to(Transformer("inf", offset=1))
         Consumer("f", prefix="test")
         t.inf.to(p.f)
@@ -51,12 +51,13 @@ def test2(client):
     p.spawn_all()
 
     p.start_all()
-    time.sleep(0.1)
+    time.sleep(1)
     p.stop_all()
 
     p.terminate_all()
     print()
-    p.print_stats()
+    print(p)
+    # p.print_stats()
 
     p.join_all()
 
