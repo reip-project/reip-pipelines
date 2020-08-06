@@ -12,15 +12,16 @@ if __name__ == '__main__':
 
     with Graph("pipeline") as p:
         with Task("camera") as t:
-            # Generator("cam", (1, 1280, 3), max_rate=None)
-            # Generator("cam", (2000, 2500, 3), max_rate=None)
-            Generator("cam", (720, 1280, 1), max_rate=None)
-            t.cam.to(Transformer("inf", offset=1))
-        Consumer("f", prefix="test")
-        t.inf.to(p.f)
+            # Generator("cam", (1, 128, 1), max_rate=None, verbose=True)
+            # Generator("cam", (1, 1280, 3), max_rate=None, verbose=True)
+            # Generator("cam", (2000, 2500, 3), max_rate=None, verbose=True)
+            Generator("cam", (720, 1280, 3), max_rate=None, verbose=True)
+            t.cam.to(Transformer("inf", offset=1, verbose=True))
+        Consumer("f", prefix="test", verbose=True)
+        t.inf.to(p.f, plasma=False, faster_queue=True)
         p.f.sink = queue.Queue()
 
-    p.run(0.1)
+    p.run(1)
 
     files = []
     while not p.f.sink.empty():

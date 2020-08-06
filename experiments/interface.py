@@ -17,8 +17,14 @@ class ImmutableDict(Mapping):
 
 
 class Sink:
-    def __init__(self):
+    def __init__(self, **kw):
         self.dropped = 0
+
+    def spawn(self):
+        pass
+
+    def join(self):
+        pass
 
     def full(self):
         raise NotImplementedError
