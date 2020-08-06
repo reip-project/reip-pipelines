@@ -1,3 +1,4 @@
+import inspect
 from . import text
 
 
@@ -9,7 +10,6 @@ def check_block(block, match='', *a):
 
 
 def print_stack(message=None, fn=None):
-    import inspect
     stack = inspect.stack()
     f = stack[1]
     print(text.block_text(
@@ -21,3 +21,12 @@ def print_stack(message=None, fn=None):
             if not fn or fn in f.filename
         )), ch=text.yellow('*')
     ))
+
+def short_stack(filename=True, sep=' << '):
+    '''Print out a compressed view of the stack.'''
+    return sep.join(
+        (f'{f.function} ({os.path.basename(filename)}:{f.lineno})'
+         if filename else f.function)
+        for f in inspect.stack()[1:]
+        if not fn or fn in f.filename
+    )

@@ -53,6 +53,17 @@ class Stopwatch:
         if len(s) > self._max_samples:
             self._samples[name] = s[len(s)//2:]
 
+    def notock(self, name=''):
+        self._ticks.pop(name, None)
+
+    def iter(self, iterable, name=''):
+        self.tick(name)
+        for item in iterable:
+            self.tock(name)
+            yield item
+            self.tick(name)
+        self.notock(name)
+
     def elapsed(self, name=''):
         return time.time() - self._ticks[name]
 

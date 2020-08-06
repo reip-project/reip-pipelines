@@ -1,45 +1,51 @@
 import numpy as np
 import librosa
-import reip.blocks as B
+# import reip.blocks as B
+# import reip.blocks.ml
 from reip.util.iters import npgenarray
 
 
-class TfliteStft(B.Tflite):
-    '''Run a tflite model on the audio input.'''
-    def __init__(self, filename, sr=8000, duration=1, hop_size=0.1, n_fft=1024,
-                 n_mels=64, mel_hop_len=160, **kw):
-        super().__init__(filename, **kw)
-        self.sr = sr
-        self.duration = duration
-        self.hop_size = hop_size
-        self.n_fft = n_fft
-        self.n_mels = n_mels
-        self.mel_hop_len = mel_hop_len
+# class TfliteStft(B.ml.Tflite):
+#     '''Run a tflite model on the audio input.'''
+#     def __init__(self, filename, sr=8000, duration=1, hop_size=0.1, n_fft=1024,
+#                  n_mels=64, mel_hop_len=160, **kw):
+#         super().__init__(filename, **kw)
+#         self.sr = sr
+#         self.duration = duration
+#         self.hop_size = hop_size
+#         self.n_fft = n_fft
+#         self.n_mels = n_mels
+#         self.mel_hop_len = mel_hop_len
+#
+#
+#
 
-    def get_input_features(self, data, meta):
-        # load audio
-        file, y = (data, None) if isinstance(data, str) else (None, data)
-        y, sr = load_resample(file, y, meta.get('sr'), self.sr)
-        # frame and extract stft
-        frames = padframe(
-            y, int(sr * self.duration), int(sr * self.hop_size)).T
+def ml_stft_inputs(data, meta, **kw):
+    # load audio
+    file, y = (data, None) if isinstance(data, str) else (None, data)
+    y, sr = load_resample(file, y, meta.get('sr'), self.sr)
+    # frame and extract stft
+    frames = padframe(
+        y, int(sr * self.duration), int(sr * self.hop_size)).T
 
-        X = npgenarray(
-            (self.melstft(frame, sr) for frame in frames),
-            len(frames))[..., None]
-        return X
+    X = npgenarray(
+        (melstft(frame, sr) for frame in frames),
+        len(frames))[..., None]
+    return X
 
-    def melstft(self, X, sr):
-        # magnitude spectrum
-        S = np.abs(librosa.core.stft(
-            X, n_fft=self.n_fft, hop_length=self.mel_hop_len,
-            window='hann', center=True, pad_mode='constant'))
+def melstft(X, sr, n_fft=2048, hop_length=512, n_mels=64):
+    # magnitude spectrum
+    S = np.abs(librosa.core.stft(
+        X, n_fft=n_fft, hop_length=hop_length,
+        window='hann', center=True, pad_mode='constant'))
 
-        # log mel spectrogram
-        return librosa.power_to_db(
-            librosa.feature.melspectrogram(
-                S=S, sr=sr, n_mels=self.n_mels, htk=True),
-            amin=1e-10)
+    # log mel spectrogram
+    return librosa.power_to_db(
+        librosa.feature.melspectrogram(
+            S=S, sr=sr, n_mels=n_mels, htk=True),
+        amin=1e-10)
+
+
 
 
 '''

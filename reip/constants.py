@@ -10,3 +10,5 @@ make_token = lambda x: f' |*!@@@{x.upper()}@@@!*| '
 
 # return this from a block and the sources won't be incremented.
 RETRY = make_token('RETRY')
+
+MIN_SLEEP = 1e-6

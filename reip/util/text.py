@@ -34,6 +34,33 @@ def tabindent(x, n=1):
     '''Indent text using tabs.'''
     return indent(x, w=1, n=n, ch='\t')
 
+
+def trim_indent(text, tw=2):
+    '''Remove any common indent from text.
+
+    Arguments:
+        text (str): the text to re-indent.
+        tw (int): the number of spaces per tab character.
+    '''
+    # normalize tabs to spaces
+    lines = text.replace('\t', ' '*tw).splitlines()
+    # get the min indent to norm to
+    m = min([len(l) - len(l.lstrip()) for l in lines if l.strip()], default=0)
+    # rejoin the text with the proper indent
+    return '\n'.join([l[m:] for l in lines])
+
+
+def striplines(text):
+    '''Like text.strip() but it only removes lines with purely whitespace and
+    leaves text indentation.'''
+    lines = text.splitlines()
+    i, j = 0, len(lines)
+    while lines[i].strip():
+        i += 1
+    while lines[j-1].strip():
+        j -= 1
+    return '\n'.join(lines[i:j])
+
 def comment(txt, ch='#', n=1, spaces=1):
     '''Apply prefix to each line. Defaults to python comments.'''
     ch, spaces = ch*n, " "*spaces

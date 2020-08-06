@@ -23,7 +23,7 @@ class Csv(reip.Block):
             # get filename
             fname = self.filename.format(**meta)
             os.makedirs(os.path.dirname(fname), exist_ok=True)
-            print('opening new csv writer:', fname)
+            # print('opening new csv writer:', fname)
             # make writer
             self._fname = fname
             self._file = open(fname, 'w', newline='')
