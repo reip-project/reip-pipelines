@@ -36,6 +36,25 @@ class Constant(reip.Block):
         return [self.value], meta
 
 
+class Increment(reip.Block):
+    index = 0
+    def __init__(self, start=0, stop=None, step=1, **kw):
+        self.start = start
+        self.stop = stop
+        self.step = step
+        super().__init__(**kw)
+
+    def init(self):
+        self.index = self.start
+
+    def process(self, meta=None):
+        if self.stop is not None and self.index >= self.stop - self.step:
+            self.terminate()
+
+        self.index += 1
+        return [self.index], meta
+
+
 class Debug(reip.Block):
     def __init__(self, message='Debug', value=False, period=None, **kw):
         self.message = message
