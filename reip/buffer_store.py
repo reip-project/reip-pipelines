@@ -47,6 +47,10 @@ class Pointer:
     def loop(self):
         return self.counter // self.size
 
+    @property
+    def store_id(self):
+        return self.same_context
+
     def as_basic(self):
         return Pointer(self.size, self.counter)
 
@@ -145,7 +149,6 @@ class Customer(Source):
             text.indent(self.source))
 
     def empty(self):
-        # print(self.source, self.id)
         return self.source.head.counter == self.source.readers[self.id].counter
 
     def last(self):
@@ -154,22 +157,14 @@ class Customer(Source):
     def next(self):
         self.source.readers[self.id].counter += 1
 
-    # XXX: TEMP FIX - see notes in module docstring.
-    _refreshed = None
     def _get(self):
         reader = self.source.readers[self.id]
-        if not self._refreshed:
-            self.source.stores[reader.same_context].refresh()
-            self._refreshed = True
-        return self.source.stores[reader.same_context].get(reader.pos)
+        return self.source.stores[reader.store_id].get(reader.pos)
 
 
 class Store:
     def __init__(self, size):
         self.items = [None] * size
-
-    def refresh(self):
-        pass
 
     def __str__(self):
         return '<{} n={}>'.format(self.__class__.__name__, len(self))
@@ -186,9 +181,6 @@ class Store:
     def delete(self, ids):
         for i in ids:
             self.items[i] = None
-
-
-
 
 
 '''

@@ -3,7 +3,7 @@ import threading
 import traceback
 
 import reip
-from reip.buffer_store import BufferStore
+from reip.stores import Producer
 from reip.util.iters import throttled, timed, loop
 from reip.util import text, check_block
 
@@ -20,7 +20,7 @@ class Block:
                  wait_all_sources=True):
         self.name = name or f'{self.__class__.__name__}_{id(self)}'
         self.sources = [None for _ in range(n_source)]
-        self.sinks = [BufferStore(queue) for _ in range(n_sink)]
+        self.sinks = [Producer(queue) for _ in range(n_sink)]
         self.context_id = reip.Task.add_if_available(graph, self)
         self.max_rate = max_rate
         self.__put_blocking = blocking
