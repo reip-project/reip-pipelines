@@ -261,7 +261,7 @@ def prepare_input(inputs):
         reip.util.Stack({}, *meta))
 
 
-def prepare_output(outputs, input_meta=None):
+def prepare_output(outputs, input_meta=None, expected_length=None):
     '''Take the inputs from block.process and prepare to be passed to block.sinks.'''
 
     bufs, meta = None, None
@@ -269,6 +269,10 @@ def prepare_output(outputs, input_meta=None):
         if len(outputs) == 2:
             bufs, meta = outputs
 
+    if expected_length is not None and len(outputs) != expected_length:
+        raise ValueError(
+            'Expected outputs to have length '
+            f'{expected_length} but got {len(outputs)}')
     if input_meta:
-        meta = reip.util.Stack(meta, input_meta)
-    return bufs or (...,), meta or reip.util.Stack()
+        meta = reip.util.Meta(meta, input_meta)
+    return bufs or (...,), meta or reip.util.Meta()

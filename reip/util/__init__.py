@@ -1,4 +1,4 @@
-from .stack import Stack
+from .meta import Meta
 from .stopwatch import Stopwatch
 from .text import *
 from .debug import *

@@ -1,7 +1,7 @@
 from collections import ChainMap
 
 
-class Stack(ChainMap):
+class Meta(ChainMap):
     '''Merged metadata dict stacks into one. Removes duplicates and empty maps.
     The original input maps can be accessed using `[d for d in stack.sources]`
     '''
