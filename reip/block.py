@@ -38,7 +38,7 @@ class Block:
     def _reset_state(self):
         # state
         self.ready = False
-        self.error = False
+        self.error = False  # QUESTION: can we combine error + _exception?
         self._exception = None
         self.done = False
         # stats
@@ -91,6 +91,7 @@ class Block:
         return self
 
     def to(self, *others, squeeze=True, **kw):
+        '''Connect this blocks sinks to other blocks' sources'''
         outs = [other(self, **kw) for other in others]
         return outs[0] if squeeze and len(outs) == 1 else outs
 
@@ -98,9 +99,6 @@ class Block:
 
     def init(self):
         '''Initialize the block.'''
-
-    def synchronize(self, *buffers):
-        return None
 
     def process(self, *xs, meta=None):
         '''Process data.'''
@@ -118,7 +116,7 @@ class Block:
             print(text.l_(text.green('Starting'), self))
             time.sleep(self._delay)
             with self._sw():
-                self._run(**kw)
+                self._run(self._init_stream(*a, **kw))
 
         except Exception as e:
             self._exception = e
@@ -135,10 +133,10 @@ class Block:
             # profiler.stop()
             # print(profiler.output_text(unicode=True, color=True))
 
-    def _run(self, *a, **kw):
+    def _run(self, stream):
         try:
             # initialize the block
-            stream = self._do_init(*a, **kw)
+            self._do_init()
             # iterate over the input data gathered from the sources
             for buffers, meta in stream:
                 # process each input batch
@@ -149,15 +147,13 @@ class Block:
             # finish up and shut down block
             self._do_finish()
 
-    def _do_init(self, *a, **kw):
+    def _do_init(self):
         '''Initialize the block. Handles block timing and any logging.'''
         # create a new streamer that reads data from sources
-        stream = self._init_stream(*a, **kw)
         with self._sw('init'):
             self.init()
         self.ready = True
         print(text.b_(text.green('Ready'), self), flush=True)
-        return stream
 
     def _init_stream(self, duration=None):
         '''Initialize the source stream.

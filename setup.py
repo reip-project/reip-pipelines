@@ -23,6 +23,11 @@ setuptools.setup(
         'tflite',
         # plotting
         'matplotlib',
+
+        # wifi
+        'ifcfg',
+        'access_points',
+
         # utils
         # 'pycrypto',
         # general
