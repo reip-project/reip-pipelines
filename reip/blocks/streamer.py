@@ -6,6 +6,7 @@ Outstanding issues:
     - is there any way to
 
 '''
+import functools
 import reip
 
 
@@ -30,6 +31,7 @@ class Streamer(reip.Block):
 
 
 def streamer(func=None):
+    @functools.wraps(func)
     def outer(**kw):
         return Streamer(func, **kw)
     return outer
@@ -37,7 +39,6 @@ def streamer(func=None):
 
 # __name__ = '__main__'
 if __name__ == '__main__':
-    import reip
     import reip.blocks as B
 
     @streamer
@@ -57,6 +58,4 @@ if __name__ == '__main__':
      .to(B.Increment())
      .to(custom_block(step=4))  # no stream parameter was making pylint freak out
      .to(B.Debug('asdf')))
-
-    reip.Graph.default
     reip.run(duration=6)

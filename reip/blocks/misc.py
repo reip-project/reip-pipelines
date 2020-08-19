@@ -52,7 +52,7 @@ class Increment(reip.Block):
             self.terminate()
 
         self.index += 1
-        return [self.index], meta
+        return [], {'index': self.index}
 
 
 class Debug(reip.Block):
@@ -83,11 +83,26 @@ class Debug(reip.Block):
         return xs, meta
 
 
+class Results(reip.Block):
+    squeeze = True
+    def __init__(self, squeeze=True, **kw):
+        self.squeeze = squeeze
+        super().__init__(**kw)
+
+    def init(self):
+        self.results = []
+        self.meta = []
+
+    def process(self, *xs, meta=None):
+        self.results.append(xs[0] if self.squeeze and len(xs) == 1 else xs)
+        self.meta.append(meta)
+
+
 class Lambda(reip.Block):
     def __init__(self, func, name=None, **kw):
         self.func = func
         name = name or self.func.__name__
-        if name is '<lambda>':
+        if name == '<lambda>':
             name = 'how to get the signature?'
         super().__init__(name=name, **kw)
 
