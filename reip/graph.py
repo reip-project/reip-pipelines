@@ -3,6 +3,7 @@
 '''
 
 import time
+from contextlib import contextmanager
 
 import reip
 from reip.util.iters import timed, loop
@@ -94,11 +95,7 @@ class Graph(BaseContext):
     # run graph
 
     def run(self, duration=None):
-        print(text.b_(text.green('Starting'), self), flush=True)
-        try:
-            self.spawn()
-            print(text.b_(text.green('Ready'), self), flush=True)
-
+        with self.run_scope():
             # term = blessed.Terminal()
             # with term.cbreak(), term.hidden_cursor(), term.fullscreen():
             for _ in timed(loop(), duration):
@@ -107,11 +104,18 @@ class Graph(BaseContext):
                 # print(term.home + term.normal + self.status())
                 # print(self.status())
                 time.sleep(self._main_delay)
-
             # curses.nocbreak()
             # stdscr.keypad(False)
             # curses.echo()
             # curses.endwin()
+
+    @contextmanager
+    def run_scope(self):
+        print(text.b_(text.green('Starting'), self), flush=True)
+        try:
+            self.spawn()
+            print(text.b_(text.green('Ready'), self), flush=True)
+            yield self
         except KeyboardInterrupt:
             print(text.b_(text.yellow('Interrupting'), self, '--'))
         finally:

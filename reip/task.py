@@ -73,12 +73,12 @@ class Task(reip.Graph):
             self.wait_until_ready()
         self._check_errors()
 
-    def join(self, terminate=True, timeout=0.5):
+    def join(self, timeout=0.5):
         if self._process is None:
             return
 
         print(text.b_(text.blue('Joining'), self))
-        self.remote.super.join(terminate=terminate, default=None)  # join children
+        self.remote.super.join(default=None)  # join children
         self._process.join(timeout=timeout)  # join process
         self._process = None
         self._check_errors()
