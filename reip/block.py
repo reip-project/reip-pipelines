@@ -4,7 +4,6 @@ import traceback
 
 import reip
 from reip.stores import Producer
-from reip.util.iters import throttled, timed, loop
 from reip.util import text, check_block
 
 __all__ = ['Block']
@@ -16,12 +15,18 @@ class Block:
     _stream = None
     _delay = 1e-6
 
-    def __init__(self, queue=100, n_source=1, n_sink=1, name=None,
+    def __init__(self, queue=100, n_source=None, n_sink=1, name=None,
                  blocking=False, graph=None, max_rate=None, **kw):
         self.name = name or f'{self.__class__.__name__}_{id(self)}'
-        self.sources = [None for _ in range(n_source)]
-        self.sinks = [Producer(queue) for _ in range(n_sink)]
         self.context_id = reip.Task.add_if_available(graph, self)
+
+        # sources and sinks
+        self.n_expected_sources = n_source
+        self.sources = []
+        self.sinks = [
+            Producer(queue, context_id=self.context_id)
+            for _ in range(n_sink)]
+
         self.max_rate = max_rate
         self._put_blocking = blocking
         # signals
@@ -47,10 +52,42 @@ class Block:
     # Graph definition
 
     def __call__(self, *others, **kw):
+        '''Connect other block sinks to this blocks sources.
+        If the blocks have multiple sinks, they will be passed as additional
+        inputs.
+        '''
+        j = 0
         for i, other in enumerate(others):
-            # TODO: how to allow for sinks with empty buffers (but not empty meta)?
-            self.sources[i] = other.sinks[0].gen_source(
-                self.context_id == other.context_id, **kw)
+            # permit argument to be a block
+            # permit argument to be a sink or a list of sinks
+            sinks = (
+                other.sinks if isinstance(other, Block) else
+                reip.util.as_list(other))
+
+            # if we have an expected number of sources, truncate
+            n_over = self.n_expected_sources and max(
+                j + len(sinks) - self.n_expected_sources, 0)
+            if n_over:
+                sinks = sinks[:n_over]
+
+            # make sure we don't get an index error, pre-pad with None
+            n_to_add = max(j + len(sinks) - len(self.sources), 0)
+            if n_to_add:
+                self.sources.extend((None,) * n_to_add)
+
+            # connect each sink
+            for j, sink in enumerate(sinks, j):
+                self.sources[j] = sink.gen_source(
+                    context_id=self.context_id, **kw)
+
+            # don't overwrite last index
+            if sinks:
+                j += 1
+            # otherwise you'd get 0, 1, 2, 3, 3, 4, 5, 6, 6, 7...
+
+            # if we had to truncate, then we're done
+            if n_over:
+                break
         return self
 
     def to(self, *others, squeeze=True, **kw):
@@ -184,9 +221,11 @@ class Block:
         print(text.l_(text.blue('Spawning'), self, '...'))
         print(self.summary())
 
-        for i, s in enumerate(self.sources):
-            if s is None:
-                raise RuntimeError(f"Source {i} in {self} not connected")
+        self._check_source_connections()
+        # spawn any sinks that need it
+        for s in self.sinks:
+            if hasattr(s, 'spawn'):
+                s.spawn()
         self._reset_state()
         self.resume()
         self._thread = threading.Thread(target=self._main)
@@ -195,6 +234,19 @@ class Block:
 
         if wait:
             self.wait_until_ready()
+
+    def _check_source_connections(self):
+        # check for exact source count
+        if (self.n_expected_sources is not None
+                and len(self.sources) != self.n_expected_sources):
+            raise RuntimeError(
+                f'Expected {self.n_expected_sources} sources '
+                f'in {self}. Found {len(self.sources)}.')
+
+        # check for any empty sources
+        disconnected = [i for i, s in enumerate(self.sources) if s is None]
+        if disconnected:
+            raise RuntimeError(f"Sources {disconnected} in {self} not connected.")
 
     def wait_until_ready(self):
         while not self.ready and not self.error and not self.done:
