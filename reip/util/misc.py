@@ -10,6 +10,10 @@ def ensure_dir(fname):
     return fname
 
 
+def adjacent_file(file, *f):
+    return os.path.join(os.path.dirname(file), *f)
+
+
 def as_list(x):
     '''Convert or wrap value as a list.
 
@@ -23,6 +27,20 @@ def as_list(x):
         x if isinstance(x, list)
         else list(x) if isinstance(x, tuple)
         else [x])
+
+def squeeze(x):
+    '''If the input is a one-element list or tuple, take the first element.
+    (removes an unnecessary container.)
+
+    Examples:
+    >>> assert squeeze([5]) == 5
+    >>> assert squeeze((1,)) == 1
+    >>> assert squeeze([1, 2]) == [1, 2]
+    >>> assert squeeze('asdf') == 'asdf'
+    >>> assert squeeze(('asdf',)) == 'asdf'
+    >>> assert squeeze((1, 2)) == (1, 2)
+    '''
+    return x[0] if isinstance(x, (list, tuple)) and len(x) == 1 else x
 
 
 # class MpValueProp:

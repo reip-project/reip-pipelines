@@ -5,8 +5,8 @@ class Meta(ChainMap):
     '''Merged metadata dict stacks into one. Removes duplicates and empty maps.
     The original input maps can be accessed using `[d for d in stack.sources]`
     '''
-    def __init__(self, *maps):
-        super().__init__(*ordered_unique(flatten_maps(*maps)))
+    def __init__(self, *maps, filter=False):
+        super().__init__(*ordered_unique(flatten_maps(*maps, filter=filter)))
         self.sources = maps
 
     def update(self, *a, **kw):
@@ -14,12 +14,12 @@ class Meta(ChainMap):
         return self
 
 
-def flatten_maps(*metas):
+def flatten_maps(*metas, filter=False):
     '''Flatten nested chain maps.'''
     for m in metas:
         if isinstance(m, ChainMap):
-            yield from flatten_maps(*m.maps)
-        elif m:
+            yield from flatten_maps(*m.maps, filter=filter)
+        elif not filter or m:
             yield m
 
 

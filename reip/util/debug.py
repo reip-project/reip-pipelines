@@ -1,3 +1,4 @@
+import os
 import inspect
 from . import text
 
@@ -22,11 +23,11 @@ def print_stack(message=None, fn=None):
         )), ch=text.yellow('*')
     ))
 
-def short_stack(filename=True, sep=' << '):
+def short_stack(match=None, file=False, sep=' << '):
     '''Print out a compressed view of the stack.'''
     return sep.join(
-        (f'{f.function} ({os.path.basename(filename)}:{f.lineno})'
-         if filename else f.function)
+        (f'{f.function} ({os.path.basename(f.filename)}:{f.lineno})'
+         if file else f.function)
         for f in inspect.stack()[1:]
-        if not fn or fn in f.filename
+        if not match or match in f.filename
     )
