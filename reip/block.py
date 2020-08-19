@@ -168,11 +168,7 @@ class Block:
         the run function, e.g. wrap it with a timer, or additional formatting.
         '''
         # create a stream from sources with a custom control loop
-        self._stream = reip.Stream(
-            self.sources,
-            throttled(
-                timed(loop(), duration),
-                self.max_rate, self._delay))
+        self._stream = reip.Stream.from_block_sources(self, duration=duration)
         # wrap stream in a timer
         return self._sw.iter(self._stream, 'source')
 
@@ -196,16 +192,19 @@ class Block:
             # retry all sources
             if outputs is reip.RETRY:
                 pass
+            elif outputs is reip.CLOSE:
+                self.close()
+            elif outputs is reip.TERMINATE:
+                self.terminate()
             # increment sources but don't have any outputs to send
             elif outputs is None:
-                for s in self.sources:
-                    s.next()
+                self._stream.next()
             # increment sources and send outputs
             else:
                 # convert outputs to a consistent format
                 outs, meta = prepare_output(outputs, input_meta=meta_in)
                 # increment sources
-                for s, out in zip(self.sources, outs):
+                for s, out in zip(self._stream.sources, outs):
                     if out is not reip.RETRY:
                         s.next()
 
@@ -252,14 +251,21 @@ class Block:
         while not self.ready and not self.error and not self.done:
             time.sleep(self._delay)
 
-    def join(self, terminate=True, timeout=0.5):
+    def join(self, terminate=False, timeout=0.5):
+        print(text.l_(text.blue('Joining'), self, '...'))
+        # close stream
+        self.close()
         if terminate:
             self.terminate()
-        if self._thread is None:
-            return
 
-        print(text.l_(text.blue('Joining'), self, '...'))
-        self._thread.join(timeout=timeout)
+        # close thread
+        if self._thread is not None:
+            self._thread.join(timeout=timeout)
+
+        # join any sinks that need it
+        for s in self.sinks:
+            if hasattr(s, 'join'):
+                s.join()
         # raise any exception
         # if self._exception is not None:
         #     raise Exception(f'Exception in {self}') from self._exception
@@ -274,9 +280,13 @@ class Block:
         if self._stream is not None:
             self._stream.resume()
 
-    def terminate(self):
+    def close(self):
         if self._stream is not None:
             self._stream.close()
+
+    def terminate(self):
+        if self._stream is not None:
+            self._stream.terminate()
 
     # XXX: this is temporary. idk how to elegantly handle this
     @property
