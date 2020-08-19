@@ -32,6 +32,12 @@ class Sink:
         self.dropped = 0
         self._full_delay = 1e-6
 
+    def spawn(self):
+        pass
+
+    def join(self):
+        pass
+
     def full(self):
         raise NotImplementedError
 

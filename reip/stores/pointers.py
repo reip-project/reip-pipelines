@@ -2,7 +2,6 @@ import multiprocessing as mp
 
 
 class Pointer:
-    same_context = True
     def __init__(self, size, counter=0):
         self.counter = counter
         self.size = size
@@ -20,10 +19,6 @@ class Pointer:
     def loop(self):
         return self.counter // self.size
 
-    @property
-    def store_id(self):
-        return self.same_context
-
     def as_basic(self):
         return Pointer(self.size, self.counter)
 
@@ -32,7 +27,6 @@ class Pointer:
 
 
 class SharedPointer(Pointer):
-    same_context = False
     def __init__(self, size, counter=0):
         self._counter = mp.Value('i', counter, lock=False)
         super().__init__(size, counter)

@@ -3,9 +3,10 @@ from reip.util import text
 
 
 class Customer(Source):
-    def __init__(self, source, index, **kw):
+    def __init__(self, source, index, store_id, **kw):
         self.source = source
         self.id = index
+        self.store_id = store_id
         super().__init__(**kw)
 
     def __str__(self):
@@ -19,7 +20,7 @@ class Customer(Source):
 
     @property
     def store(self):
-        return self.source.stores[self.cursor.store_id]
+        return self.source.stores[self.store_id]
 
     def empty(self):
         return self.source.head.counter == self.cursor.counter

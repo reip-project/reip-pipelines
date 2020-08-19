@@ -80,21 +80,22 @@ class PlasmaStore(BaseStore):
         self.client.delete([self.ids[id] for id in ids])
 
 
+TYPE = '__PLASMA_SERIALIZE_DTYPE__'
+
 def save_both(client, data, meta=None, id=None):
     # t0 = time.time()
     # print("Saving data with meta...")
-    if meta is None:
-        meta = {}
+    meta = dict(meta) if meta else {}  # make a copy, don't modify the original dict
 
     if data is None:
-        meta["type"] = "void"
+        meta[TYPE] = "void"
         object_size = 0
     elif isinstance(data, str):
-        meta["type"] = "string"
+        meta[TYPE] = "string"
         data = data.encode("utf-8")
         object_size = len(data)
     elif isinstance(data, np.ndarray):
-        meta["type"] = "array"
+        meta[TYPE] = "array"
         tensor = pa.Tensor.from_numpy(data)
         object_size = pa.ipc.get_tensor_size(tensor)
     else:
@@ -123,17 +124,17 @@ def load_both(client, id):
 
     meta, data = client.get_buffers([id], timeout_ms=1, with_meta=True)[0]
     meta = pa.deserialize(meta)
-
-    if meta["type"] == "void":
+    dtype = meta.pop(TYPE)
+    if dtype == "void":
         data = None
-    elif meta["type"] == "string":
+    elif dtype == "string":
         data = data.to_pybytes().decode("utf-8")
-    elif meta["type"] == "array":
+    elif dtype == "array":
         reader = pa.BufferReader(data)
         tensor = pa.ipc.read_tensor(reader)
         data = tensor.to_numpy()
     else:
-        raise ValueError("Unsupported data type", meta["type"])
+        raise ValueError("Unsupported data type", dtype)
 
     # print("Loading data with meta took", time.time() - t0)
     return data, meta

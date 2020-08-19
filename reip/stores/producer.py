@@ -2,13 +2,14 @@ from .pointers import Pointer
 from ..interface import Sink
 from .store import Store
 from .plasma import PlasmaStore
-from .customer import Customer
+from .client_store import ClientStore
 
 
 class Producer(Sink):
-    def __init__(self, size, delete_rate=5, **kw):
+    def __init__(self, size, delete_rate=5, context_id=None, **kw):
         self.size = size + 1  # need extra slot because head == tail means empty
         self.delete_rate = delete_rate
+        self.context_id = context_id
         self.stores = {}
         self.head = Pointer(self.size)
         self.tail = Pointer(self.size)
@@ -21,11 +22,22 @@ class Producer(Sink):
             [str(p) for p in self.readers],
             [str(s) for s in self.stores.values()])
 
+    def spawn(self):
+        for store in self.stores.values():
+            if hasattr(store, 'spawn'):
+                store.spawn()
+
+    def join(self):
+        for store in self.stores.values():
+            if hasattr(store, 'join'):
+                store.join()
+
     def full(self):
         self._trim()
         return (self.head.counter - self.tail.counter) >= (self.size - 1)
 
     def _trim(self):
+        '''Delete any stale items from the queue.'''
         if self.readers:
             # get the number of stale entries
             new_value = min(reader.counter for reader in self.readers)
@@ -41,21 +53,43 @@ class Producer(Sink):
     def _put(self, buffer):
         '''Send data to stores.'''
         data, meta = buffer
+        meta = meta or {}
         for store in self.stores.values():
-            store.put(data, dict(meta or {}), id=self.head.pos)
+            store.put(data, meta, id=self.head.pos)
         self.head.counter += 1
 
-    def gen_source(self, same_context=True, **kw):
-        # create the store if it doesn't exist already
-        if same_context not in self.stores:  # use True/False as store keys
-            self.stores[same_context] = (
-                Store(self.size) if same_context else PlasmaStore(self.size))
+    def gen_source(self, context_id=None, throughput='small', **kw):
+        '''Generate a source from this sink.
 
-            if not same_context:  # convert pointers to shared pointers if needed.
+        Arguments:
+            context_id (str): the identifier for the task.
+            throughput (str): The size of data. This determines the serialization
+                method to use. Should be:
+                 - 'small' for data < 1GB
+                 - 'medium' for data < 3GB
+                 - 'large' for data > 3GB
+            **kwargs: arguments to pass to `store.Customer`.
+        '''
+        # create the store if it doesn't exist already
+        same_context = context_id == self.context_id
+        store_id = same_context, throughput
+        if store_id not in self.stores:  # use True/False as store keys
+            if same_context:
+                store = Store(self.size)
+            else:
+                if throughput == 'large':
+                    store = PlasmaStore(self.size)
+                else:
+                    store = ClientStore(self.size)
+                    if throughput == 'medium':
+                        kw['faster_queue'] = True
+
+                # convert pointers to shared pointers
                 self.head = self.head.as_shared()
                 self.tail = self.tail.as_shared()
+            self.stores[store_id] = store
 
         # create a customer and a pointer.
-        store = self.stores[same_context]
+        store = self.stores[store_id]
         self.readers.append(store.Pointer(self.size, self.tail.counter))
-        return store.Customer(self, len(self.readers) - 1, **kw)
+        return store.Customer(self, len(self.readers) - 1, store_id=store_id, **kw)

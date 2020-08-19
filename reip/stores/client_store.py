@@ -1,3 +1,10 @@
+'''
+
+TODO:
+ - call Store.spawn, .join from Producer
+ - test
+
+'''
 import time
 import threading
 import multiprocessing as mp
@@ -11,11 +18,11 @@ from .queues import FasterSimpleQueue
 
 class QueueCustomer(Customer):
     cache = None
-    def __init__(self, source, **kw):
-        super().__init__(**kw)
+    def __init__(self, *a, faster_queue=False, **kw):
+        super().__init__(*a, **kw)
         self.requested = mp.Value(c_bool, False, lock=False)
         self.data_queue = (
-            FasterSimpleQueue(ctx=mp.get_context()) if source.faster_queue else
+            FasterSimpleQueue(ctx=mp.get_context()) if faster_queue else
             mp.SimpleQueue())
         self.store.customers.append(self)  # circular reference - garbage collection issue?
 
@@ -82,7 +89,7 @@ class ClientStore(Store):
             for c in self.customers:
                 if c.requested.value:
                     c.requested.value = False
-                    c.data_queue.put(self.items[c.reader.pos])
+                    c.data_queue.put(self.items[c.cursor.pos])
             time.sleep(1e-6)
         if self.debug:
             print("Exiting producer", self)

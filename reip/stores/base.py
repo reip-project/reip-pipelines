@@ -1,8 +1,10 @@
 from .pointers import Pointer
+from .customer import Customer
 
 
 class BaseStore:
     Pointer = Pointer
+    Customer = Customer
 
     def __str__(self):
         return '<{} n={}>'.format(self.__class__.__name__, len(self))
