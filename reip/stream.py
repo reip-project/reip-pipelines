@@ -80,6 +80,23 @@ class Stream:
     def get(self):
         return prepare_input([s.get_nowait() for s in self.sources])
 
+    @classmethod
+    def from_block_sources(cls, block, duration=None, max_rate=None):
+        '''Generate a stream using a block's sources.'''
+        loop = iters.throttled(
+            iters.timed(iters.loop(), duration),
+            max_rate or block.max_rate, block._delay)
+        return cls(block.sources, loop=loop)
+
+    @classmethod
+    def from_block(cls, block, duration=None, max_rate=None):
+        '''Generate a stream using sources generated from a block's sinks.'''
+        sources = [sink.gen_source() for sink in block.sinks]
+        loop = iters.throttled(
+            iters.timed(iters.loop(), duration),
+            max_rate or block.max_rate, block._delay)
+        return cls(sources, loop=loop)
+
 
 
 def prepare_input(inputs):
