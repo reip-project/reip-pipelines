@@ -10,13 +10,30 @@ __all__ = ['Block']
 
 
 class Block:
-    '''This is the base instance of a block.'''
+    '''This is the base instance of a block.
+
+    Arguments:
+        queue (int): the maximum queue length.
+        n_source (int, or None): the number of sources to expect. If None,
+            it will accept a variable number of sources.
+        n_sink (int): the number of sinks to expect.
+        blocking (bool): should the block wait for sinks to have a free space
+            before processing more items?
+        max_rate (int): the maximum number of iterations per second. If the block
+            processes items any faster, it will throttle and sleep the required
+            amount of time to meet that requirement.
+            e.g. if max_rate=5, then an iteration will take at minimum 0.2s.
+        propagate_signals (bool): If a block receives a signal (e.g. TERMINATE)
+            from its sources, should it propagate that signal to its sinks?
+        graph (reip.Graph, reip.Task, or False): the graph instance to be added to.
+        name ()
+    '''
     _thread = None
     _stream = None
     _delay = 1e-6
 
-    def __init__(self, queue=100, n_source=None, n_sink=1, name=None,
-                 blocking=False, graph=None, max_rate=None, **kw):
+    def __init__(self, queue=1000, n_source=None, n_sink=1, blocking=False,
+                 max_rate=None, propagate_signals=True, graph=None, name=None, **kw):
         self.name = name or f'{self.__class__.__name__}_{id(self)}'
         self.context_id = reip.Task.add_if_available(graph, self)
 
@@ -29,6 +46,7 @@ class Block:
 
         self.max_rate = max_rate
         self._put_blocking = blocking
+        self._propagate_signals = propagate_signals
         # signals
         self._reset_state()
         # block timer
@@ -46,8 +64,16 @@ class Block:
         # self._sw.reset()
 
     def __repr__(self):
-        return '[Block({}): ({} in, {} out)]'.format(
-            self.name, len(self.sources), len(self.sinks))
+        state = (
+            (type(self._exception).__name__
+             if self._exception is not None else 'error') if self.error else
+            ('terminated' if self.terminated else 'done') if self.done else
+            ('running' if self.running else 'paused') if self.ready else
+            '--'  # ??
+        )  # add "uptime 35.4s"
+        return '[Block({}): ({} in, {} out; {} processed) - {}]'.format(
+            self.name, len(self.sources), len(self.sinks), self.processed,
+            state)
 
     # Graph definition
 
@@ -95,6 +121,9 @@ class Block:
         outs = [other(self, **kw) for other in others]
         return outs[0] if squeeze and len(outs) == 1 else outs
 
+    def output_stream(self, **kw):
+        return reip.Stream.from_block(self, **kw)
+
     # User Interface
 
     def init(self):
@@ -127,6 +156,7 @@ class Block:
             )))
         except KeyboardInterrupt:
             print(text.b_(text.yellow('\nInterrupting'), self))
+            raise
         finally:
             self.print_stats()
 
@@ -164,7 +194,8 @@ class Block:
         the run function, e.g. wrap it with a timer, or additional formatting.
         '''
         # create a stream from sources with a custom control loop
-        self._stream = reip.Stream.from_block_sources(self, duration=duration)
+        self._stream = reip.Stream.from_block_sources(
+            self, duration=duration, name=self.name)
         # wrap stream in a timer
         return self._sw.iter(self._stream, 'source')
 
@@ -178,6 +209,10 @@ class Block:
     def _do_finish(self):
         '''Cleanup block. Handles block timing and any logging.'''
         self._stream.close()  # may be redundant
+        # propagate stream signals to sinks e.g. CLOSE
+        if self._propagate_signals and self._stream.signal is not None:
+            self.emit_signal(self._stream.signal)
+        # run block finish
         with self._sw('finish'):
             self.finish()
         self.done = True
@@ -186,12 +221,16 @@ class Block:
         '''Send the outputs to the sink.'''
         with self._sw('sink'):
             # retry all sources
-            if outputs is reip.RETRY:
+            if outputs == reip.RETRY:
                 pass
-            elif outputs is reip.CLOSE:
+            elif outputs == reip.CLOSE:
                 self.close()
-            elif outputs is reip.TERMINATE:
+                if self._propagate_signals:
+                    self.emit_signal(reip.CLOSE)
+            elif outputs == reip.TERMINATE:
                 self.terminate()
+                if self._propagate_signals:
+                    self.emit_signal(reip.TERMINATE)
             # increment sources but don't have any outputs to send
             elif outputs is None:
                 self._stream.next()
@@ -201,7 +240,7 @@ class Block:
                 outs, meta = prepare_output(outputs, input_meta=meta_in)
                 # increment sources
                 for s, out in zip(self._stream.sources, outs):
-                    if out is not reip.RETRY:
+                    if out != reip.RETRY:
                         s.next()
 
                 # pass to sinks
@@ -209,6 +248,12 @@ class Block:
                 for sink, out in zip(self.sinks, outs):
                     if sink is not None:
                         sink.put((out, meta), self._put_blocking)
+
+    def emit_signal(self, signal, block=True, meta=None):
+        print(text.yellow(text.l_(self, 'sending', signal)))
+        for sink in self.sinks:
+            if sink is not None:
+                sink.put((signal, meta or {}), block=block)
 
     # Thread management
 
@@ -247,21 +292,22 @@ class Block:
         while not self.ready and not self.error and not self.done:
             time.sleep(self._delay)
 
-    def join(self, terminate=False, timeout=0.5):
+    def join(self, close=True, terminate=False, timeout=0.5):
         print(text.l_(text.blue('Joining'), self, '...'))
         # close stream
-        self.close()
+        if close:
+            self.close()
         if terminate:
             self.terminate()
-
-        # close thread
-        if self._thread is not None:
-            self._thread.join(timeout=timeout)
 
         # join any sinks that need it
         for s in self.sinks:
             if hasattr(s, 'join'):
                 s.join()
+
+        # close thread
+        if self._thread is not None:
+            self._thread.join(timeout=timeout)
         # raise any exception
         # if self._exception is not None:
         #     raise Exception(f'Exception in {self}') from self._exception
@@ -291,7 +337,7 @@ class Block:
 
     @property
     def terminated(self):
-        return self._stream.closed if self._stream is not None else False
+        return self._stream.terminated if self._stream is not None else False
 
     # debug
 
@@ -307,10 +353,10 @@ class Block:
         return text.block_text(
             text.green(str(self)),
             'Sources:',
-            text.indent(text.b_(*(f'- {s}' for s in self.sources))),
+            text.indent(text.b_(*(f'- {s}' for s in self.sources)) or None, w=4)[2:],
             '',
             'Sinks:',
-            text.indent(text.b_(*(f'- {s}' for s in self.sinks)), 2),
+            text.indent(text.b_(*(f'- {s}' for s in self.sinks)) or None, w=4)[2:],
             ch=text.blue('*'), n=40,
         )
 

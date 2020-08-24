@@ -5,6 +5,19 @@ import reip
 from reip.util import text
 
 
+class Iterator(reip.Block):
+    '''Call this function every X seconds'''
+    def __init__(self, iterator, **kw):
+        self.iterator = iter(iterator)
+        super().__init__(n_source=0, **kw)
+
+    def process(self, meta=None):
+        try:
+            return [next(self.iterator)], {}
+        except StopIteration:
+            return reip.CLOSE
+
+
 class Interval(reip.Block):
     '''Call this function every X seconds'''
     def __init__(self, seconds=2, **kw):

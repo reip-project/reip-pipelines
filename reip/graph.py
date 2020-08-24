@@ -29,6 +29,9 @@ class BaseContext:
         '''Add block to graph.'''
         self.blocks.append(block)
 
+    def clear(self):
+        self.blocks.clear()
+
     # global instance management
 
     @classmethod
@@ -90,7 +93,7 @@ class BaseContext:
 
 class Graph(BaseContext):
     _delay = 1e-6
-    _main_delay = 1
+    _main_delay = 0.1
 
     # run graph
 
@@ -99,7 +102,7 @@ class Graph(BaseContext):
             # term = blessed.Terminal()
             # with term.cbreak(), term.hidden_cursor(), term.fullscreen():
             for _ in timed(loop(), duration):
-                if self.terminated or self.error:
+                if self.done:
                     break
                 # print(term.home + term.normal + self.status())
                 # print(self.status())
@@ -118,6 +121,7 @@ class Graph(BaseContext):
             yield self
         except KeyboardInterrupt:
             print(text.b_(text.yellow('Interrupting'), self, '--'))
+            raise
         finally:
             self.join()
 
@@ -159,7 +163,9 @@ class Graph(BaseContext):
         while not self.ready and not self.error and not self.done:
             time.sleep(self._delay)
 
-    def join(self, terminate=True, **kw):
+    def join(self, close=True, terminate=False, **kw):
+        if close:
+            self.close()
         if terminate:
             self.terminate()
         for block in self.blocks:
@@ -172,6 +178,10 @@ class Graph(BaseContext):
     def resume(self):
         for block in self.blocks:
             block.resume()
+
+    def close(self):
+        for block in self.blocks:
+            block.close()
 
     def terminate(self):
         for block in self.blocks:

@@ -2,11 +2,16 @@ import os
 import time
 import reip
 import reip.blocks as B
-import reip.blocks.os_watch
+
 
 
 def test_misc():
-    pass
+    data = list(range(10))
+    with reip.Graph() as g:
+        results = reip.Stream.from_block(B.Iterator(data))
+
+    with g.run_scope():
+        assert list(results) == data
 
 
 def test_output():
@@ -25,6 +30,7 @@ def test_archive():
 
 
 def test_os():
+    import reip.blocks.os_watch
     # create file - see if emitted
     # modify file - see if emitted
     # move file - see if emitted
