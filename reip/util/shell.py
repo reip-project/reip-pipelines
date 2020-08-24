@@ -37,14 +37,18 @@ def run(cmd, *a, **kw):
     # NOTE: notice how because -I is None, it gets filtered out.
 
     '''
-    cmd = cmd.format(
-        *(ShellArg(x) for x in a),
-        **{k: ShellArg(v) for k, v in kw.items()})
+    cmd = build(cmd, *a, **kw)
     r = subprocess.run(
         cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         check=False, shell=True)
 
     return ShellResult(r.stdout.decode('utf-8'), r.stderr.decode('utf-8'), cmd)
+
+
+def build(cmd, *a, **kw):
+    return cmd.format(
+        *(ShellArg(x) for x in a),
+        **{k: ShellArg(v) for k, v in kw.items()})
 
 
 class ShellArg:

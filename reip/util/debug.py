@@ -10,24 +10,28 @@ def check_block(block, match='', *a):
         print(text.block_text(str(block), text.l_(*a)), flush=True)
 
 
-def print_stack(message=None, fn=None):
+def block_stack(message=None, fn=None, offset=0):
     stack = inspect.stack()
-    f = stack[1]
-    print(text.block_text(
+    f = stack[offset+1]
+    return text.block_text(
         message,
         text.blue(text.l_(f.function, f.lineno, f.filename)), '',
         text.tbl(*(
             (f.function, f.lineno, f.filename, f'>>> {f.code_context[0].strip()}')
-            for f in stack[2:]
+            for f in stack[offset+2:]
             if not fn or fn in f.filename
         )), ch=text.yellow('*')
-    ))
+    )
 
-def short_stack(match=None, file=False, sep=' << '):
+def print_stack(message=None, *a, offset=0, **kw):
+    print(block_stack(message, *a, offset=offset + 1, **kw))
+
+
+def short_stack(match=None, file=False, sep=' << ', n=None):
     '''Print out a compressed view of the stack.'''
     return sep.join(
         (f'{f.function} ({os.path.basename(f.filename)}:{f.lineno})'
          if file else f.function)
-        for f in inspect.stack()[1:]
+        for f in inspect.stack()[1:][:n]
         if not match or match in f.filename
     )
