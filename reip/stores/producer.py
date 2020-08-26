@@ -71,7 +71,9 @@ class Producer(Sink):
             **kwargs: arguments to pass to `store.Customer`.
         '''
         # create the store if it doesn't exist already
-        same_context = context_id == self.context_id
+        same_context = (
+            context_id is None or self.context_id is None or
+            context_id == self.context_id)
         store_id = same_context, throughput
         if store_id not in self.stores:  # use True/False as store keys
             if same_context:
