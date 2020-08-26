@@ -12,14 +12,15 @@ import reip
 
 class Streamer(reip.Block):
     _stream = _block = None
-    def __init__(self, new, name=None, **kw):
+    def __init__(self, new, *a, name=None, **kw):
         self._new_block = new
+        self._extra_args = a
         self.__class__ = type(new.__name__, (self.__class__,), {})
         super().__init__(name=name, **kw)
 
     def _init_stream(self):
         stream = super()._init_stream()
-        self._block = self._new_block(stream, **self.extra_kw)
+        self._block = self._new_block(stream, *self._extra_args, **self.extra_kw)
         return self._block  # self._sw.iter(self._block, 'process')
 
     def finish(self):
@@ -32,9 +33,21 @@ class Streamer(reip.Block):
 
 def streamer(func=None):
     @functools.wraps(func)
-    def outer(**kw):
-        return Streamer(func, **kw)
+    def outer(*a, **kw):
+        return Streamer(func, *a, **kw)
     return outer
+
+
+class _ProcessFunctionBlock(reip.Block):
+    _BLOCK_INIT_ARGS = {}
+    def __init__(self, *a, **kw):
+        super().__init__(*a, **self._BLOCK_INIT_ARGS, **kw)
+
+@reip.util.decorator
+def process_func(func, **kw):
+    return type(func.__name__, (_ProcessFunctionBlock,), {
+        'process': func, '_BLOCK_INIT_ARGS': kw
+    })
 
 
 # __name__ = '__main__'
