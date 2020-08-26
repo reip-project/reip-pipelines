@@ -13,7 +13,8 @@ class Iterator(reip.Block):
 
     def process(self, meta=None):
         try:
-            return [next(self.iterator)], {}
+            x = next(self.iterator)
+            return [x], {}
         except StopIteration:
             return reip.CLOSE
 
@@ -26,8 +27,25 @@ class Interval(reip.Block):
 
     def process(self, meta=None):
         time.sleep(self.seconds)
-        meta['time'] = time.time()
-        return (), {'time': time.time()}
+        return [None], {'time': time.time()}
+
+
+class Time(reip.Block):
+    '''Call this function every X seconds'''
+    def process(self, x, meta=None):
+        return [x], {'time': time.time()}
+
+
+class Meta(reip.Block):
+    '''Call this function every X seconds'''
+    def __init__(self, meta, *a, **kw):
+        self.meta = meta or {}
+        super().__init__(*a, **kw)
+    def process(self, x, meta=None):
+        return [x], {
+            k: v(meta) if callable(v) else v
+            for k, v in self.meta.items()
+        }
 
 
 class Sleep(reip.Block):
@@ -35,37 +53,25 @@ class Sleep(reip.Block):
         self.sleep = sleep
         super().__init__(**kw)
 
-    def process(self, *ys, meta):
+    def process(self, x, meta):
         time.sleep(self.sleep)
-        return ys, meta
+        return [x], meta
 
 
 class Constant(reip.Block):
-    def __init__(self, value, **kw):
+    def __init__(self, value, *a, **kw):
         self.value = value
-        super().__init__(**kw)
+        super().__init__(*a, n_source=0, **kw)
 
     def process(self, meta):
         return [self.value], meta
 
 
-class Increment(reip.Block):
-    index = 0
+class Increment(Iterator):
     def __init__(self, start=0, stop=None, step=1, **kw):
-        self.start = start
-        self.stop = stop
-        self.step = step
-        super().__init__(**kw)
-
-    def init(self):
-        self.index = self.start
-
-    def process(self, meta=None):
-        if self.stop is not None and self.index >= self.stop - self.step:
-            self.terminate()
-
-        self.index += 1
-        return [], {'index': self.index}
+        if stop is None:
+            start, stop = 0, start
+        super().__init__(range(start, stop, step), **kw)
 
 
 class Debug(reip.Block):
@@ -116,7 +122,7 @@ class Lambda(reip.Block):
         self.func = func
         name = name or self.func.__name__
         if name == '<lambda>':
-            name = 'how to get the signature?'
+            name = '_lambda_'  # how to get the signature?
         super().__init__(name=name, **kw)
 
     def process(self, *xs, meta=None):

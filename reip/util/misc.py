@@ -1,4 +1,49 @@
 import os
+from functools import wraps
+
+
+
+def resize_list(lst, length, value=None):
+    '''Resize a list to be a specific length.
+
+    Example:
+    >>> x = [1, 2]
+    >>> assert resize_list(x, 5) == [1, 2, None, None, None]
+    >>> assert resize_list(x, 5, 10) == [1, 2, 10, 10, 10]
+    >>> assert resize_list(x, 4, lambda: x[0]) == [1, 2, 1, 1]  # some callable
+    '''
+    return (
+        lst + [
+            value() if callable(value) else value
+            for i in range(max(0, length - len(lst)))
+        ]
+    )[:length]
+
+
+def decorator(__func__=None, **kw):
+    '''A convenience wrapper that allows you to define a decorator with optional
+    initialization parameters.
+
+    Example:
+    >>> def my_decorator(func, **kw):
+    ...     @functools.wraps(func)
+    ...     def inner(*a, **kwi):
+    ...         return func(*a, **dict(kw, **kw))
+    ...     return inner
+    >>> @my_decorator
+    ... def asdf(x=10, y=15):
+    ...     return x+y
+    >>> @my_decorator(y=20)
+    ... def asdf2(x=10, y=15):
+    ...     return x+y
+    >>> assert asdf() == 25 and asdf2() == 30
+    '''
+    def decorated(func):
+        @wraps(func)
+        def inner(*a, **kwi):
+            return func(*a, **dict(kw, **kwi))
+        return inner
+    return decorated(__func__) if callable(__func__) else decorated
 
 
 def ensure_dir(fname):
@@ -11,7 +56,7 @@ def ensure_dir(fname):
 
 
 def adjacent_file(file, *f):
-    return os.path.join(os.path.dirname(file), *f)
+    return os.path.abspath(os.path.join(os.path.dirname(file), *f))
 
 
 def as_list(x):

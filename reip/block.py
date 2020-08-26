@@ -4,7 +4,7 @@ import traceback
 
 import reip
 from reip.stores import Producer
-from reip.util import text, check_block
+from reip.util import text, Meta
 
 __all__ = ['Block']
 
@@ -17,14 +17,27 @@ class Block:
         n_source (int, or None): the number of sources to expect. If None,
             it will accept a variable number of sources.
         n_sink (int): the number of sinks to expect.
+             - If `n_sink=0`, then there will be a single sink, that outputs no
+               buffer value, but does output metadata.
+               e.g.
+               ```python
+               # block 1
+               return {'just some metadata': True}
+               # or
+               return [], {'just some metadata': True}
+
+               # block 2
+               def process(self, meta):  # no buffer value
+                   assert meta['just some metadata'] == True
+               ```
+             - If `n_sink=None`, then the block will have no sinks.
+
         blocking (bool): should the block wait for sinks to have a free space
             before processing more items?
         max_rate (int): the maximum number of iterations per second. If the block
             processes items any faster, it will throttle and sleep the required
             amount of time to meet that requirement.
             e.g. if max_rate=5, then an iteration will take at minimum 0.2s.
-        propagate_signals (bool): If a block receives a signal (e.g. TERMINATE)
-            from its sources, should it propagate that signal to its sinks?
         graph (reip.Graph, reip.Task, or False): the graph instance to be added to.
         name ()
     '''
@@ -32,21 +45,26 @@ class Block:
     _stream = None
     _delay = 1e-6
 
-    def __init__(self, queue=1000, n_source=None, n_sink=1, blocking=False,
-                 max_rate=None, propagate_signals=True, graph=None, name=None, **kw):
+    def __init__(self, n_source=1, n_sink=1, queue=1000, blocking=False,
+                 max_rate=None, graph=None, name=None, **kw):
         self.name = name or f'{self.__class__.__name__}_{id(self)}'
         self.context_id = reip.Task.add_if_available(graph, self)
 
         # sources and sinks
+        # by default, a block takes a variable number of sources.
+        # If a block has a fixed number of sources, you can specify that
+        # and it will throw an exception when spawning if the number of
+        # sources does not match.
         self.n_expected_sources = n_source
-        self.sources = []
+        self.sources = [None] * (n_source or 0)
+        # TODO: should we have n_sink=None, signify, n_sink=n_source ?
         self.sinks = [
             Producer(queue, context_id=self.context_id)
-            for _ in range(n_sink)]
+            for _ in range(n_sink or 0)
+        ]
 
         self.max_rate = max_rate
         self._put_blocking = blocking
-        self._propagate_signals = propagate_signals
         # signals
         self._reset_state()
         # block timer
@@ -71,8 +89,10 @@ class Block:
             ('running' if self.running else 'paused') if self.ready else
             '--'  # ??
         )  # add "uptime 35.4s"
-        return '[Block({}): ({} in, {} out; {} processed) - {}]'.format(
-            self.name, len(self.sources), len(self.sinks), self.processed,
+
+        return '[Block({}): ({}/{} in, {} out; {} processed) - {}]'.format(
+            self.name, sum(s is not None for s in self.sources), self.n_expected_sources,
+            len(self.sinks), self.processed,
             state)
 
     # Graph definition
@@ -86,34 +106,30 @@ class Block:
         for i, other in enumerate(others):
             # permit argument to be a block
             # permit argument to be a sink or a list of sinks
-            sinks = (
-                other.sinks if isinstance(other, Block) else
-                reip.util.as_list(other))
+            if isinstance(other, Block):
+                sinks = other.sinks
+            else:
+                sinks = reip.util.as_list(other)
 
-            # if we have an expected number of sources, truncate
-            n_over = self.n_expected_sources and max(
-                j + len(sinks) - self.n_expected_sources, 0)
-            if n_over:
-                sinks = sinks[:n_over]
-
-            # make sure we don't get an index error, pre-pad with None
-            n_to_add = max(j + len(sinks) - len(self.sources), 0)
-            if n_to_add:
-                self.sources.extend((None,) * n_to_add)
-
-            # connect each sink
-            for j, sink in enumerate(sinks, j):
-                self.sources[j] = sink.gen_source(
-                    context_id=self.context_id, **kw)
-
-            # don't overwrite last index
             if sinks:
-                j += 1
-            # otherwise you'd get 0, 1, 2, 3, 3, 4, 5, 6, 6, 7...
+                # truncate if necessary
+                if self.n_expected_sources:
+                    sinks = sinks[:min(self.n_expected_sources, j + len(sinks))]
 
-            # if we had to truncate, then we're done
-            if n_over:
-                break
+                # make sure the list is long enough
+                self.sources = reip.util.resize_list(
+                    self.sources, j + len(sinks), None)
+
+                # create and add the source
+                for j, sink in enumerate(sinks, j):
+                    self.sources[j] = sink.gen_source(
+                        context_id=self.context_id, **kw)
+                j += 1  # need to increment cursor so we don't repeat last index
+
+                if (self.n_expected_sources and
+                        len(self.sources) >= self.n_expected_sources):
+                    break
+
         return self
 
     def to(self, *others, squeeze=True, **kw):
@@ -121,7 +137,17 @@ class Block:
         outs = [other(self, **kw) for other in others]
         return outs[0] if squeeze and len(outs) == 1 else outs
 
+    def __or__(self, other):
+        '''Connect blocks using Unix pipe syntax.'''
+        return self.to(*reip.util.as_list(other))
+
+    def __ror__(self, other):
+        '''Connect blocks using Unix pipe syntax.'''
+        return self(*reip.util.as_list(other))
+
     def output_stream(self, **kw):
+        '''Create a Stream iterator which will let you iterate over the
+        outputs of a block.'''
         return reip.Stream.from_block(self, **kw)
 
     # User Interface
@@ -139,6 +165,8 @@ class Block:
     # main process loop
 
     def _main(self, *a, **kw):
+        '''The main thread target function. Handles uncaught exceptions and
+        generic Block context management.'''
         try:
             # profiler = pyinstrument.Profiler()
             # profiler.start()
@@ -148,15 +176,12 @@ class Block:
                 self._run(self._init_stream(*a, **kw))
 
         except Exception as e:
-            self._exception = e
-            self.error = True
             print(text.red(text.b_(
                 f'Exception occurred in {self}: ({type(e).__name__}) {e}',
                 traceback.format_exc(),
             )))
         except KeyboardInterrupt:
             print(text.b_(text.yellow('\nInterrupting'), self))
-            raise
         finally:
             self.print_stats()
 
@@ -164,6 +189,8 @@ class Block:
             # print(profiler.output_text(unicode=True, color=True))
 
     def _run(self, stream):
+        '''The abstract block logic. This is meant to be overrideable in case
+        someone needs to modify the logic organization.'''
         try:
             # initialize the block
             self._do_init()
@@ -173,6 +200,8 @@ class Block:
                 outputs = self._do_process(*buffers, meta=meta)
                 # send each output batch to the sinks
                 self._do_sinks(outputs, meta)
+        except Exception as e:
+            self._handle_exception(e)
         finally:
             # finish up and shut down block
             self._do_finish()
@@ -196,6 +225,7 @@ class Block:
         # create a stream from sources with a custom control loop
         self._stream = reip.Stream.from_block_sources(
             self, duration=duration, name=self.name)
+        self._stream.open()
         # wrap stream in a timer
         return self._sw.iter(self._stream, 'source')
 
@@ -209,12 +239,17 @@ class Block:
     def _do_finish(self):
         '''Cleanup block. Handles block timing and any logging.'''
         self._stream.close()  # may be redundant
-        # propagate stream signals to sinks e.g. CLOSE
-        if self._propagate_signals and self._stream.signal is not None:
-            self.emit_signal(self._stream.signal)
         # run block finish
         with self._sw('finish'):
             self.finish()
+        # propagate stream signals to sinks e.g. CLOSE
+        # this is run when:
+        #   - the block sends reip.CLOSE, reip.TERMINATE as a signal from process.
+        #     (if you only want to close the current block and not downstream ones,
+        #      just call self.close()/self.terminate() directly)
+        #   - a stream finishes running e.g. when you set a block run duration.
+        if self._stream.signal is not None:
+            self.emit_signal(self._stream.signal)
         self.done = True
 
     def _do_sinks(self, outputs, meta_in=None):
@@ -225,23 +260,35 @@ class Block:
                 pass
             elif outputs == reip.CLOSE:
                 self.close()
-                if self._propagate_signals:
-                    self.emit_signal(reip.CLOSE)
+                self.emit_signal(reip.CLOSE)
             elif outputs == reip.TERMINATE:
                 self.terminate()
-                if self._propagate_signals:
-                    self.emit_signal(reip.TERMINATE)
+                self.emit_signal(reip.TERMINATE)
             # increment sources but don't have any outputs to send
             elif outputs is None:
                 self._stream.next()
             # increment sources and send outputs
             else:
+                # detect signals meant for the source
+                if any(any(o == t for t in reip.SOURCE_TOKENS) for o in outputs):
+                    # check signal values
+                    if len(outputs) > len(self.sources):
+                        raise RuntimeError(
+                            f'Too many signals for sources in {self}. '
+                            f'Got {len(outputs)}, expected a maximum '
+                            f'of {len(self.sources)}.')
+                    # process signals
+                    for s, out in zip(self._stream.sources, outputs):
+                        if out == reip.RETRY:
+                            pass
+                        else:
+                            s.next()
+                    return
+
                 # convert outputs to a consistent format
                 outs, meta = prepare_output(outputs, input_meta=meta_in)
                 # increment sources
-                for s, out in zip(self._stream.sources, outs):
-                    if out != reip.RETRY:
-                        s.next()
+                self._stream.next()
 
                 # pass to sinks
                 self.processed += 1
@@ -249,17 +296,22 @@ class Block:
                     if sink is not None:
                         sink.put((out, meta), self._put_blocking)
 
+    def _handle_exception(self, exc):
+        self._exception = exc
+        self.error = True
+
     def emit_signal(self, signal, block=True, meta=None):
+        '''Emit a signal to all sinks.'''
         print(text.yellow(text.l_(self, 'sending', signal)))
         for sink in self.sinks:
             if sink is not None:
                 sink.put((signal, meta or {}), block=block)
-
     # Thread management
 
     def spawn(self, wait=True):
+        '''Spawn the block thread'''
         print(text.l_(text.blue('Spawning'), self, '...'))
-        print(self.summary())
+        # print(self.summary())
 
         self._check_source_connections()
         # spawn any sinks that need it
@@ -276,6 +328,12 @@ class Block:
             self.wait_until_ready()
 
     def _check_source_connections(self):
+        '''Check if there are too many sources for this block.'''
+        # check for any empty sources
+        disconnected = [i for i, s in enumerate(self.sources) if s is None]
+        if disconnected:
+            raise RuntimeError(f"Sources {disconnected} in {self} not connected.")
+
         # check for exact source count
         if (self.n_expected_sources is not None
                 and len(self.sources) != self.n_expected_sources):
@@ -283,16 +341,12 @@ class Block:
                 f'Expected {self.n_expected_sources} sources '
                 f'in {self}. Found {len(self.sources)}.')
 
-        # check for any empty sources
-        disconnected = [i for i, s in enumerate(self.sources) if s is None]
-        if disconnected:
-            raise RuntimeError(f"Sources {disconnected} in {self} not connected.")
-
     def wait_until_ready(self):
+        '''Wait until the block is initialized.'''
         while not self.ready and not self.error and not self.done:
             time.sleep(self._delay)
 
-    def join(self, close=True, terminate=False, timeout=0.5):
+    def join(self, close=True, terminate=False, raise_exc=False, timeout=0.5):
         print(text.l_(text.blue('Joining'), self, '...'))
         # close stream
         if close:
@@ -308,9 +362,12 @@ class Block:
         # close thread
         if self._thread is not None:
             self._thread.join(timeout=timeout)
-        # raise any exception
-        # if self._exception is not None:
-        #     raise Exception(f'Exception in {self}') from self._exception
+        if raise_exc:
+            self.raise_exception()
+
+    def raise_exception(self):
+        if self._exception is not None:
+            raise self._exception
 
     # State management
 
@@ -391,11 +448,14 @@ def prepare_output(outputs, input_meta=None, expected_length=None):
     if isinstance(outputs, tuple):
         if len(outputs) == 2:
             bufs, meta = outputs
+    elif isinstance(outputs, (Meta, dict)):
+        meta = outputs
 
-    if expected_length is not None and len(outputs) != expected_length:
-        raise ValueError(
-            'Expected outputs to have length '
-            f'{expected_length} but got {len(outputs)}')
-    if input_meta:
-        meta = reip.util.Meta(meta, input_meta)
-    return bufs or (...,), meta or reip.util.Meta()
+    bufs = list(bufs) if bufs else []
+
+    if expected_length:  # pad outputs with blank values
+        bufs.extend((reip.BLANK,) * max(0, expected_length - len(bufs)))
+
+    if input_meta:  # merge meta as a new layer
+        meta = Meta(meta, input_meta)
+    return bufs, meta or Meta()
