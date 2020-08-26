@@ -97,23 +97,12 @@ class Graph(BaseContext):
 
     # run graph
 
-    def run(self, duration=None):
-        with self.run_scope():
-            # term = blessed.Terminal()
-            # with term.cbreak(), term.hidden_cursor(), term.fullscreen():
-            for _ in timed(loop(), duration):
-                if self.done:
-                    break
-                # print(term.home + term.normal + self.status())
-                # print(self.status())
-                time.sleep(self._main_delay)
-            # curses.nocbreak()
-            # stdscr.keypad(False)
-            # curses.echo()
-            # curses.endwin()
+    def run(self, duration=None, **kw):
+        with self.run_scope(**kw):
+            self.wait(duration)
 
     @contextmanager
-    def run_scope(self):
+    def run_scope(self, raise_exc=False):
         print(text.b_(text.green('Starting'), self), flush=True)
         try:
             self.spawn()
@@ -121,9 +110,15 @@ class Graph(BaseContext):
             yield self
         except KeyboardInterrupt:
             print(text.b_(text.yellow('Interrupting'), self, '--'))
-            raise
         finally:
-            self.join()
+            self.join(raise_exc=raise_exc)
+            print(text.b_(text.green('Done'), self), flush=True)
+
+    def wait(self, duration=None):
+        for _ in timed(loop(), duration):
+            if self.done:
+                break
+            time.sleep(self._main_delay)
 
     # state
 
@@ -163,13 +158,15 @@ class Graph(BaseContext):
         while not self.ready and not self.error and not self.done:
             time.sleep(self._delay)
 
-    def join(self, close=True, terminate=False, **kw):
+    def join(self, close=True, terminate=False, raise_exc=False, **kw):
         if close:
             self.close()
         if terminate:
             self.terminate()
         for block in self.blocks:
             block.join(terminate=False, **kw)
+        if raise_exc:
+            self.raise_exception()
 
     def pause(self):
         for block in self.blocks:
@@ -186,6 +183,10 @@ class Graph(BaseContext):
     def terminate(self):
         for block in self.blocks:
             block.terminate()
+
+    def raise_exception(self):
+        for block in self.blocks:
+            block.raise_exception()
 
     def summary(self):
         return '\n'.join(s for s in (b.summary() for b in self.blocks) if s)
