@@ -6,12 +6,21 @@ class Meta(ChainMap):
     The original input maps can be accessed using `[d for d in stack.sources]`
     '''
     def __init__(self, *maps, filter=False):
-        super().__init__(*ordered_unique(flatten_maps(*maps, filter=filter)))
         self.sources = maps
+        super().__init__(*ordered_unique(flatten_maps(*maps, filter=filter)))
 
     def update(self, *a, **kw):
         super().update(*a, **kw)
         return self
+
+    def set_defaults(self, **kw):
+        for k, v in kw.items():
+            self.setdefault(k, v)
+
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            return self.sources[key]
+        return super().__getitem__(key)
 
 
 def flatten_maps(*metas, filter=False):
