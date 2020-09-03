@@ -20,13 +20,12 @@ from reip.util.iters import npgenarray
 #
 #
 
-def ml_stft_inputs(data, meta, **kw):
+def ml_stft_inputs(data, meta, duration=1, hop_size=0.1, sr=8000, **kw):
     # load audio
     file, y = (data, None) if isinstance(data, str) else (None, data)
-    y, sr = load_resample(file, y, meta.get('sr'), self.sr)
+    y, sr = load_resample(file, y, meta.get('sr'), sr)
     # frame and extract stft
-    frames = padframe(
-        y, int(sr * self.duration), int(sr * self.hop_size)).T
+    frames = padframe(y, int(sr * duration), int(sr * hop_size)).T
 
     X = npgenarray(
         (melstft(frame, sr) for frame in frames),

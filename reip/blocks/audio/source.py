@@ -44,7 +44,7 @@ class Mic(reip.Block):
 
         # start audio streamer
         self._q = queue.Queue()
-        self._stream = self._pa.open(
+        self._pastream = self._pa.open(
             input_device_index=device['index'],
             frames_per_buffer=self.blocksize,
             format=pyaudio.paInt16,
@@ -62,20 +62,20 @@ class Mic(reip.Block):
         return None, pyaudio.paContinue
 
     def process(self, meta=None):
-        # buff = self._stream.read(self.blocksize, exception_on_overflow=False)
+        # buff = self._pastream.read(self.blocksize, exception_on_overflow=False)
         pcm, t0 = self._q.get()
         pcm = np.frombuffer(pcm, dtype=np.int16)
         pcm = pcm / float(np.iinfo(pcm.dtype).max)
         pcm = pcm.reshape(-1, self.channels or 1)
         return [pcm], {
-            'input_latency': self._stream.get_input_latency(),
-            'output_latency': self._stream.get_output_latency(),
+            'input_latency': self._pastream.get_input_latency(),
+            'output_latency': self._pastream.get_output_latency(),
             'time': t0,
             'sr': self.sr,
         }
 
     def finish(self):
         '''Stop pyaudio'''
-        self._stream.stop_stream()
-        self._stream.close()
+        self._pastream.stop_stream()
+        self._pastream.close()
         self._pa.terminate()
