@@ -46,9 +46,9 @@ class Block:
     _delay = 1e-6
 
     def __init__(self, n_source=1, n_sink=1, queue=1000, blocking=False,
-                 max_rate=None, graph=None, name=None, **kw):
+                 max_rate=None, max_processed=None, graph=None, name=None, **kw):
         self.name = name or f'{self.__class__.__name__}_{id(self)}'
-        self.context_id = reip.Task.add_if_available(graph, self)
+        self.context_id = reip.Task.register_instance(self, graph)
 
         # sources and sinks
         # by default, a block takes a variable number of sources.
@@ -64,12 +64,15 @@ class Block:
         ]
 
         self.max_rate = max_rate
+        self.max_processed = max_processed
         self._put_blocking = blocking
         # signals
         self._reset_state()
         # block timer
         self._sw = reip.util.Stopwatch(str(self))
         self.extra_kw = kw
+
+        self.log = reip.util.logging.getLogger(self)
 
     def _reset_state(self):
         # state
@@ -91,7 +94,8 @@ class Block:
         )  # add "uptime 35.4s"
 
         return '[Block({}): ({}/{} in, {} out; {} processed) - {}]'.format(
-            self.name, sum(s is not None for s in self.sources), self.n_expected_sources,
+            self.name, sum(s is not None for s in self.sources),
+            '?' if self.n_expected_sources is None else self.n_expected_sources,
             len(self.sinks), self.processed,
             state)
 
@@ -170,23 +174,17 @@ class Block:
         try:
             # profiler = pyinstrument.Profiler()
             # profiler.start()
-            print(text.l_(text.green('Starting'), self))
+            self.log.debug(text.blue('Starting...'))
             time.sleep(self._delay)
             with self._sw():
                 self._run(self._init_stream(*a, **kw))
-
-        except Exception as e:
-            print(text.red(text.b_(
-                f'Exception occurred in {self}: ({type(e).__name__}) {e}',
-                traceback.format_exc(),
-            )))
         except KeyboardInterrupt:
-            print(text.b_(text.yellow('\nInterrupting'), self))
+            self.log.info(text.yellow('Interrupting'))
         finally:
             self.print_stats()
-
             # profiler.stop()
             # print(profiler.output_text(unicode=True, color=True))
+            self.log.info(text.green('Done.'))
 
     def _run(self, stream):
         '''The abstract block logic. This is meant to be overrideable in case
@@ -212,7 +210,7 @@ class Block:
         with self._sw('init'):
             self.init()
         self.ready = True
-        print(text.b_(text.green('Ready'), self), flush=True)
+        self.log.info(text.green('Ready.'))
 
     def _init_stream(self, duration=None):
         '''Initialize the source stream.
@@ -233,11 +231,11 @@ class Block:
         '''Process buffers. Handles block timing and any logging.'''
         with self._sw('process'):
             outputs = self.process(*buffers, meta=meta)
-        # print(text.green(f"{self} processing took {self._sw.last('process'):.2f}s"))
         return outputs
 
     def _do_finish(self):
         '''Cleanup block. Handles block timing and any logging.'''
+        self.log.debug(text.yellow('Finishing...'))
         self._stream.close()  # may be redundant
         # run block finish
         with self._sw('finish'):
@@ -259,18 +257,16 @@ class Block:
             if outputs == reip.RETRY:
                 pass
             elif outputs == reip.CLOSE:
-                self.close()
-                self.emit_signal(reip.CLOSE)
+                self.close(propagate=True)
             elif outputs == reip.TERMINATE:
-                self.terminate()
-                self.emit_signal(reip.TERMINATE)
+                self.terminate(propagate=True)
             # increment sources but don't have any outputs to send
             elif outputs is None:
                 self._stream.next()
             # increment sources and send outputs
             else:
                 # detect signals meant for the source
-                if any(any(o == t for t in reip.SOURCE_TOKENS) for o in outputs):
+                if any(any(t.check(o) for t in reip.SOURCE_TOKENS) for o in outputs):
                     # check signal values
                     if len(outputs) > len(self.sources):
                         raise RuntimeError(
@@ -295,14 +291,19 @@ class Block:
                 for sink, out in zip(self.sinks, outs):
                     if sink is not None:
                         sink.put((out, meta), self._put_blocking)
+                if self.max_processed and self.processed >= self.max_processed:
+                    self.close(propagate=True)
 
     def _handle_exception(self, exc):
         self._exception = exc
         self.error = True
+        self.log.exception(exc)
+        self.terminate()
 
     def emit_signal(self, signal, block=True, meta=None):
         '''Emit a signal to all sinks.'''
-        print(text.yellow(text.l_(self, 'sending', signal)))
+        self.log.debug(text.yellow(text.l_('sending', signal)))
+        # print(text.yellow(text.l_(self, 'sending', signal)))
         for sink in self.sinks:
             if sink is not None:
                 sink.put((signal, meta or {}), block=block)
@@ -310,7 +311,8 @@ class Block:
 
     def spawn(self, wait=True):
         '''Spawn the block thread'''
-        print(text.l_(text.blue('Spawning'), self, '...'))
+        # print(text.l_(text.blue('Spawning'), self, '...'))
+        # self.log.debug(text.blue('Spawning...'))
         # print(self.summary())
 
         self._check_source_connections()
@@ -346,8 +348,7 @@ class Block:
         while not self.ready and not self.error and not self.done:
             time.sleep(self._delay)
 
-    def join(self, close=True, terminate=False, raise_exc=False, timeout=0.5):
-        print(text.l_(text.blue('Joining'), self, '...'))
+    def join(self, close=True, terminate=False, raise_exc=False, timeout=None):
         # close stream
         if close:
             self.close()
@@ -360,6 +361,7 @@ class Block:
                 s.join()
 
         # close thread
+        # self.log.debug(text.blue('Joining'))
         if self._thread is not None:
             self._thread.join(timeout=timeout)
         if raise_exc:
@@ -379,13 +381,17 @@ class Block:
         if self._stream is not None:
             self._stream.resume()
 
-    def close(self):
+    def close(self, propagate=False):
         if self._stream is not None:
             self._stream.close()
+        if propagate:
+            self.emit_signal(reip.CLOSE)
 
-    def terminate(self):
+    def terminate(self, propagate=False):
         if self._stream is not None:
             self._stream.terminate()
+        if propagate:
+            self.emit_signal(reip.TERMINATE)
 
     # XXX: this is temporary. idk how to elegantly handle this
     @property
