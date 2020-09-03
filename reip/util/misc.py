@@ -59,6 +59,11 @@ def adjacent_file(file, *f):
     return os.path.abspath(os.path.join(os.path.dirname(file), *f))
 
 
+def fname(file):
+    '''Get file name. e.g. path/to/fileA.txt => fileA.'''
+    return os.path.splitext(os.path.basename(file))[0]
+
+
 def as_list(x):
     '''Convert or wrap value as a list.
 
@@ -87,6 +92,12 @@ def squeeze(x):
     '''
     return x[0] if isinstance(x, (list, tuple)) and len(x) == 1 else x
 
+
+def flatten(X):
+    if isinstance(X, (list, tuple)):
+        yield from (x for xs in X for x in flatten(xs))
+    else:
+        yield X
 
 # class MpValueProp:
 #     def __init__(self, name):

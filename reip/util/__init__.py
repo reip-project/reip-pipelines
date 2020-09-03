@@ -3,6 +3,7 @@ from .stopwatch import Stopwatch
 from .text import *
 from .debug import *
 from .misc import *
+from . import logging
 from . import shell
 from . import iters
 from . import remote

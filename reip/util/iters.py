@@ -39,6 +39,15 @@ def throttled(it, rate=None, delay=1e-6):
         t1 = time.time()
 
 
+def limit(it, n=None):
+    if not n:
+        yield from it
+        return
+    # yield only n elements
+    for i, x in zip(range(n), it):
+        yield x
+
+
 def peakiter(it, n=1):
     '''Check the value first n items of an iterator without unloading them from
     the iterator queue.'''
