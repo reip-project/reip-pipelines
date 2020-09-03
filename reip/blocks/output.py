@@ -8,7 +8,7 @@ import numpy as np
 class Csv(reip.Block):
     _fname = _file = _writer = None
     def __init__(self, filename='{time}.csv', headers=None, max_rows=1000, **kw):
-        self.filename = filename
+        self.filename = str(filename)
         self.max_rows = max_rows
         self.headers = headers
         self.n_rows = 0
