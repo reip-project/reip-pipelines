@@ -59,7 +59,7 @@ class ClientStore(Store):
     Pointer = SharedPointer
     Customer = QueueCustomer
 
-    debug = True
+    debug = False
     _thread = None
     def __init__(self, *a, **kw):
         self.customers = []

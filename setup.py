@@ -35,6 +35,7 @@ setuptools.setup(
         # 'readi',
         # 'confuse@https://github.com/beetbox/confuse/archive/master.zip',
         'fire',
+        'colorlog',
     ],
     extras_require={
         'docs': ['sphinx!=1.3.1', 'sphinx_theme', 'sphinx-gallery'],

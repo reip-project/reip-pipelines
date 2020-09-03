@@ -1,0 +1,5 @@
+
+
+
+class ParameterError(ValueError):
+    pass
