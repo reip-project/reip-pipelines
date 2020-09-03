@@ -2,6 +2,7 @@ import os
 import time
 import reip
 import reip.blocks as B
+import reip.blocks.encrypt
 
 
 
@@ -62,7 +63,7 @@ def test_increment():
 #########################
 
 
-def test_output():
+def test_output(tmp_path):
     # generate random data
     # write to csv
     # read csv data
@@ -70,8 +71,7 @@ def test_output():
         N = 100
         with reip.Graph() as g:
             csv_files = B.Increment(N).to(B.Time()).to(B.Csv(
-                reip.util.adjacent_file(__file__, '{time}.csv'),
-                max_rows=10)).output_stream()
+                tmp_path / '{time}.csv', max_rows=10)).output_stream()
         g.run(raise_exc=True)
         csv_files.close()
         print(csv_files)
@@ -111,20 +111,20 @@ def test_archive():
 #########################
 
 
-def test_os():
+def test_os(tmp_path):
     import reip.blocks.os_watch
     # create file - see if emitted
     # modify file - see if emitted
     # move file - see if emitted
     # delete file - see if emitted
-    rel = reip.util.adjacent_file(__file__)
+    rel = str(tmp_path)
     with reip.Graph() as g:
         created = B.os_watch.Created(relative=rel).to(B.Results())
         modified = B.os_watch.Modified(relative=rel).to(B.Results())
         moved = B.os_watch.Moved(relative=rel).to(B.Results())
         deleted = B.os_watch.Deleted(relative=rel).to(B.Results())
 
-    f_pat = os.path.join(rel, 'test_file_{}.txt')
+    f_pat = str(tmp_path / 'test_file_{}.txt')
 
 
     fs = [f_pat.format(i) for i in range(5)]
@@ -173,16 +173,39 @@ def test_os():
 #     # read from microphone
 #     # check shape
 #     pass
-#
-#
-# def test_encrypt():
-#     # create file
-#     # encrypt file
-#     # decrypt file
-#     # check if file is the same
-#     pass
-#
-#
+
+
+def test_encrypt(tmp_path):
+    # create file
+    # encrypt file
+    # decrypt file
+    # check if file is the same
+    f_out = tmp_path / 'testfile{}.txt'
+    content = 'some content {} !!!'
+    rsa_key = tmp_path / 'rsa.pem'
+
+    with reip.Graph() as g:
+        inc = B.Increment(10, max_rate=10)
+        txtfile = B.dummy.TextFile(content, f_out)(inc)
+        encrypted = B.encrypt.TwoStageEncrypt(
+            tmp_path / 'encrypted/{name}.enc.tar.gz', rsa_key)(txtfile)
+        decrypted = B.encrypt.TwoStageDecrypt(
+            tmp_path / 'decrypted/{name}.txt',
+            B.encrypt.public2private(rsa_key))(encrypted)
+
+    with g.run_scope():
+        inp = txtfile.output_stream()
+        out = decrypted.output_stream()
+        with inp, out:
+            for ((fin,), m_in), ((fout,), m_out) in zip(inp, out):
+                with open(fin, 'r') as f:
+                    in_content = f.read()
+                with open(fout, 'r') as f:
+                    out_content = f.read()
+                assert in_content == out_content
+                print(fin, fout, in_content, out_content)
+
+
 # def test_buffer():
 #     # generate data
 #     # check shape
