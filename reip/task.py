@@ -22,16 +22,18 @@ class Task(reip.Graph):
     # main run loop
 
     def _run(self, duration=None):
-        print(text.b_(text.green('Starting'), self), flush=True)
+        self.log.info(text.green('Starting'))
+        # print(text.b_(text.green('Starting'), self), flush=True)
         self.remote.listening = True  # XXX: let the main process know that it's listening
         try:
             # initialize
             super().spawn()
-            print(text.b_(text.green('Ready'), self), flush=True)
+            # print(text.b_(text.green('Ready'), self), flush=True)
+            self.log.info(text.green('Ready'))
 
             # main loop
             for _ in timed(loop(), duration):
-                if super().terminated or super().error:
+                if super().done or super().error:
                     break
 
                 self.remote.poll_until_clear()
@@ -42,20 +44,17 @@ class Task(reip.Graph):
 
         except Exception as e:
             # any exception, print tb
-            print(text.b_(
-                text.red(f'Exception occurred in {self}'),
-                text.red(traceback.format_exc()),
-            ), flush=True)
+            self.log.error(e, exc_info=True)
             self.error = True
 
             # send exception
             self.remote._local.put((None, None, e))
         except KeyboardInterrupt as e:
-            print(text.b_(
-                text.yellow('Interrupting'), self, text.yellow('--')))
+            self.log.info(text.yellow('Interrupting'))
+            # print(text.b_(
+            #     text.yellow('Interrupting'), self, text.yellow('--')))
         finally:
-            super().terminate()
-            super().join(terminate=False)
+            super().join()
             self.error = super().error  # get child errors before closing, just in case
             self.remote.poll_until_clear()
             self.remote.listening = False
@@ -66,19 +65,21 @@ class Task(reip.Graph):
         if self._process is not None:  # only start once
             return
 
-        print(text.b_(text.blue('Spawning'), self))
+        self.log.debug(text.blue('Spawning'))
+        # print(text.b_(text.blue('Spawning'), self))
         self._process = mp.Process(target=self._run, daemon=True)
         self._process.start()
         if wait:
             self.wait_until_ready()
         self._check_errors()
 
-    def join(self, timeout=0.5):
+    def join(self, *a, timeout=0.5, **kw):
         if self._process is None:
             return
 
-        print(text.b_(text.blue('Joining'), self))
-        self.remote.super.join(default=None)  # join children
+        self.log.debug(text.blue('Joining'))
+        # print(text.b_(text.blue('Joining'), self))
+        self.remote.super.join(*a, default=None, **kw)  # join children
         self._process.join(timeout=timeout)  # join process
         self._process = None
         self._check_errors()

@@ -4,6 +4,7 @@
 
 import time
 from contextlib import contextmanager
+import weakref
 
 import reip
 from reip.util.iters import timed, loop
@@ -14,11 +15,14 @@ class BaseContext:
     default = None  # the default instance
     _previous = False  # the previous default instance
 
+    _all_instances = {}
+
     def __init__(self, *blocks, name=None, graph=None):
         self.name = name or f'{self.__class__.__name__}_{id(self)}'
         self.blocks = list(blocks)
         self._delay = 1e-6
-        self.context_id = Graph.add_if_available(graph, self)
+        self.context_id = Graph.register_instance(self, graph)
+
 
     def __repr__(self):
         return '[~{} ({} children) {}~]'.format(
@@ -28,6 +32,9 @@ class BaseContext:
     def add(self, block):
         '''Add block to graph.'''
         self.blocks.append(block)
+
+    def remove(self, block):
+        self.blocks.remove(block)
 
     def clear(self):
         self.blocks.clear()
@@ -41,7 +48,7 @@ class BaseContext:
         return cls.default if instance is None else instance
 
     @classmethod
-    def add_if_available(cls, instance=None, member=None):
+    def register_instance(cls, member=None, instance=None):
         '''Add a member (Block, Task) to the graph in instance.
 
         This is used inside of
@@ -59,6 +66,7 @@ class BaseContext:
             The name of `instance`. This prevents Blocks from having a reference
             to the entire graph.
         '''
+        BaseContext._all_instances[member.name] = weakref.ref(member)
         if instance is False:  # disable graph
             return None
         instance = cls.get(instance)  # get default if None
@@ -66,6 +74,16 @@ class BaseContext:
             return None
         instance.add(member)
         return instance.name
+
+    @classmethod
+    def get_object(self, id):
+        obj = self._all_instances.get(id)
+        if obj is None:
+            raise ValueError(f'Object {id} does not exist.')
+        obj = obj()  # call weakref to get actual ref
+        if obj is None:
+            raise ValueError(f'Object {id} no longer exists.')
+        return obj
 
     def __enter__(self):
         return self.as_default()
@@ -95,6 +113,10 @@ class Graph(BaseContext):
     _delay = 1e-6
     _main_delay = 0.1
 
+    def __init__(self, *a, **kw):
+        super().__init__(*a, **kw)
+        self.log = reip.util.logging.getLogger(self)
+
     # run graph
 
     def run(self, duration=None, **kw):
@@ -103,20 +125,24 @@ class Graph(BaseContext):
 
     @contextmanager
     def run_scope(self, raise_exc=False):
-        print(text.b_(text.green('Starting'), self), flush=True)
+        self.log.info(text.green('Starting'))
+        # print(text.b_(text.green('Starting'), self), flush=True)
         try:
             self.spawn()
-            print(text.b_(text.green('Ready'), self), flush=True)
+            self.log.info(text.green('Ready'))
+            # print(text.b_(text.green('Ready'), self), flush=True)
             yield self
         except KeyboardInterrupt:
-            print(text.b_(text.yellow('Interrupting'), self, '--'))
+            self.log.info(text.yellow('Interrupting'))
+            # print(text.b_(text.yellow('Interrupting'), self, '--'))
         finally:
             self.join(raise_exc=raise_exc)
-            print(text.b_(text.green('Done'), self), flush=True)
+            # print(text.b_(text.green('Done'), self), flush=True)
+            self.log.info(text.green('Done'))
 
     def wait(self, duration=None):
         for _ in timed(loop(), duration):
-            if self.done:
+            if self.done or self.error:
                 break
             time.sleep(self._main_delay)
 
