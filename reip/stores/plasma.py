@@ -43,6 +43,7 @@ def random_unique_object_id(existing):
     while True:
         id = random_object_id()
         if id not in existing:
+            existing.add(id)
             return id
 
 def n_random_unique_object_ids(client, size=10):
