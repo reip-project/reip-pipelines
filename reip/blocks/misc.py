@@ -1,4 +1,5 @@
 import time
+import itertools
 import numpy as np
 
 import reip
@@ -68,19 +69,21 @@ class Constant(reip.Block):
 
 
 class Increment(Iterator):
-    def __init__(self, start=0, stop=None, step=1, **kw):
+    def __init__(self, start=None, stop=None, step=1, **kw):
         if stop is None:
             start, stop = 0, start
-        super().__init__(range(start, stop, step), **kw)
+        super().__init__(
+            range(start or 0, stop, step) if stop is not None else
+            itertools.count(start or 0, stop), **kw)
 
 
 class Debug(reip.Block):
-    def __init__(self, message='Debug', value=False, period=None, **kw):
-        self.message = message
+    def __init__(self, message=None, value=False, period=None, name=None, **kw):
+        self.message = message or 'Debug'
         self.value = value
         self.period = period
         self._last_time = 0
-        super().__init__(**kw)
+        super().__init__(name=f'Debug-{message}' if message else None, **kw)
 
     def _format(self, x):
         if isinstance(x, np.ndarray):

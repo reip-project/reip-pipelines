@@ -128,15 +128,16 @@ def sonyc():
     reip.run()
 
 
-def camera_test():
+def camera_test(exc=False, n=3):
     with reip.Task():
-        x = B.dummy.SomeArray((720, 1280, 3))
+        x = B.dummy.SomeArray((720, 1280, 3), max_rate=n)
         # x = B.dummy.SomeArray((2, 2, 3), queue=30, blocking=True)
         # x = B.Sleep(1)(x)
-    x = B.dummy.SomeTransform()(x)#.to(B.Debug('asdf'))
+        if exc:
+            B.dummy.TimeBomb(3, max_rate=n)
+    x = B.dummy.SomeTransform(max_rate=n)(x)#.to(B.Debug('asdf'))
     print(reip.Graph.default)
     reip.run()
-
 
 
 # def keras_like_interface():  # XXX: this is hypothetical
