@@ -24,6 +24,9 @@ class Token:
         return hash(self.id)
 
     def __eq__(self, other):
+        return self.check(other)
+
+    def check(self, other):
         return isinstance(other, Token) and self.id == other.id
 
 
