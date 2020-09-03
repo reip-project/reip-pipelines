@@ -59,13 +59,13 @@ class Stream:
             if self.running and self.check_ready():
                 inputs = [s.get_nowait() for s in self.sources]
 
-                if inputs and all(x == reip.CLOSE for x, meta in inputs):
+                if inputs and all(reip.CLOSE.check(x) for x, meta in inputs):
                     self.signal = reip.CLOSE  # block will send to sinks
                     self.close()
                     self.next()
                     continue
 
-                if inputs and any(x == reip.TERMINATE for x, meta in inputs):
+                if inputs and any(reip.TERMINATE.check(x) for x, meta in inputs):
                     self.signal = reip.TERMINATE  # block will send to sinks
                     self.terminate()
                     self.next()
