@@ -430,10 +430,16 @@ class Block:
         '''
         n = self.processed
         total_time = self._sw.elapsed()
-        return f'[{self.name} {n:,} buffers, {n / total_time:,.2f} x/s]'
+        n_src = [len(s) for s in self.sources]
+        n_snk = [len(s) for s in self.sinks]
+        return f'[{self.name} {n:,} buffers, {n / total_time:,.2f}x/s sources={n_src}, sinks={n_snk}]'
 
     def print_stats(self):
         total_time = self._sw.stats()[0] if '' in self._sw._samples else 0
+        speed = self.processed / total_time if total_time else 0
+        dropped = [getattr(sink, "dropped", None) for sink in self.sinks]
+        n_src = [len(s) for s in self.sources]
+        n_snk = [len(s) for s in self.sinks]
         print(text.block_text(
             # block title
             f'Stats for {text.red(self) if self.error else text.green(self)}',
@@ -442,8 +448,9 @@ class Block:
             if self._exception else None,
             # basic stats
             f'Processed {self.processed} buffers in {total_time:.2f} sec. '
-            f'({self.processed / total_time if total_time else 0:.2f} x/s)',
-            f'Dropped: {[getattr(sink, "dropped", None) for sink in self.sinks]}',
+            f'({speed:.2f} x/s)',
+            f'Dropped: {dropped}',
+            f'Left in Queue: sources={n_src} sinks={n_snk}',
             # timing info
             self._sw, ch=text.blue('*')))
 

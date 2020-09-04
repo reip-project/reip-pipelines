@@ -38,6 +38,9 @@ class Sink:
     def join(self):
         pass
 
+    def __len__(self):
+        raise NotImplementedError
+
     def full(self):
         raise NotImplementedError
 
@@ -102,11 +105,14 @@ class Source:
         self._strategy = strategy
         self._strategy_get = self.strategies[strategy]
 
-    def empty(self):
+    def __len__(self):
         raise NotImplementedError
 
+    def empty(self):
+        return not len(self)
+
     def last(self):
-        raise NotImplementedError
+        return len(self) == 1
 
     def next(self):
         raise NotImplementedError

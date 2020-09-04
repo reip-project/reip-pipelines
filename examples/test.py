@@ -140,6 +140,25 @@ def camera_test(exc=False, n=3):
     reip.run()
 
 
+
+def status_test(exc=False, n=3):
+    with reip.Task():
+        x = B.dummy.SomeArray((720, 1280, 3), max_rate=n)
+        # x = B.dummy.SomeArray((2, 2, 3), queue=30, blocking=True)
+        # x = B.Sleep(1)(x)
+        if exc:
+            with reip.Graph():
+                B.dummy.TimeBomb(3, max_rate=n)
+    x = B.dummy.SomeTransform(max_rate=n)(x)#.to(B.Debug('asdf'))
+    print(reip.default_graph())
+    g = reip.default_graph()
+
+    with g.run_scope():
+        for _ in range(10):
+            print(g.status())
+            g.wait(1)
+
+
 # def keras_like_interface():  # XXX: this is hypothetical
 #     x = Interval()
 #     x = ExampleAudio()(x)

@@ -1,3 +1,4 @@
+import reip
 from .pointers import Pointer
 from ..interface import Sink
 from .store import Store
@@ -6,7 +7,7 @@ from .client_store import ClientStore
 
 
 class Producer(Sink):
-    def __init__(self, size, delete_rate=5, task_id=None, **kw):
+    def __init__(self, size, delete_rate=5, task_id=reip.UNSET, **kw):
         self.size = size + 1  # need extra slot because head == tail means empty
         self.delete_rate = delete_rate
         self.task_id = task_id
@@ -31,6 +32,11 @@ class Producer(Sink):
         for store in self.stores.values():
             if hasattr(store, 'join'):
                 store.join()
+
+    def __len__(self):
+        return self.head.counter - min(
+            (r.counter for r in self.readers),
+            default=self.tail.counter)
 
     def full(self):
         self._trim()
@@ -58,7 +64,7 @@ class Producer(Sink):
             store.put(data, meta, id=self.head.pos)
         self.head.counter += 1
 
-    def gen_source(self, task_id=None, throughput='small', **kw):
+    def gen_source(self, task_id=reip.UNSET, throughput='small', **kw):
         '''Generate a source from this sink.
 
         Arguments:
@@ -72,7 +78,7 @@ class Producer(Sink):
         '''
         # create the store if it doesn't exist already
         same_context = (
-            task_id is None or self.task_id is None or
+            reip.UNSET.check(task_id) or reip.UNSET.check(self.task_id) or
             task_id == self.task_id)
         store_id = same_context, throughput
         if store_id not in self.stores:  # use True/False as store keys

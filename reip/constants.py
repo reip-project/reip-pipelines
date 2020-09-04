@@ -30,6 +30,7 @@ class Token:
         return isinstance(other, Token) and self.id == other.id
 
 
+UNSET = Token('UNSET')
 # Use this to signify a blank output. If you have a block that outputs
 # [0, 1, BLANK, 2, 3], the next block would receive process(1, 2, 3, 4)
 BLANK = Token('BLANK')

@@ -14,6 +14,9 @@ class Customer(Source):
             self.__class__.__name__, self.id, self.source.readers[self.id],
             text.indent(self.source))
 
+    def __len__(self):
+        return self.source.head.counter - self.cursor.counter
+
     @property
     def cursor(self):
         return self.source.readers[self.id]
