@@ -14,8 +14,8 @@ def simple():
      # .to(Specshow('plots/{offset:.1f}s+{window:.1f}s-{time}.png'))
     )
 
-    print(reip.Task.default)
-    reip.Task.default.run()
+    print(reip.default_graph())
+    reip.default_graph().run()
 
 
 def record():
@@ -26,8 +26,8 @@ def record():
     # to audio file
     audio.to(B.audio.AudioFile('audio/{time}.wav'))
 
-    print(reip.Graph.default)
-    reip.Graph.default.run()
+    print(reip.default_graph())
+    reip.default_graph().run()
 
 def record10s():
     # record audio and buffer into chunks of 10
@@ -38,8 +38,8 @@ def record10s():
     # to wavefile
     audio10s.to(B.Debug('Audio 222')).to(B.audio.AudioFile('audio/{time}.wav'))
 
-    print(reip.Graph.default)
-    reip.Graph.default.run()
+    print(reip.default_graph())
+    reip.default_graph().run()
 
 
 # def record_and_spl():
@@ -74,7 +74,7 @@ def record_and_spl():
      .to(B.Csv('csv/{time}.csv', max_rows=10))
      .to(B.TarGz('tar/{time}.tar.gz')))
 
-    print(reip.Task.default)
+    print(reip.default_graph())
     reip.run()
 
 
@@ -124,7 +124,7 @@ def sonyc():
             'dog',
         ], max_rows=10)).to(B.TarGz('clsf.gz/{time}.tar.gz'))
 
-    print(reip.Task.default)
+    print(reip.default_graph())
     reip.run()
 
 
@@ -136,7 +136,7 @@ def camera_test(exc=False, n=3):
         if exc:
             B.dummy.TimeBomb(3, max_rate=n)
     x = B.dummy.SomeTransform(max_rate=n)(x)#.to(B.Debug('asdf'))
-    print(reip.Graph.default)
+    print(reip.default_graph())
     reip.run()
 
 
@@ -146,7 +146,7 @@ def camera_test(exc=False, n=3):
 #     x = Stft(n_fft=1024)(x)
 #     x = Sleep()(x)
 #     out = x = Debug()(x)
-#     reip.Graph.default.run()
+#     reip.default_graph().run()
 
 
 if __name__ == '__main__':

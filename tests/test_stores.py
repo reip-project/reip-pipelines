@@ -29,15 +29,15 @@ def run(srcs, expects):
     print('Done')
 
 
-def run_test_producer(context_id='some process context idk',
+def run_test_producer(task_id='some process context idk',
                       CustomerCls=reip.stores.Customer,
                       PointerCls=reip.stores.Pointer,
                       StoreCls=reip.stores.BaseStore, **kw):
     # get sink
-    sink = reip.stores.Producer(100, context_id='some process context idk')
+    sink = reip.stores.Producer(100, task_id='some process context idk')
 
     # get sources
-    kw['context_id'] = context_id
+    kw['task_id'] = task_id
     src0 = sink.gen_source(**kw)
     src1 = sink.gen_source(strategy=reip.Source.Skip, skip=1, **kw)
     src2 = sink.gen_source(strategy=reip.Source.Latest, **kw)
@@ -66,8 +66,8 @@ def run_test_producer(context_id='some process context idk',
     ]
 
     # wrap run with a remote process/thread
-    print('threaded', context_id is not sink.context_id)
-    remote_run = remote_func(run, threaded=context_id == sink.context_id)
+    print('threaded', task_id is not sink.task_id)
+    remote_run = remote_func(run, threaded=task_id == sink.task_id)
 
     sink.spawn()
 
@@ -111,7 +111,7 @@ def test_producer_process(throughput, CustomerCls, StoreCls):
     for th in ['small', 'medium', 'large']:
         print(f'Process: Throughput: {th}')
         run_test_producer(
-            context_id='something else',
+            task_id='something else',
             CustomerCls=CustomerCls, StoreCls=StoreCls,
             PointerCls=reip.stores.SharedPointer,
             throughput=throughput)

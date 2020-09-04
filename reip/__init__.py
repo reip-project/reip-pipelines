@@ -9,11 +9,11 @@ from .stream import *
 from .block import *
 from .graph import *
 from .task import *
+Graph._initialize_default_graph()
 from .blocks import *
 
-
 def run(*a, **kw):
-    Graph.default.run(*a, **kw)
+    default_graph().run(*a, **kw)
 
 def moment(delay=1e-6):
     '''Sleep for the minimum amount of time.'''

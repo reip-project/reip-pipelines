@@ -44,11 +44,12 @@ class Block:
     _thread = None
     _stream = None
     _delay = 1e-6
+    parent_id, task_id = None, None
 
     def __init__(self, n_source=1, n_sink=1, queue=1000, blocking=False,
                  max_rate=None, max_processed=None, graph=None, name=None, **kw):
         self.name = name or f'{self.__class__.__name__}_{id(self)}'
-        self.context_id = reip.Task.register_instance(self, graph)
+        self.parent_id, self.task_id = reip.Graph.register_instance(self, graph)
 
         # sources and sinks
         # by default, a block takes a variable number of sources.
@@ -59,7 +60,7 @@ class Block:
         self.sources = [None] * (n_source or 0)
         # TODO: should we have n_sink=None, signify, n_sink=n_source ?
         self.sinks = [
-            Producer(queue, context_id=self.context_id)
+            Producer(queue, task_id=self.task_id)
             for _ in range(n_sink or 0)
         ]
 
@@ -127,7 +128,7 @@ class Block:
                 # create and add the source
                 for j, sink in enumerate(sinks, j):
                     self.sources[j] = sink.gen_source(
-                        context_id=self.context_id, **kw)
+                        task_id=self.task_id, **kw)
                 j += 1  # need to increment cursor so we don't repeat last index
 
                 if (self.n_expected_sources and
@@ -298,7 +299,7 @@ class Block:
         self._exception = exc
         self.error = True
         self.log.exception(exc)
-        self.terminate()
+        self.close()
 
     def emit_signal(self, signal, block=True, meta=None):
         '''Emit a signal to all sinks.'''

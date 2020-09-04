@@ -6,10 +6,10 @@ from .client_store import ClientStore
 
 
 class Producer(Sink):
-    def __init__(self, size, delete_rate=5, context_id=None, **kw):
+    def __init__(self, size, delete_rate=5, task_id=None, **kw):
         self.size = size + 1  # need extra slot because head == tail means empty
         self.delete_rate = delete_rate
-        self.context_id = context_id
+        self.task_id = task_id
         self.stores = {}
         self.head = Pointer(self.size)
         self.tail = Pointer(self.size)
@@ -58,11 +58,11 @@ class Producer(Sink):
             store.put(data, meta, id=self.head.pos)
         self.head.counter += 1
 
-    def gen_source(self, context_id=None, throughput='small', **kw):
+    def gen_source(self, task_id=None, throughput='small', **kw):
         '''Generate a source from this sink.
 
         Arguments:
-            context_id (str): the identifier for the task.
+            task_id (str): the identifier for the task.
             throughput (str): The size of data. This determines the serialization
                 method to use. Should be:
                  - 'small' for data < 1GB
@@ -72,8 +72,8 @@ class Producer(Sink):
         '''
         # create the store if it doesn't exist already
         same_context = (
-            context_id is None or self.context_id is None or
-            context_id == self.context_id)
+            task_id is None or self.task_id is None or
+            task_id == self.task_id)
         store_id = same_context, throughput
         if store_id not in self.stores:  # use True/False as store keys
             if same_context:

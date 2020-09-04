@@ -1,5 +1,8 @@
 '''
 
+
+
+
 '''
 
 import time
@@ -11,79 +14,131 @@ from reip.util.iters import timed, loop
 from reip.util import text
 
 
-class BaseContext:
-    default = None  # the default instance
-    _previous = False  # the previous default instance
+def default_graph():
+    return _ContextScope.default
 
-    _all_instances = {}
+def get_graph(graph=None):
+    return _ContextScope.default if graph is None else graph
+
+def top_graph():
+    return _ContextScope.top
+
+
+class _ContextScope:
+    top = None
+    default = None
+    all_instances = {}
+
+
+
+class BaseContext:  # (metaclass=_MetaContext)
+    _delay = 1e-6
+    _previous = False  # the previous default instance
+    parent_id, task_id = None, None
 
     def __init__(self, *blocks, name=None, graph=None):
         self.name = name or f'{self.__class__.__name__}_{id(self)}'
-        self.blocks = list(blocks)
-        self._delay = 1e-6
-        self.context_id = Graph.register_instance(self, graph)
-
-
-    def __repr__(self):
-        return '[~{} ({} children) {}~]'.format(
-            self.__class__.__name__, len(self.blocks),
-            ''.join('\n' + text.indent(b) for b in self.blocks))
-
-    def add(self, block):
-        '''Add block to graph.'''
-        self.blocks.append(block)
-
-    def remove(self, block):
-        self.blocks.remove(block)
-
-    def clear(self):
-        self.blocks.clear()
+        self.parent_id, self.task_id = BaseContext.register_instance(self, graph)
 
     # global instance management
+
+    @classmethod
+    def _initialize_default_graph(cls):
+        _ContextScope.default = _ContextScope.top = Graph()
 
     @classmethod
     def get(cls, instance=None):
         '''If `instance` is `None`, the default instance will be returned.
         Otherwise `instance` is returned.'''
-        return cls.default if instance is None else instance
+        return _ContextScope.default if instance is None else instance
 
     @classmethod
-    def register_instance(cls, member=None, instance=None):
+    def register_instance(cls, child=None, parent=None):
         '''Add a member (Block, Task) to the graph in instance.
 
         This is used inside of
 
         Arguments:
-            instance (reip.Graph): A graph or task to be added to.
-                If instance is None, the default graph/task will be used.
-                If instance is False, nothing will be added.
-            member (reip.Graph, reip.Block): A graph, task, or block to add to
+            child (reip.Graph, reip.Block): A graph, task, or block to add to
                 instance.
                 If `member is instance`, nothing will be added. In other words,
                 A graph cannot be added to itself.
+            parent (reip.Graph): A graph or task to be added to.
+                If instance is None, the default graph/task will be used.
+                If instance is False, nothing will be added.
 
         Returns:
-            The name of `instance`. This prevents Blocks from having a reference
+            The name of `parent`. This prevents Blocks from having a reference
             to the entire graph.
+
+        Basically this should handle:
+         - adding a graph to a graph
+            - parent.name, parent.task_id
+         - adding a task to a graph
+            - raise if parent is task
+            - raise if graph.task_id is not None
+            - if `flatten_tasks`, then iterate through graph parents until you
+              find one on the main task
+            - parent.name, child.name
+         - adding a graph to a task
+            - parent.name, parent.task_id
+         - adding a block to a graph
+            - parent.name, parent.task_id
+         - adding a block to a task
+            - parent.name, parent.task_id
+         - do nothing if parent is False / None+unset default.
         '''
-        BaseContext._all_instances[member.name] = weakref.ref(member)
-        if instance is False:  # disable graph
-            return None
-        instance = cls.get(instance)  # get default if None
-        if instance is None or instance is member:
-            return None
-        instance.add(member)
-        return instance.name
+        _ContextScope.all_instances[child.name] = weakref.ref(child)
+        task_id = child.name if isinstance(child, reip.Task) else None
+
+        # user explicitly disabled graph for this child
+        if parent is False:
+            return None, task_id
+        parent = get_graph(parent)  # get default if None
+        # there is no graph specified and no default graph
+        if parent is None:
+            return None, task_id
+
+        # trying to add to self
+        if parent is child:
+            return parent.parent_id, task_id or parent.task_id
+
+        if task_id:  # disallow nested tasks
+            # parent_contexts = [parent] + parent.parent_contexts if flatten_tasks else [parent]
+            if isinstance(parent, reip.Task):
+                raise RuntimeError(
+                    'Cannot add a task ({}) to another task ({}).'.format(
+                        child.name, parent.name))
+            if parent.task_id:
+                raise RuntimeError(
+                    'Cannot add a task ({}) to a graph ({}) in a different task ({}).'.format(
+                        child.name, parent.name, parent.task_id))
+
+        # everything checks out.
+        parent.add(child)
+        return parent.name, task_id or parent.task_id
 
     @classmethod
-    def get_object(self, id):
-        obj = self._all_instances.get(id)
+    def get_object(cls, id):
+        obj = _ContextScope.all_instances.get(id)
         if obj is None:
-            raise ValueError(f'Object {id} does not exist.')
+            return
+        #     raise ValueError(f'Object {id} does not exist.')
         obj = obj()  # call weakref to get actual ref
-        if obj is None:
-            raise ValueError(f'Object {id} no longer exists.')
+        # if obj is None:
+        #     raise ValueError(f'Object {id} no longer exists.')
         return obj
+
+    # @property
+    # def parent_contexts(self):
+    #     obj = self
+    #     stack = []
+    #     while obj.parent_id:
+    #         obj = BaseContext.get_object(obj.parent_id)
+    #         if obj is not None:
+    #             break
+    #         stack.append(obj)
+    #     return stack
 
     def __enter__(self):
         return self.as_default()
@@ -93,13 +148,13 @@ class BaseContext:
 
     def as_default(self):
         '''Set this graph as the default graph and track the previous default.'''
-        self._previous, self.__class__.default = self.__class__.default, self
+        self._previous, _ContextScope.default = _ContextScope.default, self
         return self
 
     def restore_previous(self):
         '''Restore the previously set graph.'''
         if self._previous is not False:
-            self.__class__.default, self._previous = self._previous, None
+            _ContextScope.default, self._previous = self._previous, None
         self._previous = False
         return self
 
@@ -113,9 +168,25 @@ class Graph(BaseContext):
     _delay = 1e-6
     _main_delay = 0.1
 
-    def __init__(self, *a, **kw):
-        super().__init__(*a, **kw)
+    def __init__(self, *blocks, **kw):
+        super().__init__(**kw)
+        self.blocks = list(blocks)
         self.log = reip.util.logging.getLogger(self)
+
+    def __repr__(self):
+        return '[~{}({}) ({} children) {}~]'.format(
+            self.__class__.__name__, self.name, len(self.blocks),
+            ''.join('\n' + text.indent(b) for b in self.blocks))
+
+    def add(self, block):
+        '''Add block to graph.'''
+        self.blocks.append(block)
+
+    def remove(self, block):
+        self.blocks.remove(block)
+
+    def clear(self):
+        self.blocks.clear()
 
     # run graph
 
@@ -126,24 +197,20 @@ class Graph(BaseContext):
     @contextmanager
     def run_scope(self, raise_exc=False):
         self.log.info(text.green('Starting'))
-        # print(text.b_(text.green('Starting'), self), flush=True)
         try:
             self.spawn()
             self.log.info(text.green('Ready'))
-            # print(text.b_(text.green('Ready'), self), flush=True)
             yield self
         except KeyboardInterrupt:
             self.log.info(text.yellow('Interrupting'))
-            # print(text.b_(text.yellow('Interrupting'), self, '--'))
         finally:
             self.join(raise_exc=raise_exc)
-            # print(text.b_(text.green('Done'), self), flush=True)
             self.log.info(text.green('Done'))
 
     def wait(self, duration=None):
         for _ in timed(loop(), duration):
             if self.done or self.error:
-                break
+                return True
             time.sleep(self._main_delay)
 
     # state
@@ -230,4 +297,4 @@ class Graph(BaseContext):
 
 
 # create an initial default graph
-Graph.top = Graph.default = Graph()
+# Graph.top = Graph.default = Graph()

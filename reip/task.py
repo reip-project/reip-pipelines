@@ -13,8 +13,8 @@ class Task(reip.Graph):
     _process = None
     _delay = 1#e-5
 
-    def __init__(self, *blocks, graph=None):
-        super().__init__(*blocks, graph=graph)
+    def __init__(self, *blocks, graph=None, **kw):
+        super().__init__(*blocks, graph=graph, **kw)
         self.remote = remote.RemoteProxy(self)
         self._terminated = mp.Value(c_bool, False)
         self._error = mp.Value(c_bool, False)
@@ -23,12 +23,10 @@ class Task(reip.Graph):
 
     def _run(self, duration=None):
         self.log.info(text.green('Starting'))
-        # print(text.b_(text.green('Starting'), self), flush=True)
         self.remote.listening = True  # XXX: let the main process know that it's listening
         try:
             # initialize
             super().spawn()
-            # print(text.b_(text.green('Ready'), self), flush=True)
             self.log.info(text.green('Ready'))
 
             # main loop
@@ -51,8 +49,6 @@ class Task(reip.Graph):
             self.remote._local.put((None, None, e))
         except KeyboardInterrupt as e:
             self.log.info(text.yellow('Interrupting'))
-            # print(text.b_(
-            #     text.yellow('Interrupting'), self, text.yellow('--')))
         finally:
             super().join()
             self.error = super().error  # get child errors before closing, just in case
@@ -65,8 +61,7 @@ class Task(reip.Graph):
         if self._process is not None:  # only start once
             return
 
-        self.log.debug(text.blue('Spawning'))
-        # print(text.b_(text.blue('Spawning'), self))
+        # self.log.debug(text.blue('Spawning'))
         self._process = mp.Process(target=self._run, daemon=True)
         self._process.start()
         if wait:
@@ -77,8 +72,7 @@ class Task(reip.Graph):
         if self._process is None:
             return
 
-        self.log.debug(text.blue('Joining'))
-        # print(text.b_(text.blue('Joining'), self))
+        # self.log.debug(text.blue('Joining'))
         self.remote.super.join(*a, default=None, **kw)  # join children
         self._process.join(timeout=timeout)  # join process
         self._process = None

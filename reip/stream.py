@@ -195,7 +195,7 @@ class StreamSlice(Stream):
     >>> meta = B.Constant(5).stream_output().meta
 
     >>> # ignore the fact that dicts are not hashable, this is for illustration.
-    >>> with reip.Graph.default.run_scope(duration=1):
+    >>> with reip.default_graph().run_scope(duration=1):
     ...     assert set(full) == { ([5], {}) }  # everything, the default
     ...     assert set(data) == { [5] }        # all data buffers
     ...     assert set(full) == { 5 }          # only the first buffer
