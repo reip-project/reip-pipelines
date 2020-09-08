@@ -83,7 +83,8 @@ class Debug(reip.Block):
         self.value = value
         self.period = period
         self._last_time = 0
-        super().__init__(name=f'Debug-{message}' if message else None, **kw)
+        name = 'Debug-{}'.format(message.replace(" ", "-")) if message else None
+        super().__init__(name=name, **kw)
 
     def _format(self, x):
         if isinstance(x, np.ndarray):
