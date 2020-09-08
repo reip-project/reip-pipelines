@@ -39,6 +39,18 @@ def throttled(it, rate=None, delay=1e-6):
         t1 = time.time()
 
 
+def resample_iter(it, interval):
+    if not interval:
+        yield from it
+        return
+
+    t = time.time()
+    for _ in it:
+        if time.time() - t >= interval:
+            t = time.time()
+            yield _
+
+
 def limit(it, n=None):
     if not n:
         yield from it

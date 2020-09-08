@@ -8,3 +8,4 @@ from . import shell
 from . import iters
 from . import remote
 from .background_process import *
+from .writer import *
