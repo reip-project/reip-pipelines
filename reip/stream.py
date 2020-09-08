@@ -35,8 +35,8 @@ class Stream:
             ' '.join(('will-wait' * self.should_wait, 'terminated' * self.terminated))
             or 'running' if self.running else 'paused')
 
-        srcs = ''.join(f'\n{s}' for s in self.sources)
-        return f'<{self.__class__.__name__}({self.name}) {state} {text.indent(srcs)}>'
+        # srcs = ''.join(f'\n{s}' for s in self.sources)
+        return f'<{self.__class__.__name__}({self.name}) {state} available={[len(s) for s in self.sources]}>'
 
     def reset(self):
         self.signal = None

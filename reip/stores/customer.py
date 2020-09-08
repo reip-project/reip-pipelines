@@ -10,8 +10,9 @@ class Customer(Source):
         super().__init__(**kw)
 
     def __str__(self):
-        return '<{}[{}] {} of \n{}>'.format(
-            self.__class__.__name__, self.id, self.source.readers[self.id],
+        return '<{}[{}] queued={} {} of \n{}>'.format(
+            self.__class__.__name__, self.id, len(self),
+            self.source.readers[self.id],
             text.indent(self.source))
 
     def __len__(self):
