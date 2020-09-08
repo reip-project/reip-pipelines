@@ -19,7 +19,7 @@ class Stream:
     '''
     _retry = False
     _delay = 1e-6
-    should_wait = False
+    should_wait = True
     running = True
     terminated = False
     signal = None
@@ -103,6 +103,10 @@ class Stream:
 
     def close(self):
         self.should_wait = False
+        return self
+
+    def nowait(self, flag=True):
+        self.should_wait = not flag
         return self
 
     def pause(self):
