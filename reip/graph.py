@@ -203,6 +203,7 @@ class Graph(BaseContext):
             yield self
         except KeyboardInterrupt:
             self.log.info(text.yellow('Interrupting'))
+            self.terminate()
         finally:
             self.join(raise_exc=raise_exc)
             self.log.info(text.green('Done'))
