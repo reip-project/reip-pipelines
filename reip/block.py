@@ -437,7 +437,8 @@ class Block:
     def print_stats(self):
         total_time = self._sw.stats()[0] if '' in self._sw._samples else 0
         speed = self.processed / total_time if total_time else 0
-        dropped = [getattr(sink, "dropped", None) for sink in self.sinks]
+        dropped = [getattr(s, "dropped", None) for s in self.sinks]
+        skipped = [getattr(s, "skipped", None) for s in self.sources]
         n_src = [len(s) for s in self.sources]
         n_snk = [len(s) for s in self.sinks]
         print(text.block_text(
@@ -449,7 +450,7 @@ class Block:
             # basic stats
             f'Processed {self.processed} buffers in {total_time:.2f} sec. '
             f'({speed:.2f} x/s)',
-            f'Dropped: {dropped}',
+            f'Dropped: {dropped}  Skipped: {skipped}',
             f'Left in Queue: sources={n_src} sinks={n_snk}',
             # timing info
             self._sw, ch=text.blue('*')))
