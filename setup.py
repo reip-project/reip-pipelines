@@ -16,6 +16,8 @@ setuptools.setup(
     # entry_points={'console_scripts': ['{name}={name}:main'.format(name=NAME)]},
     install_requires=[
         'numpy',
+        'pyarrow',
+        'tflit>=0.0.13',
         # utils
         'pycrypto',
         # general
