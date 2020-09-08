@@ -128,7 +128,7 @@ def sonyc():
     reip.run()
 
 
-def camera_test(exc=False, n=3):
+def array_task_test(exc=False, n=3):
     with reip.Task():
         x = B.dummy.SomeArray((720, 1280, 3), max_rate=n)
         # x = B.dummy.SomeArray((2, 2, 3), queue=30, blocking=True)
@@ -158,6 +158,104 @@ def status_test(exc=False, n=3):
             print(g.status())
             g.wait(1)
 
+
+
+def camera():
+    import reip.blocks.video
+    with reip.Graph() as g:
+        out = cam = B.video.Video(0)
+
+    with g.run_scope():
+        it = B.video.stream_imshow(out.output_stream(strategy='latest'), 'blah')
+        for _ in reip.util.iters.resample_iter(it, 5):
+            print(g.status())
+
+def flow():
+    import reip.blocks.video
+    with reip.Graph() as g:
+        cam = B.video.Video(0)
+        out = flow = B.video.effects.OpticalFlow()(cam, strategy='latest')
+
+    with g.run_scope():
+        it = B.video.stream_imshow(out.output_stream(strategy='latest'), 'blah')
+        for _ in reip.util.iters.resample_iter(it, 5):
+            print(g.status())
+
+
+def camera_rec():
+    import reip.blocks.video
+    with reip.Graph() as g:
+        cam = B.video.Video(0)
+        # show = B.video.VideoShow()(cam)
+        writer = B.video.VideoWriter(
+            os.path.join(os.path.dirname(__file__), 'videos/{time}.mp4'),
+            duration=5, codec='avc1')(cam)
+        out = B.Debug('Video Files')(writer)
+
+    with g.run_scope():
+        it = B.video.stream_imshow(cam.output_stream(strategy='latest'), 'blah')
+        for _ in reip.util.iters.resample_iter(it, 5):
+            print(g.status())
+
+def pose():
+    import reip.blocks.video
+    from reip.blocks.video.models.posenet import Posenet
+    with reip.Graph() as g:
+        cam = B.video.Video(0)
+        out = Posenet()(cam, strategy='latest')
+
+
+    with g.run_scope():
+        it = B.video.stream_imshow(out.output_stream(strategy='latest'), 'blah')
+        for _ in reip.util.iters.resample_iter(it, 5):
+            print(g.status())
+
+
+def objects():
+    import reip.blocks.video
+    from reip.blocks.video.models.objects import ObjectDetection
+    with reip.Graph() as g:
+        cam = B.video.Video(0)
+        out = ObjectDetection()(cam, strategy='latest')
+
+
+    with g.run_scope():
+        it = B.video.stream_imshow(out.output_stream(strategy='latest'), 'blah')
+        for _ in reip.util.iters.resample_iter(it, 5):
+            print(g.status())
+
+
+def style():
+    import reip.blocks.video
+    from reip.blocks.video.models.style import StyleTransfer
+    with reip.Graph() as g:
+        cam = B.video.Video(0)
+        out = StyleTransfer(
+            os.path.join(os.path.dirname(__file__), 'js-Giddy-cropped.jpg')
+        )(cam, strategy='latest')
+
+
+    with g.run_scope():
+        it = B.video.stream_imshow(out.output_stream(strategy='latest'), 'blah')
+        for _ in reip.util.iters.resample_iter(it, 5):
+            print(g.status())
+
+
+
+def style_offline():
+    import reip.blocks.video
+    from reip.blocks.video.models.style import StyleTransfer
+    with reip.Graph() as g:
+        cam = B.video.Video(0)
+        out = StyleTransfer(
+            os.path.join(os.path.dirname(__file__), 'js-Giddy-cropped.jpg')
+        )(cam, strategy='latest')
+
+
+    with g.run_scope():
+        it = B.video.stream_imshow(out.output_stream(strategy='latest'), 'blah')
+        for _ in reip.util.iters.resample_iter(it, 5):
+            print(g.status())
 
 # def keras_like_interface():  # XXX: this is hypothetical
 #     x = Interval()
