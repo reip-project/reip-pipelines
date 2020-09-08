@@ -67,28 +67,22 @@ def test_output(tmp_path):
     # generate random data
     # write to csv
     # read csv data
-    try:
-        N = 100
-        with reip.Graph() as g:
-            csv_files = B.Increment(N).to(B.Time()).to(B.Csv(
-                tmp_path / '{time}.csv', max_rows=10)).output_stream()
-        g.run(raise_exc=True)
-        csv_files.close()
-        print(csv_files)
-        files = [d[0] for d, meta in csv_files]
+    N = 100
+    with reip.Graph() as g:
+        csv_files = B.Increment(N).to(B.Time()).to(B.Csv(
+            tmp_path / '{time}.csv', max_rows=10)).output_stream()
+    g.run(raise_exc=True)
+    print(csv_files)
+    files = [d[0] for d, meta in csv_files.nowait()]
 
-        assert len(files) == 10
+    assert len(files) == 10
 
-        import csv
-        data = []
-        for fname in files:
-            with open(fname, 'r') as f:
-                data.extend(int(d[0]) for d in csv.reader(f))
-        assert data == list(range(N))
-    finally:
-        for fname in files:
-            if os.path.isfile(fname):
-                os.remove(fname)
+    import csv
+    data = []
+    for fname in files:
+        with open(fname, 'r') as f:
+            data.extend(int(d[0]) for d in csv.reader(f))
+    assert data == list(range(N))
 
 
 
