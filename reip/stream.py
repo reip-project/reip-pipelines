@@ -147,7 +147,7 @@ class Stream:
             max_rate, delay or cls._delay)
 
     @classmethod
-    def from_block_sources(cls, block, max_rate=None, auto_next=False, **kw):
+    def from_block_sources(cls, block, max_rate=None, auto_next=False, name=None, **kw):
         '''Generate a stream using a block's sources.
 
         NOTE: this is unsafe as a public interface, because if you're using
@@ -157,14 +157,18 @@ class Stream:
         '''
         return cls(
             block.sources, auto_next=auto_next,
-            max_rate=max_rate or block.max_rate, **kw)
+            max_rate=max_rate or block.max_rate,
+            name=name or block.name, **kw)
 
     @classmethod
-    def from_block(cls, block, max_rate=None, **kw):
+    def from_block(cls, block, max_rate=None, duration=None, delay=None,
+                   timeout=None, name=None, **kw):
         '''Generate a stream using sources generated from a block's sinks.'''
         return cls(
-            [sink.gen_source() for sink in block.sinks],
-            max_rate=max_rate or block.max_rate, **kw)
+            [sink.gen_source(**kw) for sink in block.sinks],
+            max_rate=max_rate or block.max_rate, delay=delay,
+            duration=duration, timeout=timeout,
+            name=name or block.name)
 
     # Stream slicing
 
