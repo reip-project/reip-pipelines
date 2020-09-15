@@ -267,20 +267,23 @@ class Block:
             # increment sources and send outputs
             else:
                 # detect signals meant for the source
-                if any(any(t.check(o) for t in reip.SOURCE_TOKENS) for o in outputs):
-                    # check signal values
-                    if len(outputs) > len(self.sources):
-                        raise RuntimeError(
-                            f'Too many signals for sources in {self}. '
-                            f'Got {len(outputs)}, expected a maximum '
-                            f'of {len(self.sources)}.')
-                    # process signals
-                    for s, out in zip(self._stream.sources, outputs):
-                        if out == reip.RETRY:
-                            pass
-                        else:
-                            s.next()
-                    return
+                if self.sources:
+                    if any(any(t.check(o) for t in reip.SOURCE_TOKENS) for o in outputs):
+                        # check signal values
+                        if len(outputs) > len(self.sources):
+                            raise RuntimeError(
+                                f'Too many signals for sources in {self}. '
+                                f'Got {len(outputs)}, expected a maximum '
+                                f'of {len(self.sources)}.')
+                        # process signals
+                        for s, out in zip(self._stream.sources, outputs):
+                            if out == reip.RETRY:
+                                pass
+                            else:
+                                s.next()
+                        return
+
+                self.processed += 1
 
                 # convert outputs to a consistent format
                 outs, meta = prepare_output(outputs, input_meta=meta_in)
@@ -288,7 +291,6 @@ class Block:
                 self._stream.next()
 
                 # pass to sinks
-                self.processed += 1
                 for sink, out in zip(self.sinks, outs):
                     if sink is not None:
                         sink.put((out, meta), self._put_blocking)
@@ -458,6 +460,8 @@ class Block:
 
 def prepare_output(outputs, input_meta=None, expected_length=None):
     '''Take the inputs from block.process and prepare to be passed to block.sinks.'''
+    if not outputs:
+        return (), {}
 
     bufs, meta = None, None
     if isinstance(outputs, tuple):
