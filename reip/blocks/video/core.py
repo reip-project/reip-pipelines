@@ -5,20 +5,31 @@ import reip
 
 class Video(reip.Block):
     cap = None
-    def __init__(self, index=None, file=None, fps=30, **kw):
+    def __init__(self, index=None, file=None, fps=30, size=None, **kw):
         self.index = index
+        self.size = size
         self.fps = fps
         super().__init__(n_source=None, **kw)
 
     def init(self):
         self.cap = cv2.VideoCapture(self.index)
+        msg = ''
+        if self.size:
+            h, w = self.size
+            wset = self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, int(w))
+            hset = self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, int(h))
+            msg = f'  (desired window size: {h}x{w})'
+        h = self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
+        w = self.cap.get(cv2.CAP_PROP_FRAME_WIDTH)
+        self.log.debug(f'window size: {w}x{h}' + msg)
 
     def process(self, x=None, meta=None):
         if not self.cap.isOpened():
+            print('closing', self.cap.isOpened())
             return reip.CLOSE
         ret, frame = self.cap.read()
         if not ret:
-            return reip.CLOSE
+            raise RuntimeError(f'Video frame grab failed for {self}')
         return [frame[:, ::-1]], {
             'time': time.time(),
             'dim': frame.shape,
