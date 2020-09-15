@@ -4,7 +4,8 @@ import time
 from gstreamer import *
 
 device = 0
-width, height, fps = 1920, 1080, 30
+width, height, fps = 2592, 1944, 15
+# width, height, fps = 1920, 1080, 30
 tot_samples, tot_overrun, t0 = 0, 0, time.time()
 
 def new_sample(sink, data):
@@ -34,6 +35,7 @@ if __name__ == "__main__":
     s = g.add("appsink", "sink")
 
     # g.src.set_property("num-buffers", 150)
+    # print("\n\tname", g.src.get_property("device-name"))
 
     q.set_property("max-size-buffers", 5)
     q.set_property("leaky", "downstream")
@@ -57,18 +59,17 @@ if __name__ == "__main__":
 
             if sample:
                 count += 1
-                print(count, time.time() - t0)
-
                 img, ts, fmt = GStreamer.unpack_sample(sample, debug=True)
+                print(count, ts / 1.e+9, "at", time.time() - t0)
 
-                if count % 3 == 0:
+                if count % 3 == 0 and True:
                     w, h, ch, fmt = fmt
                     assert(fmt == "I420")
                     cv2.imshow(title, img[: img.shape[0] * 2 // 3].reshape((h, w)))
-                    
+
                 if cv2.waitKey(1) == 27:
                     g.eos()  # esc to quit
-            # time.sleep(0.001)
+            # time.sleep(0.1)
         except KeyboardInterrupt:
             print("KeyboardInterrupt - breaking the loop")
             g.eos()

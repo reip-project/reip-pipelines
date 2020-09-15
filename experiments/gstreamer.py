@@ -36,6 +36,7 @@ class GStreamer:
         self._pipeline = Gst.Pipeline()
         self._elements = {}
         self._creation_order = []
+        self._included = []
         self._debug = debug
         self._bus = None
         self._bus_thread = None
@@ -58,6 +59,9 @@ class GStreamer:
 
         return new_element
 
+    def __getitem__(self, e):
+        return self._elements[e]
+
     def from_string(self, s):
         return Gst.caps_from_string(s)
 
@@ -67,7 +71,12 @@ class GStreamer:
             raise ValueError("Nothing to link")
 
         for e in elements:
-            self._pipeline.add(self._elements[e])
+            if e not in self._included:
+                self._pipeline.add(self._elements[e])
+                self._included.append(e)
+            else:
+                if self._debug:
+                    print("Element was already included:", e)
 
         for i in range(len(elements)-1):
             if not self._elements[elements[i]].link(self._elements[elements[i+1]]):
