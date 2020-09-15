@@ -5,6 +5,7 @@ from .debug import *
 from .misc import *
 from . import logging
 from . import shell
+from . import func
 from . import iters
 from . import remote
 # from .background_process import *
