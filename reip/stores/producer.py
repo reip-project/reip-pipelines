@@ -1,12 +1,8 @@
 import reip
-from .pointers import Pointer
-from ..interface import Sink
-from .store import Store
-from .plasma import PlasmaStore
-from .client_store import ClientStore
+from reip.stores import Store, PlasmaStore, ClientStore, Pointer, HAS_PYARROW
 
 
-class Producer(Sink):
+class Producer(reip.Sink):
     def __init__(self, size, delete_rate=5, task_id=reip.UNSET, **kw):
         self.size = size + 1  # need extra slot because head == tail means empty
         self.delete_rate = delete_rate
@@ -85,12 +81,12 @@ class Producer(Sink):
             if same_context:
                 store = Store(self.size)
             else:
-                if throughput == 'large':
+                if HAS_PYARROW and throughput == 'large':
                     store = PlasmaStore(self.size)
                 else:
                     store = ClientStore(self.size)
-                    if throughput == 'medium':
-                        kw['faster_queue'] = True
+                    if HAS_PYARROW and throughput == 'medium':
+                        kw['arrow'] = True
 
                 # convert pointers to shared pointers
                 self.head = self.head.as_shared()
