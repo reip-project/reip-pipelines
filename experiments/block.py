@@ -25,8 +25,8 @@ class Block(Worker):
         self._sw = StopWatch(name)
         self._select = 0
         self._t0 = 0
-        self._process_delay = 1e-6
-        self._terminate_delay = 1e-5
+        self._process_delay = 1e-5
+        self._terminate_delay = 1e-4
 
     # Construction
 
@@ -158,7 +158,7 @@ class Block(Worker):
                 buffers_in = []
                 valid = True
 
-                with self._sw("collect"):  # recurrent stopwatch overhead (~10 us)
+                with self._sw("collect"):  # recurrent stopwatch overhead (~20 us on Jetson Nano)
                     for source in self.sources:
                         buf = source.get(block=False)
                         if buf is None:
@@ -173,7 +173,7 @@ class Block(Worker):
                             while time.time() + 0.5 * self._process_delay < self._t0 + (1. / self.max_rate):
                                 time.sleep(self._process_delay)
 
-                    with self._sw("process"):  # recurrent stopwatch overhead (~10 us)
+                    with self._sw("process"):  # recurrent stopwatch overhead (~20 us on Jetson Nano)
                         self._t0 = time.time()
                         buffers_out = self.process(buffers_in)
                     # check_types(buffers_out)
@@ -183,11 +183,11 @@ class Block(Worker):
                         source.next()
 
                     if len(self.sinks) > 0:
-                        with self._sw("write"):  # recurrent stopwatch overhead (~10 us)
+                        with self._sw("write"):  # recurrent stopwatch overhead (~20 us on Jetson Nano)
                             for i, buf in enumerate(buffers_out):
                                 self.sinks[i].put(buf, block=False)
 
-            with self._sw("sleep"):  # recurrent stopwatch overhead (~10 us)
+            with self._sw("sleep"):  # recurrent stopwatch overhead (~20 us on Jetson Nano)
                 time.sleep(self._process_delay)
 
         with self._sw("finish"):

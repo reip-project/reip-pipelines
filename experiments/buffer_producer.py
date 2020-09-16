@@ -61,6 +61,12 @@ class Producer(Sink):
         self.quit = mp.Value(c_bool, False, lock=False)
         self.clients = []
         self.thread = None
+        if faster_queue:
+            print("Faster queue selected. Warming up...")
+            t0 = time.time()
+            ret = pa.deserialize(pa.serialize("warm-up").to_buffer())
+            assert (ret == "warm-up")
+            print("Warmed up in %.4f sec" % (time.time()- t0))
         super().__init__(**kw)
 
     def spawn(self):

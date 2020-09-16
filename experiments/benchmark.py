@@ -14,11 +14,11 @@ if __name__ == '__main__':
         with Task("camera") as t:
             # Generator("cam", (1, 128, 1), max_rate=None, verbose=True)
             # Generator("cam", (1, 1280, 3), max_rate=None, verbose=True)
-            # Generator("cam", (2000, 2500, 3), max_rate=None, verbose=True)
-            Generator("cam", (720, 1280, 3), max_rate=None, verbose=True)
-            t.cam.to(Transformer("inf", offset=1, verbose=True))
+            Generator("cam", (2592 * 1944 * 3 // 2), max_rate=None, verbose=True)
+            # Generator("cam", (720, 1280, 3), max_rate=None, verbose=True)
+            t.cam.to(Transformer("inf", offset=1, verbose=False))
         Consumer("f", prefix="test", verbose=True)
-        t.inf.to(p.f, plasma=False, faster_queue=True)
+        t.inf.to(p.f, plasma=True, faster_queue=True)
         p.f.sink = queue.Queue()
 
     p.run(1)
