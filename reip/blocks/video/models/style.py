@@ -36,12 +36,13 @@ class StyleTransfer(reip.Block):
         # styled = cv2.resize(styled, frame.shape[:2][::-1])
         styled = np.uint8(styled * 127.5 + 127.5)
         styled = cv2.cvtColor(styled, cv2.COLOR_RGB2BGR)
-        return [styled], {}
+        return [restore_aspect(styled, frame)], {}
 
 
     def set_style(self, img, img2=None, blend=0.5):
         self._style_emb = (
-            self.blend_style(img, img2, blend)[0] if img2 is not None else
+            self.blend_style(img, img2, blend)[0]
+            if img2 is not None else
             self.generate_style(img)[0])
         return self._style_emb
 
@@ -82,3 +83,13 @@ def resize_with_crop_or_pad(arr, *size):
         for d, s in zip(diffs, arr.shape))
     out[oslc] = arr[aslc]
     return out
+
+def restore_aspect(modified, original, stretch=False):
+    mh, mw = modified.shape[:2]
+    oh, ow = original.shape[:2]
+    sh = mw * oh / ow
+    sw = mh * ow / oh
+    return cv2.resize(modified, (
+        sh if (sh > mh) == bool(stretch) else mh,
+        sw if (sw > mw) == bool(stretch) else mw,
+    ))

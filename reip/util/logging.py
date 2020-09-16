@@ -12,7 +12,9 @@ def getLogger(block):
     log.addFilter(InjectData(dict(naem=block.name, block=block)))
     # '(%(name)s:%(levelname)s) %(asctime)s: %(message)s | %(block)s'
     formatter = colorlog.ColoredFormatter(
-        '%(log_color)s[%(levelname)s]%(reset)s %(thin)s%(asctime)s%(reset)s: %(log_color)s%(message)s%(reset)s\n%(block)s\n'
+        '%(log_color)s[%(levelname)s]%(reset)s %(thin)s%(asctime)s%(reset)s: '
+        '%(log_color)s%(message)s%(reset)s\n'
+        '%(log_color)s %(block)s%(reset)s\n'
     )
 
     h_stdout = logging.StreamHandler(sys.stdout)

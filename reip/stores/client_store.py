@@ -9,20 +9,16 @@ import time
 import threading
 import multiprocessing as mp
 from ctypes import c_bool
-from .pointers import Pointer, SharedPointer
-from .store import Store
-from .customer import Customer
-from .queues import FasterSimpleQueue
-
+from . import SharedPointer, Store, Customer, ArrowQueue, HAS_PYARROW
 
 
 class QueueCustomer(Customer):
     cache = None
-    def __init__(self, *a, faster_queue=False, **kw):
+    def __init__(self, *a, arrow=False, **kw):
         super().__init__(*a, **kw)
         self.requested = mp.Value(c_bool, False, lock=False)
         self.data_queue = (
-            FasterSimpleQueue(ctx=mp.get_context()) if faster_queue else
+            ArrowQueue(ctx=mp.get_context()) if arrow and HAS_PYARROW else
             mp.SimpleQueue())
         self.store.customers.append(self)  # circular reference - garbage collection issue?
 

@@ -19,21 +19,24 @@ class Stream:
     '''
     _retry = False
     _delay = 1e-6
-    should_wait = True
     running = True
     terminated = False
     signal = None
-    def __init__(self, sources, loop=None, auto_next=True, timeout=None, name='', **kw):
+    def __init__(self, sources, loop=None, auto_next=True, should_wait=True,
+                 timeout=None, name='', **kw):
         self.name = name or ''
         self.sources = sources
         self.loop = self.make_loop(**kw) if loop is None else loop
         self.auto_next = auto_next
+        self.should_wait = should_wait
         self.timeout = timeout
 
     def __str__(self):
         state = (
-            ' '.join(('will-wait' * self.should_wait, 'terminated' * self.terminated))
-            or 'running' if self.running else 'paused')
+            ' '.join((
+                'will-wait' * self.should_wait,
+                'terminated' * self.terminated))
+            or ('running' if self.running else 'paused'))
 
         # srcs = ''.join(f'\n{s}' for s in self.sources)
         return f'<{self.__class__.__name__}({self.name}) {state} available={[len(s) for s in self.sources]}>'

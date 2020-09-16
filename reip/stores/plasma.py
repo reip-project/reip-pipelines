@@ -1,10 +1,16 @@
 import os
 import time
+import multiprocessing as mp
+import multiprocessing.queues
+
 import numpy as np
 import pyarrow as pa
 import pyarrow.plasma as plasma
 from .base import BaseStore
 from .pointers import SharedPointer
+
+
+__all__ = ['PlasmaStore', 'ArrowQueue']
 
 
 def get_plasma_path():
@@ -84,8 +90,6 @@ class PlasmaStore(BaseStore):
 TYPE = '__PLASMA_SERIALIZE_DTYPE__'
 
 def save_both(client, data, meta=None, id=None):
-    # t0 = time.time()
-    # print("Saving data with meta...")
     meta = dict(meta) if meta else {}  # make a copy, don't modify the original dict
 
     if data is None:
@@ -114,15 +118,10 @@ def save_both(client, data, meta=None, id=None):
         stream.set_memcopy_threads(4)
         pa.ipc.write_tensor(tensor, stream)
     client.seal(object_id)
-
-    # print("Saving data with meta took", time.time() - t0)
     return object_id
 
 
 def load_both(client, id):
-    # t0 = time.time()
-    # print("Loading data with meta...")
-
     meta, data = client.get_buffers([id], timeout_ms=1, with_meta=True)[0]
     meta = pa.deserialize(meta)
     dtype = meta.pop(TYPE)
@@ -136,120 +135,146 @@ def load_both(client, id):
         data = tensor.to_numpy()
     else:
         raise ValueError("Unsupported data type", dtype)
-
-    # print("Loading data with meta took", time.time() - t0)
     return data, meta
 
 
-def test():
-    print(get_plasma_path())
-    client = plasma.connect(get_plasma_path())
-    print(client.store_capacity())
-    print(client.list())
-    client.delete(client.list())
-    print(client.list())
+class ArrowQueue(mp.queues.SimpleQueue):
+    def __init__(self, ctx=None):
+        super().__init__(ctx=mp.get_context() if ctx is None else ctx)
 
-    print("Generating...")
-    data = np.ones(1 * 10 ** 4, dtype=np.uint8)
-    # data = "Hello"
-    # data = None
-    print("Done")
+    def _dumps(self, obj):
+        # return _ForkingPickler.dumps(obj)
+        return pa.serialize(obj).to_buffer()
 
-    # id = save_data(client, data)
-    # data2 = load_data(client, id)
-    # print(data2)
-    # client.delete([id])
+    def _loads(self, obj):
+        # return _ForkingPickler.loads(res)
+        return pa.deserialize(obj)
 
-    meta = {"Foo": 10}
+    def get(self):
+        with self._rlock:
+            res = self._reader.recv_bytes()
+        return self._loads(res)
 
-    # id2 = save_meta(client, meta)
-    # meta2 = load_meta(client, id2)
-    # print(meta2)
-
-    id3 = save_both(client, data, meta)
-    data3, meta3 = load_both(client, id3)
-    print(data3, meta3)
+    def put(self, obj):
+        obj = self._dumps(obj)
+        if self._wlock is None:  # writes to win32 pipe are atomic
+            self._writer.send_bytes(obj)
+        else:
+            with self._wlock:
+                self._writer.send_bytes(obj)
 
 
-def test2():
-    store = Store()
-    for i in range(5):
-        print('-'*10, i)
-        data = np.ones(1 * 10 ** 4, dtype=np.uint8)
-        meta = {"Foo": 10}
-
-        id = store.put(data, meta)
-        data2, meta2 = store.get(id)
-        print(id, data2, meta2)
-
-
-if __name__ == '__main__':
-    # test()
-    test2()
-    exit(0)
-
-    client = plasma.connect(get_plasma_path())
-    print(client.store_capacity())
-    print(client.list())
-    client.delete(client.list())
-    print(client.list())
-    client.evict(10000000000)
-
-    object_id = plasma.ObjectID(20 * b"a")
-    object_size = 1000
-    print(object_id)
-    if client.contains(object_id):
-        client.delete([object_id])
-
-    buffer = memoryview(client.create(object_id, object_size))
-
-    for i in range(1000):
-        buffer[i] = i % 128
-    client.seal(object_id)
-
-    print("Generating...")
-    data = np.ones(10**9)
-    print("Done")
-    tensor = pa.Tensor.from_numpy(data)
-
-    random_id = plasma.ObjectID(np.random.bytes(20))
-    sz = pa.ipc.get_tensor_size(tensor)
-    print("sz", sz)
-    buf = client.create(random_id, sz)
-
-    stream = pa.FixedSizeBufferWriter(buf)
-    stream.set_memcopy_threads(6)
-    a = time.time()
-    print("Writing...")
-    pa.ipc.write_tensor(tensor, stream)
-    print("Writing took ", time.time() - a)
-    client.seal(random_id)
-
-    #################################################################
-    client2 = plasma.connect(get_plasma_path())
-
-    t0 = time.time()
-    print("Reading...")
-    [buf2] = client.get_buffers([random_id])
-    reader = pa.BufferReader(buf2)
-    tensor2 = pa.ipc.read_tensor(reader)
-    array = tensor2.to_numpy()
-    # array[10] = 0
-    # array2 = np.copy(array)
-    # array2 = copy.deepcopy(array)
-    # array2[10] = 0
-    print("Reading took ", time.time() - t0)
-
-    object_id2 = plasma.ObjectID(20 * b"a")
-    [buffer2] = client2.get_buffers([object_id2], timeout_ms=1)
-    view2 = memoryview(buffer2)
-    for i in range(1000):
-        if buffer[i] != view2[i]:
-            print("Mismatch", i)
-
-    meta = {"shape": (10, 20), "timestamps": [0, 1, 2], "other": 1.2}
-
-    auto_id = client.put(meta)
-    print(auto_id)
-    got = client.get(auto_id, timeout_ms=1)
-    print(got)
+#
+#
+# def test():
+#     print(get_plasma_path())
+#     client = plasma.connect(get_plasma_path())
+#     print(client.store_capacity())
+#     print(client.list())
+#     client.delete(client.list())
+#     print(client.list())
+#
+#     print("Generating...")
+#     data = np.ones(1 * 10 ** 4, dtype=np.uint8)
+#     # data = "Hello"
+#     # data = None
+#     print("Done")
+#
+#     # id = save_data(client, data)
+#     # data2 = load_data(client, id)
+#     # print(data2)
+#     # client.delete([id])
+#
+#     meta = {"Foo": 10}
+#
+#     # id2 = save_meta(client, meta)
+#     # meta2 = load_meta(client, id2)
+#     # print(meta2)
+#
+#     id3 = save_both(client, data, meta)
+#     data3, meta3 = load_both(client, id3)
+#     print(data3, meta3)
+#
+#
+# def test2():
+#     store = Store()
+#     for i in range(5):
+#         print('-'*10, i)
+#         data = np.ones(1 * 10 ** 4, dtype=np.uint8)
+#         meta = {"Foo": 10}
+#
+#         id = store.put(data, meta)
+#         data2, meta2 = store.get(id)
+#         print(id, data2, meta2)
+#
+#
+# if __name__ == '__main__':
+#     # test()
+#     test2()
+#     exit(0)
+#
+#     client = plasma.connect(get_plasma_path())
+#     print(client.store_capacity())
+#     print(client.list())
+#     client.delete(client.list())
+#     print(client.list())
+#     client.evict(10000000000)
+#
+#     object_id = plasma.ObjectID(20 * b"a")
+#     object_size = 1000
+#     print(object_id)
+#     if client.contains(object_id):
+#         client.delete([object_id])
+#
+#     buffer = memoryview(client.create(object_id, object_size))
+#
+#     for i in range(1000):
+#         buffer[i] = i % 128
+#     client.seal(object_id)
+#
+#     print("Generating...")
+#     data = np.ones(10**9)
+#     print("Done")
+#     tensor = pa.Tensor.from_numpy(data)
+#
+#     random_id = plasma.ObjectID(np.random.bytes(20))
+#     sz = pa.ipc.get_tensor_size(tensor)
+#     print("sz", sz)
+#     buf = client.create(random_id, sz)
+#
+#     stream = pa.FixedSizeBufferWriter(buf)
+#     stream.set_memcopy_threads(6)
+#     a = time.time()
+#     print("Writing...")
+#     pa.ipc.write_tensor(tensor, stream)
+#     print("Writing took ", time.time() - a)
+#     client.seal(random_id)
+#
+#     #################################################################
+#     client2 = plasma.connect(get_plasma_path())
+#
+#     t0 = time.time()
+#     print("Reading...")
+#     [buf2] = client.get_buffers([random_id])
+#     reader = pa.BufferReader(buf2)
+#     tensor2 = pa.ipc.read_tensor(reader)
+#     array = tensor2.to_numpy()
+#     # array[10] = 0
+#     # array2 = np.copy(array)
+#     # array2 = copy.deepcopy(array)
+#     # array2[10] = 0
+#     print("Reading took ", time.time() - t0)
+#
+#     object_id2 = plasma.ObjectID(20 * b"a")
+#     [buffer2] = client2.get_buffers([object_id2], timeout_ms=1)
+#     view2 = memoryview(buffer2)
+#     for i in range(1000):
+#         if buffer[i] != view2[i]:
+#             print("Mismatch", i)
+#
+#     meta = {"shape": (10, 20), "timestamps": [0, 1, 2], "other": 1.2}
+#
+#     auto_id = client.put(meta)
+#     print(auto_id)
+#     got = client.get(auto_id, timeout_ms=1)
+#     print(got)
