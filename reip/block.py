@@ -267,33 +267,20 @@ class Block:
             # increment sources and send outputs
             else:
                 # detect signals meant for the source
-                if self.sources:
-                    if any(any(t.check(o) for t in reip.SOURCE_TOKENS) for o in outputs):
-                        # check signal values
-                        if len(outputs) > len(self.sources):
-                            raise RuntimeError(
-                                f'Too many signals for sources in {self}. '
-                                f'Got {len(outputs)}, expected a maximum '
-                                f'of {len(self.sources)}.')
-                        # process signals
-                        for s, out in zip(self._stream.sources, outputs):
-                            if out == reip.RETRY:
-                                pass
-                            else:
-                                s.next()
-                        return
+                if self._stream.check_signals(outputs):
+                    return
 
+                # increment sources
+                self._stream.next()
                 self.processed += 1
 
                 # convert outputs to a consistent format
                 outs, meta = prepare_output(outputs, input_meta=meta_in)
-                # increment sources
-                self._stream.next()
-
                 # pass to sinks
                 for sink, out in zip(self.sinks, outs):
                     if sink is not None:
                         sink.put((out, meta), self._put_blocking)
+                # limit the number of blocks
                 if self.max_processed and self.processed >= self.max_processed:
                     self.close(propagate=True)
 
@@ -314,9 +301,8 @@ class Block:
 
     def spawn(self, wait=True):
         '''Spawn the block thread'''
-        # print(text.l_(text.blue('Spawning'), self, '...'))
-        # self.log.debug(text.blue('Spawning...'))
-        # print(self.summary())
+        self.log.debug(text.blue('Spawning...'))
+        print(self.summary())
 
         self._check_source_connections()
         # spawn any sinks that need it

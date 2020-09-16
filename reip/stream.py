@@ -141,6 +141,24 @@ class Stream:
             prepare_input([s.get_nowait() for s in self.sources])
             if check and self.check_ready() else None)
 
+    def check_signals(self, outputs):
+        if self.sources:
+            if any(any(t.check(o) for t in reip.SOURCE_TOKENS) for o in outputs):
+                # check signal values
+                if len(outputs) > len(self.sources):
+                    raise RuntimeError(
+                        f'Too many signals for sources in {self}. '
+                        f'Got {len(outputs)}, expected a maximum '
+                        f'of {len(self.sources)}.')
+                # process signals
+                for s, out in zip(self.sources, outputs):
+                    if out == reip.RETRY:
+                        pass
+                    else:
+                        s.next()
+                return True
+        return False
+
 
     @classmethod
     def make_loop(cls, duration=None, max_rate=None, delay=None):
