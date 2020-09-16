@@ -229,33 +229,77 @@ def style():
     import reip.blocks.video
     from reip.blocks.video.models.style import StyleTransfer
     with reip.Graph() as g:
-        cam = B.video.Video(0)
-        out = StyleTransfer(
-            os.path.join(os.path.dirname(__file__), 'js-Giddy-cropped.jpg')
-        )(cam, strategy='latest')
+        cam = B.video.Video(0) # , size=(500, 600)
+        with reip.Task():
+            out = StyleTransfer(
+                os.path.join(os.path.dirname(__file__), 'js-Giddy-cropped.jpg')
+            )(cam, strategy='latest')
 
 
     with g.run_scope():
-        it = B.video.stream_imshow(out.output_stream(strategy='latest'), 'blah')
+        stream = out.output_stream(strategy='latest')
+        it = B.video.stream_imshow(stream, 'blah')
         for _ in reip.util.iters.resample_iter(it, 5):
             print(g.status())
 
 
 
 def style_offline():
+    import glob
     import reip.blocks.video
     from reip.blocks.video.models.style import StyleTransfer
-    with reip.Graph() as g:
+
+    fpattern = os.path.join(os.path.dirname(__file__), 'videos/{time}.mp4')
+    with reip.Graph() as grec:
+        cam = B.video.Video(0)
+        # show = B.video.VideoShow()(cam)
+        writer = B.video.VideoWriter(fpattern, duration=5, codec='avc1')(cam)
+        out = B.Debug('Video Files')(writer)
+
+    with grec.run_scope():
+        it = B.video.stream_imshow(cam.output_stream(strategy='latest'), 'blah')
+        for _ in reip.util.iters.resample_iter(it, 5):
+            print(grec.status())
+
+    with reip.Graph(glob.glob(fpattern.format(time='*'))) as gstyle:
         cam = B.video.Video(0)
         out = StyleTransfer(
             os.path.join(os.path.dirname(__file__), 'js-Giddy-cropped.jpg')
         )(cam, strategy='latest')
 
-
-    with g.run_scope():
+    with gstyle.run_scope():
         it = B.video.stream_imshow(out.output_stream(strategy='latest'), 'blah')
         for _ in reip.util.iters.resample_iter(it, 5):
-            print(g.status())
+            print(gstyle.status())
+
+
+def gstream(device=0, width=1920, height=1080, fps=30):
+    from reip.blocks.video.gstreamer import GStreamer
+    import reip.util.gstream as gstr
+
+    gs = gstr.GStream()
+    gs.add("v4l2src", "src", device=f"/dev/video{device}")
+    # gs.add("autovideosrc", "src")
+    gs.add("capsfilter", "caps", caps=gstr.cap(
+        f"image/jpeg,width={width},height={height},framerate={fps}/1"))
+    gs.add("queue", max_size_buffers=5, leaky='downstream')
+    gs.add("jpegdec", "decode")
+    gs.add(
+        "appsink", "sink",
+        emit_signals=True, # eos is not processed otherwise
+        max_buffers=10, # protection from memory overflow
+        drop=False) # if python is too slow with pulling the samples
+    # gs.queue.connect("overrun", overrun, gs.queue)
+    # gs.sink.connect("new-sample", new_sample, gs.sink)
+    gs.link()
+
+    with reip.Graph() as graph:
+        out = gstr.GStreamer(gs, 'sink')
+
+    with graph.run_scope():
+        it = B.video.stream_imshow(out.output_stream(strategy='latest'), 'blah')
+        for _ in reip.util.iters.resample_iter(it, 5):
+            print(graph.status())
 
 # def keras_like_interface():  # XXX: this is hypothetical
 #     x = Interval()
