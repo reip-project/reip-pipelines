@@ -3,7 +3,7 @@ import time
 
 def skip_strategy(source):
     while not source.empty() and source._skip_id < source.skip:
-        source._get()
+        # source._get()
         source.next()  # discard the buffer
         source._skip_id += 1
         source.skipped += 1
@@ -16,7 +16,7 @@ def skip_strategy(source):
 
 def latest_strategy(source):
     while not source.last():
-        source._get()
+        # source._get()
         source.next()  # discard the buffer
         source.skipped += 1
     return source._get()
