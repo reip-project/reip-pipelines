@@ -12,13 +12,13 @@ def new_sample(sink, data):
     global tot_samples, t0
     # sink.emit("try-pull-sample", 1e+6)
     tot_samples += 1
-    # print("Samples:", tot_samples, time.time() - t0)
+    print("Samples_0:", tot_samples, time.time() - t0)
     return Gst.FlowReturn.OK
 
 def overrun(queue, data):
     global tot_overrun, t0
     tot_overrun += 1
-    print("\nOverrun:", tot_overrun, time.time() - t0)
+    print("\nOverrun_0:", tot_overrun, time.time() - t0)
     return Gst.FlowReturn.OK
 
 if __name__ == "__main__":
@@ -38,7 +38,7 @@ if __name__ == "__main__":
     # print("\n\tname", g.src.get_property("device-name"))
 
     q.set_property("max-size-buffers", 5)
-    q.set_property("leaky", "downstream")
+    q.set_property("leaky", "no")
     q.connect("overrun", overrun, q)
 
     s.set_property("emit-signals", True)  # eos is not processed otherwise
@@ -53,6 +53,7 @@ if __name__ == "__main__":
     count, title = 0, "img%d" % device
     cv2.namedWindow(title)
 
+    sl = 0.1
     while True:
         try:
             sample = g.sink.try_pull_sample(1e+6)
@@ -60,19 +61,21 @@ if __name__ == "__main__":
             if sample:
                 count += 1
                 img, ts, fmt = GStreamer.unpack_sample(sample, debug=True)
-                print(count, ts / 1.e+9, "at", time.time() - t0)
+                print("Pulled_0:", count, ts / 1.e+9, "at", time.time() - t0)
 
-                if count % 3 == 0 and True:
+                if count % 3 == 0 and False:
                     w, h, ch, fmt = fmt
                     assert(fmt == "I420")
                     cv2.imshow(title, img[: img.shape[0] * 2 // 3].reshape((h, w)))
 
                 if cv2.waitKey(1) == 27:
                     g.eos()  # esc to quit
-            # time.sleep(0.1)
+                    sl = 0
+            time.sleep(sl)
         except KeyboardInterrupt:
             print("KeyboardInterrupt - breaking the loop")
             g.eos()
+            sl = 0
         if g._done:
             break
 

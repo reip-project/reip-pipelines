@@ -89,22 +89,22 @@ def load(json_filename):
         return json.load(f)
     # return d["st"], d["ts"], d["lf"], d["n"], d["p"], d["o"]
 
-def plot(d):
+def plot(d, ids):
     st, ts, lf, n, p, o = d["st"], d["ts"], d["lf"], d["n"], d["p"], d["o"]
 
     plt.figure("v4l2src")
-    for id in range(2):
+    for id in range(ids):
         lf[id] = np.array(lf[id])
         # plt.figure(str(id))
         plt.plot(ts[id], st[id], ".-", label="good_"+str(id))
         if len(lf[id].shape) > 1:
-            plt.plot(lf[id][:, 1], lf[id][:, 0], ".-", label="lost"+str(id))
+            plt.plot(lf[id][:, 1], lf[id][:, 0], ".-", label="lost_"+str(id))
 
     plt.legend()
     plt.tight_layout()
 
     plt.figure("appsink")
-    for id in range(2):
+    for id in range(ids):
         n[id], p[id], o[id] = np.array(n[id]), np.array(p[id]), np.array(o[id])
         # plt.figure(str(id))
         plt.plot(n[id][:, 1], n[id][:, 0] / 10., ".-", label="new_"+str(id))
@@ -120,12 +120,15 @@ if __name__ == "__main__":
     gst_log = "/tmp/gst_logs"
     script_log = "/home/reip/software/experiments/log"
 
+    gst_log = script_log = "/home/reip/software/experiments/log_both"
+
     # extract(gst_log, script_log, debug=True)
 
-    script_log += "_overrun"
+    # script_log += "_overrun"
+    # script_log += "_lost"
     
     d = load(script_log + ".json")
-    plot(d)
+    plot(d, ids=2)
 
     plt.show()
 

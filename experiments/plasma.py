@@ -91,9 +91,10 @@ def load_meta(client, id):
     return meta
 
 
-def save_both(client, data, meta, id=None):
-    # t0 = time.time()
-    # print("Saving data with meta...")
+def save_both(client, data, meta, id=None, debug=False):
+    if debug:
+        t0 = time.time()
+        print("Saving data with meta...")
 
     if data is None:
         meta["type"] = "void"
@@ -126,13 +127,15 @@ def save_both(client, data, meta, id=None):
         pa.ipc.write_tensor(tensor, stream)
     client.seal(object_id)
 
-    # print("Saving data with meta took", time.time() - t0)
+    if debug:
+        print("Saving data with meta took", time.time() - t0)
     return object_id
 
 
-def load_both(client, id):
-    # t0 = time.time()
-    # print("Loading data with meta...")
+def load_both(client, id, debug=False):
+    if debug:
+        t0 = time.time()
+        print("Loading data with meta...")
 
     meta, data = client.get_buffers([id], timeout_ms=1, with_meta=True)[0] #.to_pybytes().decode("utf-8")
     meta = pa.deserialize(meta)
@@ -150,7 +153,8 @@ def load_both(client, id):
     else:
         raise ValueError("Unsupported data type", meta["type"])
 
-    # print("Loading data with meta took", time.time() - t0)
+    if debug:
+        print("Loading data with meta took", time.time() - t0)
     return data, meta
 
 
@@ -162,8 +166,8 @@ def test():
     print(client.list())
 
     print("Generating...")
-    # data = np.ones(1 * 10 ** 9, dtype=np.uint8)
-    data = "Hello"
+    data = np.ones(1 * 10 ** 7, dtype=np.uint8)
+    # data = "Hello"
     # data = None
     print("Done")
 
@@ -178,8 +182,10 @@ def test():
     meta2 = load_meta(client, id2)
     print(meta2)
 
-    id3 = save_both(client, data, meta)
-    data3, meta3 = load_both(client, id3)
+    # ~1 GB/s for image-sized buffers on Jetson Nano (~8 ms per 5 MP image in I420 format)
+    id3 = save_both(client, data, meta, debug=True)
+    # ~1.5 ms on Jetson Nano
+    data3, meta3 = load_both(client, id3, debug=True)
     print(data3, meta3)
 
 

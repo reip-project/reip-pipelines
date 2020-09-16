@@ -1,0 +1,88 @@
+
+        ######## testing Queue.Queue
+
+32768 objects passed through the queue in 1.725954294204712 seconds
+average number/sec: 18985.439017722594
+
+        ######## testing multiprocessing.Queue
+
+16384 objects passed through the queue in 1.0398378372192383 seconds
+average number/sec: 15756.302967215084
+
+        ######## testing Queue managed by server process
+
+4096 objects passed through the queue in 1.1138765811920166 seconds
+average number/sec: 3677.2476135701318
+
+        ######## testing multiprocessing.Pipe
+
+32768 objects passed through connection in 1.226332187652588 seconds
+average number/sec: 26720.329393558222
+
+
+        ######## testing list
+
+4194304 iterations in 1.6588704586029053 seconds
+average number/sec: 2528409.6044078255
+
+        ######## testing list managed by server process
+
+8192 iterations in 1.3450922966003418 seconds
+average number/sec: 6090.288391885746
+
+        ######## testing Array("i", ..., lock=False)
+
+8388608 iterations in 1.4027471542358398 seconds
+average number/sec: 5980128.332229464
+
+        ######## testing Array("i", ..., lock=True)
+
+262144 iterations in 2.0001869201660156 seconds
+average number/sec: 131059.75114477903
+
+
+        ######## testing threading.Lock
+
+2097152 iterations in 1.3843138217926025 seconds
+average number/sec: 1514939.7246386772
+
+        ######## testing threading.RLock
+
+2097152 iterations in 1.544691562652588 seconds
+average number/sec: 1357650.971044803
+
+        ######## testing multiprocessing.Lock
+
+1048576 iterations in 1.1652946472167969 seconds
+average number/sec: 899837.6526524265
+
+        ######## testing multiprocessing.RLock
+
+1048576 iterations in 1.144409418106079 seconds
+average number/sec: 916259.4989259377
+
+        ######## testing lock managed by server process
+
+4096 iterations in 1.3387935161590576 seconds
+average number/sec: 3059.4710465518624
+
+        ######## testing rlock managed by server process
+
+4096 iterations in 1.3789260387420654 seconds
+average number/sec: 2970.427626224684
+
+
+        ######## testing threading.Condition
+
+65536 waits in 1.8911995887756348 seconds
+average number/sec: 34653.137822660006
+
+        ######## testing multiprocessing.Condition
+
+32768 waits in 1.5341994762420654 seconds
+average number/sec: 21358.369956078564
+
+        ######## testing condition managed by a server process
+
+2048 waits in 1.3772141933441162 seconds
+average number/sec: 1487.059899540462
