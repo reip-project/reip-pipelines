@@ -123,17 +123,17 @@ class ObjectB(ObjectA):
     def zxcv(self):
         return self.x / 10.
 
-def _run_remote(obj):  # some remote job
-    # obj.remote.listen(block=True)
-    while True:
-        obj.remote.poll()
-        time.sleep(0.0001)
+def _run_remote(obj, event):  # some remote job
+    with obj.remote:
+        while not event.is_set():
+            obj.remote.poll()
+            time.sleep(0.0001)
 
 
 def test_remote():
     obj = ObjectB()
-    obj.remote.listening = True
-    p = mp.Process(target=_run_remote, args=(obj,), daemon=True)
+    event = mp.Event()
+    p = mp.Process(target=_run_remote, args=(obj, event), daemon=True)
     p.start()
 
     # attribute access
@@ -173,8 +173,10 @@ def test_remote():
     assert obj.remote.term.retrieve() == False
     assert obj.term == False
 
-    p.terminate()
+    assert p.is_alive()
+    event.set()
     p.join()
+    assert not obj.remote.listening
 
 
 def test_text():
@@ -310,7 +312,7 @@ def test_debug():
         'asdf', __file__, 'block', 'ddd',
         'test_debug', 'return ddd()'))
 
- 
+
 # def test_background_process():
 #     cmd = 'watch ls'
 #     server = util.BackgroundServer(cmd, 'watch')
