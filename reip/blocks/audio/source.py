@@ -24,9 +24,9 @@ class Mic(reip.Block):
             for i in range(self._pa.get_device_count()))
         return next((
             d for d in devices
-            if query in d['name']
-            and d['maxInputChannels'] >= min_input
+            if d['maxInputChannels'] >= min_input
             and d['maxOutputChannels'] >= min_output
+            and (query is None or query in d['name'])
         ), None)
 
     def init(self):

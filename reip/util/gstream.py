@@ -1,6 +1,8 @@
 import time
 from collections import OrderedDict
+import fnmatch
 import warnings
+import logging
 import numpy as np
 import gi
 gi.require_version('Gst', '1.0')
@@ -22,7 +24,7 @@ class GStream:
     done = False
     _debug = True
     _state_timeout = 1e+5
-    def __init__(self, auto_play=True, pipeline=None):
+    def __init__(self, auto_play=True, pipeline=None, logger=None):
         if not self._inited:
             warnings.warn('GStreamer is uninitialized. Initializing automatically.')
             self.initialize()
@@ -30,15 +32,10 @@ class GStream:
         self._pipeline = pipeline or Gst.Pipeline()
         self._elements = OrderedDict()
         self.auto_play = auto_play
+        self.log = logger or logging.getLogger(__name__)
 
     def __len__(self):
         return len(self._elements)
-
-    def __getattr__(self, key):
-        # access elements by attribute
-        if key not in self._elements:
-            raise AttributeError(key)
-        return self._elements[key]
 
     def __getitem__(self, key):
         return self._elements[key]
@@ -57,7 +54,8 @@ class GStream:
         if title in self._elements:
             raise ValueError("Element already exists:" + title)
 
-        self._elements[title or element.name] = element
+        title = title or element.name
+        self._elements[title] = element
         for k, v in kw.items():
             element.set_property(k.replace('_', '-'), v)
             # Gst.caps_from_string(v) if isinstance(v, str) else v
@@ -82,6 +80,23 @@ class GStream:
                 raise RuntimeError("Could not link element: " + el1)
         return self
 
+    def addcap(self, capstr, title=None, **kw):
+        return self.add(
+            'capsfilter', title,
+            caps=cap(capstr) if isinstance(capstr, str) else capstr,
+            **kw)
+
+    def search(self, *patterns):
+        '''Get all element names matching patterns.'''
+        return [
+            k for k in self._elements
+            if any(fnmatch.fnmatch(k, p) for p in patterns)
+        ]
+
+    def find(self, *patterns):
+        '''Get all elements whose name matches patterns.'''
+        return [self._elements[k] for k in self.search(*patterns)]
+
     # Control Flow
 
     @property
@@ -95,9 +110,10 @@ class GStream:
         return self._check_state(Gst.State.PLAYING)
 
     def _check_state(self, *states):
-        return self._gs.get_state(self._state_timeout).state in states
+        return self._pipeline.get_state(self._state_timeout).state in states
 
-    def toggle(self, running, msg1='resume', msg2='pause'):
+    def toggle(self, running=None, msg1='resume', msg2='pause'):
+        running = not self.running if running is None else running
         state, msg = (Gst.State.PLAYING, msg1) if running else (Gst.State.PAUSED, msg2)
         if self.running != running:
             if self._pipeline.set_state(state) == Gst.StateChangeReturn.FAILURE:
@@ -117,7 +133,9 @@ class GStream:
         return self.toggle(True)
 
     def end(self):
+        self._pipeline.set_state(Gst.State.NULL)
         self._pipeline.send_event(Gst.Event.new_eos())
+        self.done = False
 
 
     def check_messages(self, all_pending=True):
@@ -139,7 +157,7 @@ class GStream:
 
             elif t == Gst.MessageType.EOS:
                 if self._debug:
-                    print("\n\tEnd-Of-Stream reached\n")
+                    self.log.debug("End-Of-Stream reached")
                 self._pipeline.set_state(Gst.State.NULL)
                 time.sleep(1e-3)  # Bus stops receiving messages after EOS for some reason
                 self.done = True
@@ -147,11 +165,11 @@ class GStream:
             elif t == Gst.MessageType.STATE_CHANGED:
                 if isinstance(message.src, Gst.Pipeline):
                     old, new, pending = message.parse_state_changed()
-                    if self._debug:
-                        print("\tPipeline state changed from {} to {}".format(
+                    self.log.debug(
+                        "Pipeline state changed from {} to {}".format(
                             old.value_nick, new.value_nick))
             else:
-                print("\tUnknown message:", message.type)
+                self.log.debug('Unknown message: {}'.format(message.type))
             if not all_pending:
                 break
 
@@ -173,18 +191,16 @@ def cap(x):
     return Gst.caps_from_string(x)
 
 
-def unpack_sample(sample, fmt='I420', debug=False):
+def unpack_sample(sample, fmt=None):
     buf = sample.get_buffer()
     caps = sample.get_caps().get_structure(0)
     sz, imfmt = buf.get_size(), caps.get_value('format')
+    w, h = caps.get_value('width'), caps.get_value('height')
     assert not fmt or imfmt == fmt
 
-    X = np.ndarray(
-        sz, buffer=buf.extract_dup(0, sz), dtype=np.uint8).reshape((
-            caps.get_value('width'), caps.get_value('height'),
-            caps.get_value('channel')))
+    X = np.ndarray(sz, buffer=buf.extract_dup(0, sz), dtype=np.uint8)
+    split = int(len(X) // (w*h) * (w*h))
+    X, extra = X[:split], X[split:]
+    X = X.reshape((h, w, -1))
     ts = buf.pts
-
-    if debug:
-        print("\tSize:", sz, X.shape, imfmt, "Timestamp:", buf.pts / 1e+9)
     return X, ts
