@@ -1,4 +1,5 @@
 import os
+import glob
 import reip
 import reip.blocks as B
 
@@ -273,28 +274,35 @@ def style_offline():
             print(gstyle.status())
 
 
-def gstream(device=0, width=1920, height=1080, fps=30):
+def _camera(gs, device=0, width=2592, height=1944, disp_width=500, fps=15):
+    start = len(gs)
+    gs.add("v4l2src", f"src_{device}", device=f"/dev/video{device}", force_aspect_ratio=True)
+    gs.addcap(f"image/jpeg,width={width},height={height},framerate={fps}/1")
+    gs.add("queue", max_size_buffers=5, leaky='downstream')
+    gs.add("jpegdec")
+    gs.add("videoconvert")
+    gs.add("videoscale")
+    gs.addcap(f'video/x-raw,width={disp_width},height={int(height/width*disp_width)},format=BGR')
+    gs.add(
+        "appsink", f"sink_{device}",
+        emit_signals=True, # eos is not processed otherwise
+        max_buffers=10, # protection from memory overflow
+        drop=False) # if python is too slow with pulling the samples
+    # gs['queue'].connect("overrun", overrun, gs['queue'])
+    # gs['sink'].connect("new-sample", new_sample, gs['sink'])
+    gs.link(start=start)
+
+
+def gstream(**kw):
     from reip.blocks.video.gstreamer import GStreamer
     import reip.util.gstream as gstr
 
     gs = gstr.GStream()
-    gs.add("v4l2src", "src", device=f"/dev/video{device}")
-    # gs.add("autovideosrc", "src")
-    gs.add("capsfilter", "caps", caps=gstr.cap(
-        f"image/jpeg,width={width},height={height},framerate={fps}/1"))
-    gs.add("queue", max_size_buffers=5, leaky='downstream')
-    gs.add("jpegdec", "decode")
-    gs.add(
-        "appsink", "sink",
-        emit_signals=True, # eos is not processed otherwise
-        max_buffers=10, # protection from memory overflow
-        drop=False) # if python is too slow with pulling the samples
-    # gs.queue.connect("overrun", overrun, gs.queue)
-    # gs.sink.connect("new-sample", new_sample, gs.sink)
-    gs.link()
+    for i, f in enumerate(glob.glob('/dev/video*')):
+        _camera(gs, i, **kw)
 
     with reip.Graph() as graph:
-        out = gstr.GStreamer(gs, 'sink')
+        out = GStreamer(gs, *gs.search('sink*'))
 
     with graph.run_scope():
         it = B.video.stream_imshow(out.output_stream(strategy='latest'), 'blah')

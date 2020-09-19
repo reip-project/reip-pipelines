@@ -96,13 +96,18 @@ class VideoWriter(reip.Block):
 #         cv2.destroyWindow(self.window_name)
 
 
-def stream_imshow(stream, name):
+def stream_imshow(stream, *names):
     import cv2
-    cv2.namedWindow(name)
-    with stream:
-        for (x,), meta in stream:
-            cv2.imshow(name, x)
-            if cv2.waitKey(25) & 0xFF == ord('q'):
-                return
-            yield
-    cv2.destroyWindow(name)
+    try:
+        for name in names:
+            cv2.namedWindow(name)
+        with stream:
+            for xs, meta in stream:
+                for name, x in zip(names, xs):
+                    cv2.imshow(name, x)
+                if cv2.waitKey(25) & 0xFF == ord('q'):
+                    return
+                yield
+    finally:
+        for name in names:
+            cv2.destroyWindow(name)

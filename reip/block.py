@@ -9,6 +9,26 @@ from reip.util import text, Meta
 __all__ = ['Block']
 
 
+class _BlockSinkView:
+    def __init__(self, block, idx):
+        self._block = block
+        self._index = idx
+
+    @property
+    def item(self):  # can be a single sink, or multiple i.e. block[0] or block[:2]
+        return self._block.sinks[self._index]
+
+    @property
+    def items(self):  # always a list
+        return reip.util.as_list(self.item)
+
+    def __iter__(self):  # iterate over sink
+        return iter(self.items)
+
+    def __getitem__(self, key):  # get sub index
+        return self.items[key]
+
+
 class Block:
     '''This is the base instance of a block.
 
@@ -113,6 +133,8 @@ class Block:
             # permit argument to be a sink or a list of sinks
             if isinstance(other, Block):
                 sinks = other.sinks
+            elif isinstance(other, _BlockSinkView):
+                sinks = other.items
             else:
                 sinks = reip.util.as_list(other)
 
@@ -154,6 +176,9 @@ class Block:
         '''Create a Stream iterator which will let you iterate over the
         outputs of a block.'''
         return reip.Stream.from_block(self, **kw)
+
+    def __getitem__(self, key):
+        return _BlockSinkView(self, key)
 
     # User Interface
 
