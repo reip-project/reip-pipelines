@@ -1,5 +1,4 @@
 import time
-from collections import OrderedDict
 import fnmatch
 import warnings
 import logging
@@ -30,15 +29,23 @@ class GStream:
             self.initialize()
 
         self._pipeline = pipeline or Gst.Pipeline()
-        self._elements = OrderedDict()
         self.auto_play = auto_play
         self.log = logger or logging.getLogger(__name__)
 
     def __len__(self):
-        return len(self._elements)
+        return len(self._pipeline.children)
+
+    def __iter__(self):
+        return (p.name for p in self._pipeline.children[::-1])
 
     def __getitem__(self, key):
-        return self._elements[key]
+        return (
+            self._pipeline.get_child_by_index(key) if isinstance(key, int) else
+            self._pipeline.get_child_by_name(key))
+
+    @property
+    def children(self):
+        return self._pipeline.children
 
     # Graph Definition
 
@@ -47,15 +54,10 @@ class GStream:
         element = (
             name if isinstance(name, Gst.Element) else
             Gst.ElementFactory.make(name, title))
-
         if element is None:
             raise RuntimeError("Could not create element: " + name)
-        title = title or element.name
-        if title in self._elements:
-            raise ValueError("Element already exists:" + title)
 
-        title = title or element.name
-        self._elements[title] = element
+        self._pipeline.add(element)
         for k, v in kw.items():
             element.set_property(k.replace('_', '-'), v)
             # Gst.caps_from_string(v) if isinstance(v, str) else v
@@ -65,19 +67,24 @@ class GStream:
         '''Connect consecutive elements together.'''
         # select starting element
         if not elements:
-            elements = tuple(self._elements)
+            elements = tuple(self)
             elements = elements[
                 _get_element_index(elements, start):
                 _get_element_index(elements, end)]
 
+        elements = [
+            el if isinstance(el, (Gst.Element, Gst.Pad)) else self[el]
+            for el in elements]
+
         # add elements to gst object
-        for e in elements:
-            self._pipeline.add(self._elements[e])
+        # for e in elements:
+        #     self._pipeline.add(e)
 
         # connect elements together
         for el1, el2 in zip(elements, elements[1:]):
-            if not self._elements[el1].link(self._elements[el2]):
-                raise RuntimeError("Could not link element: " + el1)
+            if not el1.link(el2):
+                raise RuntimeError("Could not link elements: {} -> {}".format(
+                    el1.name, el2.name))
         return self
 
     def addcap(self, capstr, title=None, **kw):
@@ -89,13 +96,13 @@ class GStream:
     def search(self, *patterns):
         '''Get all element names matching patterns.'''
         return [
-            k for k in self._elements
+            k for k in self
             if any(fnmatch.fnmatch(k, p) for p in patterns)
         ]
 
     def find(self, *patterns):
         '''Get all elements whose name matches patterns.'''
-        return [self._elements[k] for k in self.search(*patterns)]
+        return [self[k] for k in self.search(*patterns)]
 
     # Control Flow
 
@@ -189,6 +196,16 @@ def _get_element_index(elements, search):
 
 def cap(x):
     return Gst.caps_from_string(x)
+
+def element(x, *a, **kw):
+    return Gst.ElementFactory.make(x, *a, **kw)
+
+def pad(name, src=None):
+    return Gst.Pad.new(
+        name,
+        Gst.PadDirection.SRC if src else
+        Gst.PadDirection.UNKNOWN if src is None else
+        Gst.PadDirection.SINK)
 
 
 def unpack_sample(sample, fmt=None):
