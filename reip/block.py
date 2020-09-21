@@ -216,27 +216,40 @@ class Block:
         '''The abstract block logic. This is meant to be overrideable in case
         someone needs to modify the logic organization.'''
         try:
-            # initialize the block
-            self._do_init()
+            # block initialization
+            with self._sw('init'):
+                self.init()
+            self.ready = True
+            self.log.info(text.green('Ready.'))
+
             # iterate over the input data gathered from the sources
             for buffers, meta in stream:
                 # process each input batch
-                outputs = self._do_process(*buffers, meta=meta)
+                with self._sw('process'):
+                    outputs = self.process(*buffers, meta=meta)
                 # send each output batch to the sinks
-                self._do_sinks(outputs, meta)
+                self._send_to_sinks(outputs, meta)
         except Exception as e:
-            self._handle_exception(e)
+            self._exception = e
+            self.error = True
+            self.log.exception(e)
+            self.close()
         finally:
             # finish up and shut down block
-            self._do_finish()
-
-    def _do_init(self):
-        '''Initialize the block. Handles block timing and any logging.'''
-        # create a new streamer that reads data from sources
-        with self._sw('init'):
-            self.init()
-        self.ready = True
-        self.log.info(text.green('Ready.'))
+            self.log.debug(text.yellow('Finishing...'))
+            self._stream.close()  # may be redundant
+            # run block finish
+            with self._sw('finish'):
+                self.finish()
+            # propagate stream signals to sinks e.g. CLOSE
+            # this is run when:
+            #   - the block sends reip.CLOSE, reip.TERMINATE as a signal from process.
+            #     (if you only want to close the current block and not downstream ones,
+            #      just call self.close()/self.terminate() directly)
+            #   - a stream finishes running e.g. when you set a block run duration.
+            if self._stream.signal is not None:
+                self._send_sink_signal(self._stream.signal)
+            self.done = True
 
     def _init_stream(self, duration=None):
         '''Initialize the source stream.
@@ -253,30 +266,7 @@ class Block:
         # wrap stream in a timer
         return self._sw.iter(self._stream, 'source')
 
-    def _do_process(self, *buffers, meta=None):
-        '''Process buffers. Handles block timing and any logging.'''
-        with self._sw('process'):
-            outputs = self.process(*buffers, meta=meta)
-        return outputs
-
-    def _do_finish(self):
-        '''Cleanup block. Handles block timing and any logging.'''
-        self.log.debug(text.yellow('Finishing...'))
-        self._stream.close()  # may be redundant
-        # run block finish
-        with self._sw('finish'):
-            self.finish()
-        # propagate stream signals to sinks e.g. CLOSE
-        # this is run when:
-        #   - the block sends reip.CLOSE, reip.TERMINATE as a signal from process.
-        #     (if you only want to close the current block and not downstream ones,
-        #      just call self.close()/self.terminate() directly)
-        #   - a stream finishes running e.g. when you set a block run duration.
-        if self._stream.signal is not None:
-            self.emit_signal(self._stream.signal)
-        self.done = True
-
-    def _do_sinks(self, outputs, meta_in=None):
+    def _send_to_sinks(self, outputs, meta_in=None):
         '''Send the outputs to the sink.'''
         with self._sw('sink'):
             # retry all sources
@@ -309,13 +299,7 @@ class Block:
                 if self.max_processed and self.processed >= self.max_processed:
                     self.close(propagate=True)
 
-    def _handle_exception(self, exc):
-        self._exception = exc
-        self.error = True
-        self.log.exception(exc)
-        self.close()
-
-    def emit_signal(self, signal, block=True, meta=None):
+    def _send_sink_signal(self, signal, block=True, meta=None):
         '''Emit a signal to all sinks.'''
         self.log.debug(text.yellow(text.l_('sending', signal)))
         # print(text.yellow(text.l_(self, 'sending', signal)))
@@ -399,13 +383,13 @@ class Block:
         if self._stream is not None:
             self._stream.close()
         if propagate:
-            self.emit_signal(reip.CLOSE)
+            self._send_sink_signal(reip.CLOSE)
 
     def terminate(self, propagate=False):
         if self._stream is not None:
             self._stream.terminate()
         if propagate:
-            self.emit_signal(reip.TERMINATE)
+            self._send_sink_signal(reip.TERMINATE)
 
     # XXX: this is temporary. idk how to elegantly handle this
     @property

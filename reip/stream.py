@@ -139,7 +139,7 @@ class Stream:
     def get(self, check=True):
         return (
             prepare_input([s.get_nowait() for s in self.sources])
-            if check and self.check_ready() else None)
+            if not check or self.check_ready() else None)
 
     def check_signals(self, outputs):
         if self.sources:
