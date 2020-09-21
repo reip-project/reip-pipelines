@@ -3,7 +3,7 @@ import glob
 import time
 import reip
 import reip.blocks as B
-import reip.blocks.audio
+# import reip.blocks.audio
 from reip.blocks.video.gstreamer import GStreamer
 import reip.util.gstream as gstr
 
@@ -76,25 +76,36 @@ def _microphone(gs, outdir='audio', duration=10):
     gs.add('queue', max_size_buffers=30, leaky='downstream')
     gs.add('flacenc')
     gs.add('flactag')
-    gs.add('flacparse')
-    gs.add(
+    flacparse = gs.add('flacparse')
+    # print(list(gs))
+    gs.link(start=start)
+
+    sink = gs.add(
         "splitmuxsink",
         location=lambda m, id: os.path.join(
             outdir, f'out_mic_{time.time():.5f}.flac'),
-        max_size_time=duration * 1e9, async_finalize=True)
-    gs.link(start=start)
+        max_size_time=duration * 1e9,
+        # async_finalize=True,
+        muxer=gstr.element('matroskamux'),
+    )
+    sink_pad = gstr.pad('audio_0', src=True)
+    sink.add_pad(sink_pad)
+    # print(sink.pads)
+    # print(sink.srcpads)
+    # print(sink.sinkpads)
+    gs.link(flacparse.name, sink.name)
     return gs
 
 
 def record(**kw):
     gs = gstr.GStream()
-    # _microphone(gs)
+    _microphone(gs)
     for f in glob.glob('/dev/v4l/by-path/*'):
         _from_camera(gs, f, **kw)
 
     with reip.Graph() as graph:
         out = GStreamer(gs, *gs.search('sink*'))
-        B.audio.Mic(duration=10).to(AudioFile('audio/{time}.flac'))
+        # B.audio.Mic(duration=10).to(B.audio.AudioFile('audio/{time}.flac'))
 
 
     with graph.run_scope():
