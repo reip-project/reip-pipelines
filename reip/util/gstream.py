@@ -140,10 +140,7 @@ class GStream:
         return self.toggle(True)
 
     def end(self):
-        self._pipeline.set_state(Gst.State.NULL)
         self._pipeline.send_event(Gst.Event.new_eos())
-        self.done = False
-
 
     def check_messages(self, all_pending=True):
         if not self._bus:
