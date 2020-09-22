@@ -135,6 +135,8 @@ def test_remote():
     event = mp.Event()
     p = mp.Process(target=_run_remote, args=(obj, event), daemon=True)
     p.start()
+    while not obj.remote.listening and p.is_alive():
+        time.sleep(1e-2)
 
     # attribute access
     assert obj.x == 10

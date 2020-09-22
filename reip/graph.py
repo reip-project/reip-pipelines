@@ -68,7 +68,13 @@ class BaseContext:  # (metaclass=_MetaContext)
                 If instance is False, nothing will be added.
 
         Returns:
-            The name of `parent`. This prevents Blocks from having a reference
+            parent_id (str): the name of the child's parent block.
+                Can be a Graph or Task.
+            task_id (str or None): the name of the task that a child is attached to.
+                If the parent graph is not inside a task or is not a task itself,
+                it will return None.
+
+            NOTE: Returning string ids prevents Blocks from having a circular reference
             to the entire graph.
 
         Basically this should handle:
@@ -119,26 +125,24 @@ class BaseContext:  # (metaclass=_MetaContext)
         return parent.name, task_id or parent.task_id
 
     @classmethod
-    def get_object(cls, id):
-        obj = _ContextScope.all_instances.get(id)
-        if obj is None:
-            return
-        #     raise ValueError(f'Object {id} does not exist.')
-        obj = obj()  # call weakref to get actual ref
-        # if obj is None:
-        #     raise ValueError(f'Object {id} no longer exists.')
+    def get_object(cls, id, require=True):
+        '''Get an instance using its name. If the instance '''
+        obj = _ContextScope.all_instances.get(id) if id is not None else None
+        obj = obj() if obj is not None else None
+        if obj is None and require:
+            raise ValueError(f'Object {id} does not exist.')
         return obj
 
-    # @property
-    # def parent_contexts(self):
-    #     obj = self
-    #     stack = []
-    #     while obj.parent_id:
-    #         obj = BaseContext.get_object(obj.parent_id)
-    #         if obj is not None:
-    #             break
-    #         stack.append(obj)
-    #     return stack
+    @property
+    def parents(self):
+        obj = self
+        stack = []
+        while obj.parent_id:
+            obj = BaseContext.get_object(obj.parent_id)
+            if obj is None:
+                break
+            stack.append(obj)
+        return stack
 
     def __enter__(self):
         return self.as_default()

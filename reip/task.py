@@ -83,12 +83,11 @@ class Task(reip.Graph):
         result = self.remote.get_result(None, wait=False)
         if result is not None:  # returns None if already closed.
             x, exc = result
-            if self._exception is not None:
-                raise Exception(f'Exception in {self}') from self._exception
+            if exc is not None:
+                raise exc  # TODO: set traceback before pickling - see https://github.com/python/cpython/blob/3.8/Lib/concurrent/futures/process.py
 
     def wait_until_ready(self):
         while not self.ready and not self.error and not self.done:
-            self.remote.poll_until_clear()
             time.sleep(self._delay)
 
     # children state

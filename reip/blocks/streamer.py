@@ -26,9 +26,10 @@ class Streamer(reip.Block):
     def finish(self):
         # run to completion and discard anything additional
         # QUESTION: should we catch exceptions here?
-        print('FINISHING', self, list(self._block))
-        for _ in self._block:
-            pass
+        # print('FINISHING', self, list(self._block))
+        # for _ in self._block:
+        #     pass
+        self._block.close()
 
 
 def streamer(func=None):
