@@ -16,7 +16,7 @@ __all__ = ['PlasmaStore', 'ArrowQueue']
 def get_plasma_path():
     # import ray
     # plasma_socket = plasma_socket or ray.nodes()[0]['ObjectStoreSocketName']
-    return os.path.join(os.getenv('TMPDIR'), 'plasma')
+    return os.path.join(os.getenv('TMPDIR') or '/tmp', 'plasma')
 
 # def start_plasma(plasma_socket=None, plasma_store_memory=1e9):
 #     import subprocess
