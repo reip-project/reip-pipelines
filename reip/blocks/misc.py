@@ -78,16 +78,19 @@ class Increment(Iterator):
 
 
 class Debug(reip.Block):
-    def __init__(self, message=None, value=False, period=None, name=None, **kw):
+    def __init__(self, message=None, value=False, summary=False, period=None, name=None, **kw):
         self.message = message or 'Debug'
         self.value = value
         self.period = period
+        self._summary = summary
         self._last_time = 0
         name = 'Debug-{}'.format(message.replace(" ", "-")) if message else None
         super().__init__(name=name, **kw)
 
     def _format(self, x):
         if isinstance(x, np.ndarray):
+            if self._summary:
+                return x.shape, x.dtype, 'min:', x.min(), 'max:', x.max(), 'mean:', x.mean()
             if x.size > 40 or x.ndim > 2:
                 return x.shape, x.dtype, x if self.value else '' # , f'{np.isnan(x).sum()} nans'
             return x.shape, x.dtype, x
