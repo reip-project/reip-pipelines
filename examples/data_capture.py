@@ -1,112 +1,118 @@
 import os
+import re
 import glob
 import time
+import datetime
 import reip
 import reip.blocks as B
-# import reip.blocks.audio
+import reip.blocks.audio
 from reip.blocks.video.gstreamer import GStreamer
 import reip.util.gstream as gstr
 
 os.environ['GST_DEBUG_DUMP_DOT_DIR'] = '.'
 
 
-def on_split(mux, udata):
-    print('split', mux, udata)
+DATE_FMT = '%Y-%m-%d_%H-%M-%S'
 
-def _from_camera(gs, device, outdir='video', width=2592, height=1944, fps=15, kps=1500, duration=5):
-    os.makedirs(outdir, exist_ok=True)
-    name = os.path.basename(device)
+
+def _from_camera(gs, device, width=2592, height=1944, fps=15, outdir='video', duration=10):
+    if outdir:
+        os.makedirs(outdir, exist_ok=True)
+    name = os.path.basename(device).replace('/', '-')
     start = len(gs)
-    gs.add('v4l2src', device=device)
-    gs.addcap(f'image/jpeg,width={width},height={height},framerate={fps}/1')
-    gs.add('jpegdec')
-    gs.add('nvvidconv')
-    gs.addcap('video/x-raw(memory:NVMM),format=(string)I420')
-    gs.add('nvv4l2h264enc', iframeinterval=1, bitrate=kps)
-    gs.addcap('video/x-h264,stream-format=(string)byte-stream')
-    gs.add('h264parse')
+    # v4l2src device=/dev/video0 ! image/jpeg,width=2592,height=1944,framerate=15/1 ! tee name=t t. ! queue ! splitmuxsink muxer=avimux max-size-time=10000000000  location=test%02d.avi t. ! jpegdec ! xvimagesink -e
+    gs.add("v4l2src", device=device)
+    gs.addcap(f"image/jpeg,width={width},height={height},framerate={fps}/1")
+    gs.add("queue", max_size_buffers=20, leaky='downstream')
     sink = gs.add(
-        'splitmuxsink', location=os.path.join(outdir, f'out_{name}_%d.mp4'),
+        "splitmuxsink", muxer=gstr.element('avimux'),
+        location=os.path.join(outdir, f'{name}_%02d.avi'),
         max_size_time=duration * 1e9)
-    # https://gstreamer.freedesktop.org/documentation/multifile/splitmuxsink.html?gi-language=c#splitmuxsink:max-size-time
-    sink.connect('split-now', on_split)
-    sink.connect("format-location", lambda m, id: os.path.join(outdir, f'out_{name}_{time.time():.5f}.mp4'))
-    gs.link(start=start)
-    return gs
 
-# def _from_camera(gs, device=0, width=2592, height=1944, to_rgb=False, disp_width=500, fps=15):
-#     start = len(gs)
-#     gs.add("v4l2src", f"src_{device}", device=f"/dev/video{device}", force_aspect_ratio=True)
-#     gs.addcap(f"image/jpeg,width={width},height={height},framerate={fps}/1")
-#     gs.add("queue", f'queue_{device}', max_size_buffers=5, leaky='downstream')
-#     gs.add("jpegdec")
-#     gs.add(
-#         "appsink", f"sink_{device}",
-#         emit_signals=True, # eos is not processed otherwise
-#         max_buffers=10, # protection from memory overflow
-#         drop=False) # if python is too slow with pulling the samples
-#     # gs['queue'].connect("overrun", overrun, gs['queue'])
-#     # gs['sink'].connect("new-sample", new_sample, gs['sink'])
-#     # if to_rgb:
-#     #     start = len(gs)
-#     #     gs.add("videoconvert")
-#     #     gs.add("videoscale")
-#     #     gs.addcap(f'video/x-raw,width={width},height={int(height/width*disp_width)},format=BGR')
-#     #     gs.add(
-#     #         "appsink", f"rgb_{device}",
-#     #         emit_signals=True, # eos is not processed otherwise
-#     #         max_buffers=10, # protection from memory overflow
-#     #         drop=False) # if python is too slow with pulling the samples
-#     #     gs.link(start=start)
+    sink.connect("format-location", lambda m, id:
+        os.path.join(outdir, '{}_{}.avi'.format(
+            name, datetime.datetime.now().strftime(DATE_FMT))))
+    gs.link(start=start)
+
+
+class AudioRecord(reip.ShellProcess):  # AudioRecord(channels=16, sr=48000, device='hw:2')
+    _read_delay = 0.05
+    def __init__(self, device, fname='audio/{}.wav'.format(DATE_FMT), channels=16, sr=48000,
+                 codec='pcm_s32le', duration=10, max_rate=5, **kw):
+        self.fname = fname
+        self.sr, self.channels = sr, channels
+        self.device, self.codec = device, codec
+        self.duration = duration
+        cmd = (
+            'ffmpeg -f alsa -ac {ch} -ar {sr} -c:a {acodec} -i {device} '
+            '-f segment -segment_time {duration} -strftime 1 {fname}'
+        ).format(ch=channels, sr=sr, device=device, acodec=codec,
+                 duration=duration, fname=fname)
+        super().__init__(cmd, n_source=None, max_rate=max_rate, **kw)
+
+        self._speed = re.compile(r"speed=\s*([^\s]+)x")
+        self._writing = re.compile(r".*Opening '([\w\d\/\-_.]+)' for writing")
+
+    _last_file = None
+    def init(self):
+        self._last_file = None
+        self._meta = {}
+        os.makedirs(os.path.dirname(self.fname), exist_ok=True)
+        super().init()
+
+    def process(self, meta):
+        while True:
+            # check if process is still open
+            if self._proc.poll() is not None:
+                return reip.CLOSE
+
+            # check output line
+            line = self.stderr.readline().decode('utf-8')
+            if line:
+                # look for file writing message
+                match = self._writing.search(line)
+                if match:
+                    # ffmpeg prints the file when it starts writing, not when
+                    # it's finished.
+                    self._last_file, outf = match.groups()[0], self._last_file
+                    self._meta
+                    if outf:
+                        return [outf], {}
+
+                match = self._speed.search(line)
+                if match:
+                    self._meta['speed'] = match.groups()[0]
+
+            time.sleep(self._read_delay)
+
+
+# import ffmpeg
+# class AudioRecord2(reip.Block):
+#     def __init__(self, device, fname='audio/{}.wav'.format(DATE_FMT), channels=16, sr=48000,
+#                  codec='pcm_s32le', duration=10, max_rate=5, **kw):
+#         self.fname = fname
+#         self.sr, self.channels = sr, channels
+#         self.device, self.codec = device, codec
+#         self.duration = duration
+#         super().__init__(**kw)
 #
-#     start = len(gs)
-#     gs.add("timeoverlay", f't_overlay_{device}')
-#     gs.add("x264enc", key_int_max=10)
-#     gs.add("h264parse")
-#     gs.add("splitmuxsink", location=f'video_{device}_%02d.mov', max_size_time=10000000000, max_size_bytes=1000000)
-#     gs.link(f'queue_{device}', f't_overlay_{device}')
-#     gs.link(start=start)
-#     return gs
+#     def init(self):
+#         self.stream = (
+#             ffmpeg.input(self.device, f='alsa', ac=self.channels,
+#                          ar=self.sr, acodec=self.codec)
+#             .filter('segment', segment_time=self.duration, ))
 
 
-def _microphone(gs, outdir='audio', duration=10):
-    os.makedirs(outdir, exist_ok=True)
-    start = len(gs)
-    gs.add('autoaudiosrc')
-    gs.add('queue', max_size_buffers=30, leaky='downstream')
-    gs.add('flacenc')
-    gs.add('flactag')
-    flacparse = gs.add('flacparse')
-    # print(list(gs))
-    gs.link(start=start)
 
-    sink = gs.add(
-        "splitmuxsink",
-        location=lambda m, id: os.path.join(
-            outdir, f'out_mic_{time.time():.5f}.flac'),
-        max_size_time=duration * 1e9,
-        # async_finalize=True,
-        muxer=gstr.element('matroskamux'),
-    )
-    sink_pad = gstr.pad('audio_0', src=True)
-    sink.add_pad(sink_pad)
-    # print(sink.pads)
-    # print(sink.srcpads)
-    # print(sink.sinkpads)
-    gs.link(flacparse.name, sink.name)
-    return gs
-
-
-def record(**kw):
+def record(chunk_seconds=60, **kw):
     gs = gstr.GStream()
-    _microphone(gs)
     for f in glob.glob('/dev/v4l/by-path/*'):
         _from_camera(gs, f, **kw)
 
     with reip.Graph() as graph:
         out = GStreamer(gs, *gs.search('sink*'))
-        # B.audio.Mic(duration=10).to(B.audio.AudioFile('audio/{time}.flac'))
-
+        # B.audio.Mic('MCHStreamer', block_durationd=10).to(B.audio.AudioFile('audio/{time}.wav')).to(B.Debug('audio file'))
+        AudioRecord('hw:2').to(B.Debug('audio record'))
 
     with graph.run_scope():
         # it = B.video.stream_imshow(out.output_stream(strategy='latest'), 'blah')
