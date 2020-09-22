@@ -139,10 +139,6 @@ class Block:
                 sinks = reip.util.as_list(other)
 
             if sinks:
-                # truncate if necessary
-                if self.n_expected_sources:
-                    sinks = sinks[:min(self.n_expected_sources, j + len(sinks))]
-
                 # make sure the list is long enough
                 self.sources = reip.util.resize_list(
                     self.sources, j + len(sinks), None)
@@ -152,11 +148,6 @@ class Block:
                     self.sources[j] = sink.gen_source(
                         task_id=self.task_id, **kw)
                 j += 1  # need to increment cursor so we don't repeat last index
-
-                if (self.n_expected_sources and
-                        len(self.sources) >= self.n_expected_sources):
-                    break
-
         return self
 
     def to(self, *others, squeeze=True, **kw):
@@ -228,7 +219,8 @@ class Block:
                 with self._sw('process'):
                     outputs = self.process(*buffers, meta=meta)
                 # send each output batch to the sinks
-                self._send_to_sinks(outputs, meta)
+                with self._sw('sink'):
+                    self._send_to_sinks(outputs, meta)
         except Exception as e:
             self._exception = e
             self.error = True
@@ -268,36 +260,35 @@ class Block:
 
     def _send_to_sinks(self, outputs, meta_in=None):
         '''Send the outputs to the sink.'''
-        with self._sw('sink'):
-            # retry all sources
-            if outputs == reip.RETRY:
-                pass
-            elif outputs == reip.CLOSE:
+        # retry all sources
+        if outputs == reip.RETRY:
+            pass
+        elif outputs == reip.CLOSE:
+            self.close(propagate=True)
+        elif outputs == reip.TERMINATE:
+            self.terminate(propagate=True)
+        # increment sources but don't have any outputs to send
+        elif outputs is None:
+            self._stream.next()
+        # increment sources and send outputs
+        else:
+            # detect signals meant for the source
+            if self._stream.check_signals(outputs):
+                return
+
+            # increment sources
+            self._stream.next()
+            self.processed += 1
+
+            # convert outputs to a consistent format
+            outs, meta = prepare_output(outputs, input_meta=meta_in)
+            # pass to sinks
+            for sink, out in zip(self.sinks, outs):
+                if sink is not None:
+                    sink.put((out, meta), self._put_blocking)
+            # limit the number of blocks
+            if self.max_processed and self.processed >= self.max_processed:
                 self.close(propagate=True)
-            elif outputs == reip.TERMINATE:
-                self.terminate(propagate=True)
-            # increment sources but don't have any outputs to send
-            elif outputs is None:
-                self._stream.next()
-            # increment sources and send outputs
-            else:
-                # detect signals meant for the source
-                if self._stream.check_signals(outputs):
-                    return
-
-                # increment sources
-                self._stream.next()
-                self.processed += 1
-
-                # convert outputs to a consistent format
-                outs, meta = prepare_output(outputs, input_meta=meta_in)
-                # pass to sinks
-                for sink, out in zip(self.sinks, outs):
-                    if sink is not None:
-                        sink.put((out, meta), self._put_blocking)
-                # limit the number of blocks
-                if self.max_processed and self.processed >= self.max_processed:
-                    self.close(propagate=True)
 
     def _send_sink_signal(self, signal, block=True, meta=None):
         '''Emit a signal to all sinks.'''
@@ -340,6 +331,11 @@ class Block:
             raise RuntimeError(
                 f'Expected {self.n_expected_sources} sources '
                 f'in {self}. Found {len(self.sources)}.')
+
+    def remove_extra_sources(self, n=None):
+        n = n or self.n_expected_sources
+        if n is not None:
+            self.sources = self.sources[:n]
 
     def wait_until_ready(self):
         '''Wait until the block is initialized.'''

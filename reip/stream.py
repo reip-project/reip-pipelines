@@ -26,7 +26,8 @@ class Stream:
                  timeout=None, name='', **kw):
         self.name = name or ''
         self.sources = sources
-        self.loop = self.make_loop(**kw) if loop is None else loop
+        self._loop_kw = kw
+        # self.loop = self.make_loop(**kw) if loop is None else loop
         self.auto_next = auto_next
         self.should_wait = should_wait
         self.timeout = timeout
@@ -41,54 +42,61 @@ class Stream:
         # srcs = ''.join(f'\n{s}' for s in self.sources)
         return f'<{self.__class__.__name__}({self.name}) {state} available={[len(s) for s in self.sources]}>'
 
-    def reset(self):
-        self.signal = None
-        self.resume()
+    @classmethod
+    def make_loop(cls, duration=None, max_rate=None, delay=None):
+        '''A master loop function that will contain'''
+        return iters.throttled(
+            iters.timed(iters.loop(), duration),
+            max_rate, delay or cls._delay)
 
     def __iter__(self):
         self.reset()
-        t_last = time.time()
-        for _ in self.loop:
-            # if the stream is terminated, exit immediately
-            if self.terminated:
+        for _ in self.make_loop(**self._loop_kw):
+            inputs = self.get()
+            if inputs is None and self.running and not self.should_wait:
                 return
-            # if the stream doesn't have any sources, then we can close
-            if not self.sources and not self.should_wait:
-                return
-            # if the stream has a timeout set, return if we exceed that
-            if self.timeout and time.time() - t_last >= self.timeout:
-                return
-            # otherwise if we're not paused and we have data ready, return it
-            if self.running and self.check_ready():
-                inputs = [s.get_nowait() for s in self.sources]
-
-                if inputs and all(reip.CLOSE.check(x) for x, meta in inputs):
-                    self.signal = reip.CLOSE  # block will send to sinks
-                    self.close()
-                    self.next()
-                    continue
-
-                if inputs and any(reip.TERMINATE.check(x) for x, meta in inputs):
-                    self.signal = reip.TERMINATE  # block will send to sinks
-                    self.terminate()
-                    self.next()
-                    continue
-
-                t_last = time.time()
-                yield prepare_input(inputs)
-                if self.auto_next:
-                    self.next()
-
-            # if we are out of data and the stream is closed, stop iterating.
-            elif not self.should_wait:
-                return
-
-            time.sleep(self._delay)
-        # the only time this runs is when loop stops iterating.
-        # notice that close and terminate all return, they don't break
-        # so basically, the only time this is run is if we set a run duration
-        # and we exceed that duration.
+            yield inputs
+            if self.auto_next:
+                self.next()
+        # the only time this runs is when self.loop stops iterating.
         self.signal = reip.CLOSE
+
+    def poll(self, block=False, timeout=None): # FIXME: return value? exception? ?????
+        # for streams with no sources, there's nothing to wait for
+        if not self.sources:
+            return block and self.running and self.should_wait
+
+        timeout = timeout or self.timeout
+        t0 = time.time()
+        while not self.terminated:
+            time.sleep(self._delay)
+            if self.running and all(not s.empty() for s in self.sources):
+                return True
+            if not (block and self.should_wait):
+                return
+            if timeout and time.time() - t0 >= timeout:
+                raise TimeoutError(
+                    'Sources did not return a value in under {} seconds.'.format(timeout))
+
+    def get(self, block=True, timeout=None):
+        ready = self.poll(block=block, timeout=timeout)
+        return self._get() if ready else None
+
+    def _get(self):
+        inputs = [s.get_nowait() for s in self.sources]
+
+        if inputs and all(reip.CLOSE.check(x) for x, meta in inputs):
+            self.signal = reip.CLOSE  # block will send to sinks
+            self.next()
+            self.close()
+            return
+
+        if inputs and any(reip.TERMINATE.check(x) for x, meta in inputs):
+            self.signal = reip.TERMINATE  # block will send to sinks
+            self.next()
+            self.terminate()
+            return
+        return prepare_input(inputs)
 
     def retry(self):
         self._retry = True
@@ -98,6 +106,10 @@ class Stream:
             for s in self.sources:
                 s.next()
         self._retry = False
+
+    def reset(self):
+        self.signal = None
+        self.resume()
 
     def open(self):
         self.should_wait = True
@@ -130,17 +142,6 @@ class Stream:
 
     # pre-input
 
-    def check_ready(self):
-        '''Check if we're ready to send the inputs to the block.'''
-        return all(not s.empty() for s in self.sources)
-
-    # Manually get current items.
-
-    def get(self, check=True):
-        return (
-            prepare_input([s.get_nowait() for s in self.sources])
-            if not check or self.check_ready() else None)
-
     def check_signals(self, outputs):
         if self.sources:
             if any(any(t.check(o) for t in reip.SOURCE_TOKENS) for o in outputs):
@@ -158,14 +159,6 @@ class Stream:
                         s.next()
                 return True
         return False
-
-
-    @classmethod
-    def make_loop(cls, duration=None, max_rate=None, delay=None):
-        '''A master loop function that will contain'''
-        return iters.throttled(
-            iters.timed(iters.loop(), duration),
-            max_rate, delay or cls._delay)
 
     @classmethod
     def from_block_sources(cls, block, max_rate=None, auto_next=False, name=None, **kw):
@@ -218,10 +211,10 @@ class StreamSlice(Stream):
 
     Examples:
     >>> # creating 4 different stream slices
-    >>> full = B.Constant(5).stream_output()
-    >>> data = B.Constant(5).stream_output().data
-    >>> data0 = B.Constant(5).stream_output().data[0]
-    >>> meta = B.Constant(5).stream_output().meta
+    >>> full = B.Constant(5).output_stream()
+    >>> data = B.Constant(5).output_stream().data
+    >>> data0 = B.Constant(5).output_stream().data[0]
+    >>> meta = B.Constant(5).output_stream().meta
 
     >>> # ignore the fact that dicts are not hashable, this is for illustration.
     >>> with reip.default_graph().run_scope(duration=1):
@@ -250,7 +243,6 @@ class StreamSlice(Stream):
     def __getitem__(self, index):
         self._slice_index = index
         return self
-
 
 def prepare_input(inputs):
     '''Take the inputs from multiple sources and prepare to be passed to block.process.'''

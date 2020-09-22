@@ -27,8 +27,10 @@ def test_connections():
     # test a restricted number of sources
     n = 3
     output = reip.Block(n_source=n)
-    assert output.sources == [None]*3
+    assert output.sources == [None]*n
     output(*inputs, sink)
+    assert len(output.sources) == sum(len(i.sinks) for i in inputs) + 1
+    output.remove_extra_sources()
     assert [s.source for s in output.sources] == all_sinks[:n]
 
     # test too many sources
@@ -199,9 +201,6 @@ def test_pause_resume_state():
         processed = tester.processed
 
         g.raise_exception()
-
-
-
 
 
 
