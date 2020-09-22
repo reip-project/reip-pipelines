@@ -104,7 +104,7 @@ class AudioRecord(reip.ShellProcess):  # AudioRecord(channels=16, sr=48000, devi
 
 
 
-def record(duration=30, **kw):
+def record(duration=30, channels=16, sr=48000, **kw):
     gs = gstr.GStream()
     for f in glob.glob('/dev/v4l/by-path/*'):
         _from_camera(gs, f, duration=duration, **kw)
@@ -112,7 +112,7 @@ def record(duration=30, **kw):
     with reip.Graph() as graph:
         out = GStreamer(gs, *gs.search('sink*'))
         # B.audio.Mic('MCHStreamer', block_durationd=10).to(B.audio.AudioFile('audio/{time}.wav')).to(B.Debug('audio file'))
-        AudioRecord('hw:2', duration=duration).to(B.Debug('audio record'))
+        AudioRecord('hw:2', duration=duration, channels=channels, sr=sr).to(B.Debug('audio record'))
 
     with graph.run_scope():
         # it = B.video.stream_imshow(out.output_stream(strategy='latest'), 'blah')
@@ -123,4 +123,4 @@ def record(duration=30, **kw):
 
 if __name__ == '__main__':
     import fire
-    fire.Fire()
+    fire.Fire(record)
