@@ -26,8 +26,7 @@ def _from_camera(gs, device, width=2592, height=1944, fps=15, outdir='video', du
     gs.add("queue", max_size_buffers=20, leaky='downstream')
     sink = gs.add(
         "splitmuxsink", muxer=gstr.element('avimux'),
-        location=os.path.join(outdir, f'{name}_%02d.avi'),
-        max_size_time=duration * 1e9)
+        location='', max_size_time=duration * 1e9)
 
     sink.connect("format-location", lambda m, id:
         os.path.join(outdir, '{}_{}.avi'.format(
@@ -37,7 +36,7 @@ def _from_camera(gs, device, width=2592, height=1944, fps=15, outdir='video', du
 
 class AudioRecord(reip.ShellProcess):  # AudioRecord(channels=16, sr=48000, device='hw:2')
     _read_delay = 0.05
-    def __init__(self, device, fname='audio/{}.wav'.format(DATE_FMT), channels=16, sr=48000,
+    def __init__(self, device, outdir='audio', fname='{}.wav'.format(DATE_FMT), channels=16, sr=48000,
                  codec='pcm_s32le', duration=10, max_rate=5, **kw):
         self.fname = fname
         self.sr, self.channels = sr, channels
@@ -104,15 +103,18 @@ class AudioRecord(reip.ShellProcess):  # AudioRecord(channels=16, sr=48000, devi
 
 
 
-def record(duration=30, channels=16, sr=48000, **kw):
+def record(duration=30, channels=16, sr=48000, outdir=None, **kw):
+    outdir = outdir or 'record_{}'.format(datetime.datetime.now().strftime(DATE_FMT))
     gs = gstr.GStream()
     for f in glob.glob('/dev/v4l/by-path/*'):
-        _from_camera(gs, f, duration=duration, **kw)
+        _from_camera(gs, f, duration=duration, outdir=outdir, **kw)
 
     with reip.Graph() as graph:
         out = GStreamer(gs, *gs.search('sink*'))
         # B.audio.Mic('MCHStreamer', block_durationd=10).to(B.audio.AudioFile('audio/{time}.wav')).to(B.Debug('audio file'))
-        AudioRecord('hw:2', duration=duration, channels=channels, sr=sr).to(B.Debug('audio record'))
+        AudioRecord(
+            'hw:2', outdir=outdir, duration=duration, channels=channels, sr=sr
+        ).to(B.Debug('audio record'))
 
     with graph.run_scope():
         # it = B.video.stream_imshow(out.output_stream(strategy='latest'), 'blah')
