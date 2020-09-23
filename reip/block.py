@@ -3,72 +3,173 @@ import threading
 import traceback
 
 import reip
-from reip.buffer_store import BufferStore
-from reip.util.iters import throttled, timed, loop
-from reip.util import text, check_block
+from reip.stores import Producer
+from reip.util import text, Meta
 
 __all__ = ['Block']
 
 
-class Block:
-    '''This is the base instance of a block.'''
-    _thread = None
-    _delay = 1e-6
+class _BlockSinkView:
+    def __init__(self, block, idx):
+        self._block = block
+        self._index = idx
 
-    def __init__(self, queue=100, n_source=1, n_sink=1, name=None,
-                 blocking=False, graph=None, max_rate=None,
-                 wait_all_sources=True):
+    @property
+    def item(self):  # can be a single sink, or multiple i.e. block[0] or block[:2]
+        return self._block.sinks[self._index]
+
+    @property
+    def items(self):  # always a list
+        return reip.util.as_list(self.item)
+
+    def __iter__(self):  # iterate over sink
+        return iter(self.items)
+
+    def __getitem__(self, key):  # get sub index
+        return self.items[key]
+
+
+class Block:
+    '''This is the base instance of a block.
+
+    Arguments:
+        queue (int): the maximum queue length.
+        n_source (int, or None): the number of sources to expect. If None,
+            it will accept a variable number of sources.
+        n_sink (int): the number of sinks to expect.
+             - If `n_sink=0`, then there will be a single sink, that outputs no
+               buffer value, but does output metadata.
+               e.g.
+               ```python
+               # block 1
+               return {'just some metadata': True}
+               # or
+               return [], {'just some metadata': True}
+
+               # block 2
+               def process(self, meta):  # no buffer value
+                   assert meta['just some metadata'] == True
+               ```
+             - If `n_sink=None`, then the block will have no sinks.
+
+        blocking (bool): should the block wait for sinks to have a free space
+            before processing more items?
+        max_rate (int): the maximum number of iterations per second. If the block
+            processes items any faster, it will throttle and sleep the required
+            amount of time to meet that requirement.
+            e.g. if max_rate=5, then an iteration will take at minimum 0.2s.
+        graph (reip.Graph, reip.Task, or False): the graph instance to be added to.
+        name ()
+    '''
+    _thread = None
+    _stream = None
+    _delay = 1e-6
+    parent_id, task_id = None, None
+
+    def __init__(self, n_source=1, n_sink=1, queue=1000, blocking=False,
+                 max_rate=None, max_processed=None, graph=None, name=None, **kw):
         self.name = name or f'{self.__class__.__name__}_{id(self)}'
-        self.sources = [None for _ in range(n_source)]
-        self.sinks = [BufferStore(queue) for _ in range(n_sink)]
-        self.context_id = reip.Task.add_if_available(graph, self)
+        self.parent_id, self.task_id = reip.Graph.register_instance(self, graph)
+
+        # sources and sinks
+        # by default, a block takes a variable number of sources.
+        # If a block has a fixed number of sources, you can specify that
+        # and it will throw an exception when spawning if the number of
+        # sources does not match.
+        self.n_expected_sources = n_source
+        self.sources = [None] * (n_source or 0)
+        # TODO: should we have n_sink=None, signify, n_sink=n_source ?
+        self.sinks = [
+            Producer(queue, task_id=self.task_id)
+            for _ in range(n_sink or 0)
+        ]
+
         self.max_rate = max_rate
-        self.__put_blocking = blocking
-        self.__wait_all_sources = wait_all_sources
+        self.max_processed = max_processed
+        self._put_blocking = blocking
         # signals
         self._reset_state()
         # block timer
         self._sw = reip.util.Stopwatch(str(self))
+        self.extra_kw = kw
+
+        self.log = reip.util.logging.getLogger(self)
 
     def _reset_state(self):
         # state
         self.ready = False
-        self.running = False
-        self.terminated = False
-        self.error = False
+        self.error = False  # QUESTION: can we combine error + _exception?
         self._exception = None
         self.done = False
         # stats
         self.processed = 0
         # self._sw.reset()
 
-    # _error = False
-    # @property
-    # def error(self):
-    #     return self._error
-    #
-    # @error.setter
-    # def error(self, value):
-    #     reip.util.print_stack(f'setting value for {self}.error to {value}')
-    #     self._error = value
-
     def __repr__(self):
-        return '[Block({}): {} ({} in, {} out)]'.format(
-            id(self), self.__class__.__name__,
-            len(self.sources), len(self.sinks))
+        state = (
+            (type(self._exception).__name__
+             if self._exception is not None else 'error') if self.error else
+            ('terminated' if self.terminated else 'done') if self.done else
+            ('running' if self.running else 'paused') if self.ready else
+            '--'  # ??
+        )  # add "uptime 35.4s"
+
+        return '[Block({}): ({}/{} in, {} out; {} processed) - {}]'.format(
+            self.name, sum(s is not None for s in self.sources),
+            '?' if self.n_expected_sources is None else self.n_expected_sources,
+            len(self.sinks), self.processed,
+            state)
 
     # Graph definition
 
     def __call__(self, *others, **kw):
+        '''Connect other block sinks to this blocks sources.
+        If the blocks have multiple sinks, they will be passed as additional
+        inputs.
+        '''
+        j = 0
         for i, other in enumerate(others):
-            # TODO: how to allow for sinks with empty buffers (but not empty meta)?
-            self.sources[i] = other.sinks[0].gen_source(
-                self.context_id == other.context_id, **kw)
+            # permit argument to be a block
+            # permit argument to be a sink or a list of sinks
+            if isinstance(other, Block):
+                sinks = other.sinks
+            elif isinstance(other, _BlockSinkView):
+                sinks = other.items
+            else:
+                sinks = reip.util.as_list(other)
+
+            if sinks:
+                # make sure the list is long enough
+                self.sources = reip.util.resize_list(
+                    self.sources, j + len(sinks), None)
+
+                # create and add the source
+                for j, sink in enumerate(sinks, j):
+                    self.sources[j] = sink.gen_source(
+                        task_id=self.task_id, **kw)
+                j += 1  # need to increment cursor so we don't repeat last index
         return self
 
     def to(self, *others, squeeze=True, **kw):
+        '''Connect this blocks sinks to other blocks' sources'''
         outs = [other(self, **kw) for other in others]
         return outs[0] if squeeze and len(outs) == 1 else outs
+
+    def __or__(self, other):
+        '''Connect blocks using Unix pipe syntax.'''
+        return self.to(*reip.util.as_list(other))
+
+    def __ror__(self, other):
+        '''Connect blocks using Unix pipe syntax.'''
+        return self(*reip.util.as_list(other))
+
+    def output_stream(self, **kw):
+        '''Create a Stream iterator which will let you iterate over the
+        outputs of a block.'''
+        return reip.Stream.from_block(self, **kw)
+
+    def __getitem__(self, key):
+        return _BlockSinkView(self, key)
 
     # User Interface
 
@@ -84,127 +185,216 @@ class Block:
 
     # main process loop
 
-    def __run(self, duration=None):
-        print(text.l_(text.green('Starting'), self))
-        time.sleep(self._delay)
+    def _main(self, *a, **kw):
+        '''The main thread target function. Handles uncaught exceptions and
+        generic Block context management.'''
         try:
             # profiler = pyinstrument.Profiler()
             # profiler.start()
+            self.log.debug(text.blue('Starting...'))
+            time.sleep(self._delay)
+            with self._sw():
+                self._run(self._init_stream(*a, **kw))
+        except KeyboardInterrupt:
+            self.log.info(text.yellow('Interrupting'))
+        finally:
+            self.print_stats()
+            # profiler.stop()
+            # print(profiler.output_text(unicode=True, color=True))
+            self.log.info(text.green('Done.'))
 
-            # initialize blocks
-            self._sw.tick()
-
+    def _run(self, stream):
+        '''The abstract block logic. This is meant to be overrideable in case
+        someone needs to modify the logic organization.'''
+        try:
+            # block initialization
             with self._sw('init'):
                 self.init()
             self.ready = True
-            print(text.b_(text.green('Ready'), self), flush=True)
+            self.log.info(text.green('Ready.'))
 
-            for _ in throttled(timed(loop(), duration), self.max_rate, self._delay):
-                if self.terminated:
-                    break
-
-                if self.running and (
-                        not self.__wait_all_sources or
-                        all(not s.empty() for s in self.sources)):
-                    self.__run_step()
-
-                # sleep to allow other threads to run
-                self._sw.sleep(self._delay)  # adds timer
-
+            # iterate over the input data gathered from the sources
+            for buffers, meta in stream:
+                # process each input batch
+                with self._sw('process'):
+                    outputs = self.process(*buffers, meta=meta)
+                # send each output batch to the sinks
+                with self._sw('sink'):
+                    self._send_to_sinks(outputs, meta)
         except Exception as e:
             self._exception = e
             self.error = True
-            print(text.red(text.b_(
-                f'Exception occurred in {self}: ({type(e).__name__}) {e}',
-                traceback.format_exc(),
-            )))
-        except KeyboardInterrupt:
-            print(text.b_(text.yellow('\nInterrupting'), self))
+            self.log.exception(e)
+            self.close()
         finally:
             # finish up and shut down block
+            self.log.debug(text.yellow('Finishing...'))
+            self._stream.close()  # may be redundant
+            # run block finish
             with self._sw('finish'):
                 self.finish()
+            # propagate stream signals to sinks e.g. CLOSE
+            # this is run when:
+            #   - the block sends reip.CLOSE, reip.TERMINATE as a signal from process.
+            #     (if you only want to close the current block and not downstream ones,
+            #      just call self.close()/self.terminate() directly)
+            #   - a stream finishes running e.g. when you set a block run duration.
+            if self._stream.signal is not None:
+                self._send_sink_signal(self._stream.signal)
             self.done = True
-            self._sw.tock()
-            # if self.context_id is None:
-            self.print_stats()
 
-            # profiler.stop()
-            # print(profiler.output_text(unicode=True, color=True))
+    def _init_stream(self, duration=None):
+        '''Initialize the source stream.
 
-    def __run_step(self):
-        # get items from queue
-        with self._sw('source'):
-            inputs = [s.get_nowait() for s in self.sources]
+        NOTE: this should set self._stream to be the reip.Stream object so that
+        we can call Stream methods to pause, terminate, etc.
+        It can return a wrapped iterable which will be used to iterate inside
+        the run function, e.g. wrap it with a timer, or additional formatting.
+        '''
+        # create a stream from sources with a custom control loop
+        self._stream = reip.Stream.from_block_sources(
+            self, duration=duration, name=self.name)
+        self._stream.open()
+        # wrap stream in a timer
+        return self._sw.iter(self._stream, 'source')
 
-        # transform input to output
-        with self._sw('process'):
-            bufs, meta_in = prepare_input(inputs)
-            outputs = self.process(*bufs, meta=meta_in)
-        # print(text.green(f"{self} processing took {self._sw.last('process'):.2f}s"))
+    def _send_to_sinks(self, outputs, meta_in=None):
+        '''Send the outputs to the sink.'''
+        # retry all sources
+        if outputs == reip.RETRY:
+            pass
+        elif outputs == reip.CLOSE:
+            self.close(propagate=True)
+        elif outputs == reip.TERMINATE:
+            self.terminate(propagate=True)
+        # increment sources but don't have any outputs to send
+        elif outputs is None:
+            self._stream.next()
+        # increment sources and send outputs
+        else:
+            # detect signals meant for the source
+            if self._stream.check_signals(outputs):
+                return
 
-        # feed output to sink, skip if None
-        with self._sw('sink'):
-            if outputs is reip.RETRY:
-                pass
-            elif outputs is None:
-                for s in self.sources:
-                    s.next()
-            else:
-                outs, meta = prepare_output(outputs, input_meta=meta_in)
-                for s, out in zip(self.sources, outs):
-                    if out is not reip.RETRY:
-                        s.next()
+            # increment sources
+            self._stream.next()
+            self.processed += 1
 
-                self.processed += 1
-                for sink, out in zip(self.sinks, outs):
-                    if sink is not None:
-                        sink.put((out, meta), self.__put_blocking)
+            # convert outputs to a consistent format
+            outs, meta = prepare_output(outputs, input_meta=meta_in)
+            # pass to sinks
+            for sink, out in zip(self.sinks, outs):
+                if sink is not None:
+                    sink.put((out, meta), self._put_blocking)
+            # limit the number of blocks
+            if self.max_processed and self.processed >= self.max_processed:
+                self.close(propagate=True)
 
+    def _send_sink_signal(self, signal, block=True, meta=None):
+        '''Emit a signal to all sinks.'''
+        self.log.debug(text.yellow(text.l_('sending', signal)))
+        # print(text.yellow(text.l_(self, 'sending', signal)))
+        for sink in self.sinks:
+            if sink is not None:
+                sink.put((signal, meta or {}), block=block)
     # Thread management
 
     def spawn(self, wait=True):
-        print(text.l_(text.blue('Spawning'), self, '...'))
+        '''Spawn the block thread'''
+        self.log.debug(text.blue('Spawning...'))
         print(self.summary())
 
-        for i, s in enumerate(self.sources):
-            if s is None:
-                raise RuntimeError(f"Source {i} in {self} not connected")
+        self._check_source_connections()
+        # spawn any sinks that need it
+        for s in self.sinks:
+            if hasattr(s, 'spawn'):
+                s.spawn()
         self._reset_state()
         self.resume()
-        self._thread = threading.Thread(target=self.__run)
+        self._thread = threading.Thread(target=self._main)
         self._thread.daemon = True
         self._thread.start()
 
         if wait:
             self.wait_until_ready()
 
+    def _check_source_connections(self):
+        '''Check if there are too many sources for this block.'''
+        # check for any empty sources
+        disconnected = [i for i, s in enumerate(self.sources) if s is None]
+        if disconnected:
+            raise RuntimeError(f"Sources {disconnected} in {self} not connected.")
+
+        # check for exact source count
+        if (self.n_expected_sources is not None
+                and len(self.sources) != self.n_expected_sources):
+            raise RuntimeError(
+                f'Expected {self.n_expected_sources} sources '
+                f'in {self}. Found {len(self.sources)}.')
+
+    def remove_extra_sources(self, n=None):
+        n = n or self.n_expected_sources
+        if n is not None:
+            self.sources = self.sources[:n]
+
     def wait_until_ready(self):
+        '''Wait until the block is initialized.'''
         while not self.ready and not self.error and not self.done:
             time.sleep(self._delay)
 
-    def join(self, terminate=True, timeout=0.5):
+    def join(self, close=True, terminate=False, raise_exc=False, timeout=None):
+        # close stream
+        if close:
+            self.close()
         if terminate:
             self.terminate()
-        if self._thread is None:
-            return
 
-        print(text.l_(text.blue('Joining'), self, '...'))
-        self._thread.join(timeout=timeout)
-        # raise any exception
-        # if self._exception is not None:
-        #     raise Exception(f'Exception in {self}') from self._exception
+        # join any sinks that need it
+        for s in self.sinks:
+            if hasattr(s, 'join'):
+                s.join()
+
+        # close thread
+        # self.log.debug(text.blue('Joining'))
+        if self._thread is not None:
+            self._thread.join(timeout=timeout)
+        if raise_exc:
+            self.raise_exception()
+
+    def raise_exception(self):
+        if self._exception is not None:
+            raise self._exception
 
     # State management
 
     def pause(self):
-        self.running = False
+        if self._stream is not None:
+            self._stream.pause()
 
     def resume(self):
-        self.running = True
+        if self._stream is not None:
+            self._stream.resume()
 
-    def terminate(self):
-        self.terminated = True
+    def close(self, propagate=False):
+        if self._stream is not None:
+            self._stream.close()
+        if propagate:
+            self._send_sink_signal(reip.CLOSE)
+
+    def terminate(self, propagate=False):
+        if self._stream is not None:
+            self._stream.terminate()
+        if propagate:
+            self._send_sink_signal(reip.TERMINATE)
+
+    # XXX: this is temporary. idk how to elegantly handle this
+    @property
+    def running(self):
+        return self._stream.running if self._stream is not None else False
+
+    @property
+    def terminated(self):
+        return self._stream.terminated if self._stream is not None else False
 
     # debug
 
@@ -220,10 +410,10 @@ class Block:
         return text.block_text(
             text.green(str(self)),
             'Sources:',
-            text.indent(text.b_(*(f'- {s}' for s in self.sources))),
+            text.indent(text.b_(*(f'- {s}' for s in self.sources)) or None, w=4)[2:],
             '',
             'Sinks:',
-            text.indent(text.b_(*(f'- {s}' for s in self.sinks)), 2),
+            text.indent(text.b_(*(f'- {s}' for s in self.sinks)) or None, w=4)[2:],
             ch=text.blue('*'), n=40,
         )
 
@@ -233,10 +423,17 @@ class Block:
         '''
         n = self.processed
         total_time = self._sw.elapsed()
-        return f'[{self.name} {n:,} buffers, {n / total_time:,.2f} x/s]'
+        n_src = [len(s) for s in self.sources]
+        n_snk = [len(s) for s in self.sinks]
+        return f'[{self.name} {n:,} buffers, {n / total_time:,.2f}x/s sources={n_src}, sinks={n_snk}]'
 
     def print_stats(self):
         total_time = self._sw.stats()[0] if '' in self._sw._samples else 0
+        speed = self.processed / total_time if total_time else 0
+        dropped = [getattr(s, "dropped", None) for s in self.sinks]
+        skipped = [getattr(s, "skipped", None) for s in self.sources]
+        n_src = [len(s) for s in self.sources]
+        n_snk = [len(s) for s in self.sinks]
         print(text.block_text(
             # block title
             f'Stats for {text.red(self) if self.error else text.green(self)}',
@@ -245,30 +442,30 @@ class Block:
             if self._exception else None,
             # basic stats
             f'Processed {self.processed} buffers in {total_time:.2f} sec. '
-            f'({self.processed / total_time if total_time else 0:.2f} x/s)',
-            f'Dropped: {[getattr(sink, "dropped", None) for sink in self.sinks]}',
+            f'({speed:.2f} x/s)',
+            f'Dropped: {dropped}  Skipped: {skipped}',
+            f'Left in Queue: sources={n_src} sinks={n_snk}',
             # timing info
             self._sw, ch=text.blue('*')))
 
 
-def prepare_input(inputs):
-    '''Take the inputs from multiple sources and prepare to be passed to block.process.'''
-    bufs, meta = zip(*inputs) if inputs else ((), ())
-    return (
-        # XXX: ... is a sentinel for empty outputs - how should we handle them here??
-        #      if there's a blank in the middle
-        [] if all(b is ... for b in bufs) else bufs,
-        reip.util.Stack({}, *meta))
-
-
-def prepare_output(outputs, input_meta=None):
+def prepare_output(outputs, input_meta=None, expected_length=None):
     '''Take the inputs from block.process and prepare to be passed to block.sinks.'''
+    if not outputs:
+        return (), {}
 
     bufs, meta = None, None
     if isinstance(outputs, tuple):
         if len(outputs) == 2:
             bufs, meta = outputs
+    elif isinstance(outputs, (Meta, dict)):
+        meta = outputs
 
-    if input_meta:
-        meta = reip.util.Stack(meta, input_meta)
-    return bufs or (...,), meta or reip.util.Stack()
+    bufs = list(bufs) if bufs else []
+
+    if expected_length:  # pad outputs with blank values
+        bufs.extend((reip.BLANK,) * max(0, expected_length - len(bufs)))
+
+    if input_meta:  # merge meta as a new layer
+        meta = Meta(meta, input_meta)
+    return bufs, meta or Meta()

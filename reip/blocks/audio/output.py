@@ -1,10 +1,10 @@
 import os
 import soundfile
 import reip
-import matplotlib
-matplotlib.use('agg')
-import librosa.display
-import matplotlib.pyplot as plt
+# import matplotlib
+# matplotlib.use('agg')
+# import librosa.display
+# import matplotlib.pyplot as plt
 
 
 class AudioFile(reip.Block):

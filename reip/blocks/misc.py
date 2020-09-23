@@ -1,8 +1,23 @@
 import time
+import itertools
 import numpy as np
 
 import reip
 from reip.util import text
+
+
+class Iterator(reip.Block):
+    '''Call this function every X seconds'''
+    def __init__(self, iterator, **kw):
+        self.iterator = iter(iterator)
+        super().__init__(n_source=0, **kw)
+
+    def process(self, meta=None):
+        try:
+            x = next(self.iterator)
+            return [x], {}
+        except StopIteration:
+            return reip.CLOSE
 
 
 class Interval(reip.Block):
@@ -13,8 +28,25 @@ class Interval(reip.Block):
 
     def process(self, meta=None):
         time.sleep(self.seconds)
-        meta['time'] = time.time()
-        return (), {'time': time.time()}
+        return [None], {'time': time.time()}
+
+
+class Time(reip.Block):
+    '''Call this function every X seconds'''
+    def process(self, x, meta=None):
+        return [x], {'time': time.time()}
+
+
+class Meta(reip.Block):
+    '''Call this function every X seconds'''
+    def __init__(self, meta, *a, **kw):
+        self.meta = meta or {}
+        super().__init__(*a, **kw)
+    def process(self, x, meta=None):
+        return [x], {
+            k: v(meta) if callable(v) else v
+            for k, v in self.meta.items()
+        }
 
 
 class Sleep(reip.Block):
@@ -22,30 +54,43 @@ class Sleep(reip.Block):
         self.sleep = sleep
         super().__init__(**kw)
 
-    def process(self, *ys, meta):
+    def process(self, x, meta):
         time.sleep(self.sleep)
-        return ys, meta
+        return [x], meta
 
 
 class Constant(reip.Block):
-    def __init__(self, value, **kw):
+    def __init__(self, value, *a, **kw):
         self.value = value
-        super().__init__(**kw)
+        super().__init__(*a, n_source=0, **kw)
 
     def process(self, meta):
         return [self.value], meta
 
 
+class Increment(Iterator):
+    def __init__(self, start=None, stop=None, step=1, **kw):
+        if stop is None:
+            start, stop = 0, start
+        super().__init__(
+            range(start or 0, stop, step) if stop is not None else
+            itertools.count(start or 0, stop), **kw)
+
+
 class Debug(reip.Block):
-    def __init__(self, message='Debug', value=False, period=None, **kw):
-        self.message = message
+    def __init__(self, message=None, value=False, summary=False, period=None, name=None, **kw):
+        self.message = message or 'Debug'
         self.value = value
         self.period = period
+        self._summary = summary
         self._last_time = 0
-        super().__init__(**kw)
+        name = 'Debug-{}'.format(message.replace(" ", "-")) if message else None
+        super().__init__(name=name, **kw)
 
     def _format(self, x):
         if isinstance(x, np.ndarray):
+            if self._summary:
+                return x.shape, x.dtype, 'min:', x.min(), 'max:', x.max(), 'mean:', x.mean()
             if x.size > 40 or x.ndim > 2:
                 return x.shape, x.dtype, x if self.value else '' # , f'{np.isnan(x).sum()} nans'
             return x.shape, x.dtype, x
@@ -64,12 +109,27 @@ class Debug(reip.Block):
         return xs, meta
 
 
+class Results(reip.Block):
+    squeeze = True
+    def __init__(self, squeeze=True, **kw):
+        self.squeeze = squeeze
+        super().__init__(**kw)
+
+    def init(self):
+        self.results = []
+        self.meta = []
+
+    def process(self, *xs, meta=None):
+        self.results.append(xs[0] if self.squeeze and len(xs) == 1 else xs)
+        self.meta.append(meta)
+
+
 class Lambda(reip.Block):
     def __init__(self, func, name=None, **kw):
         self.func = func
         name = name or self.func.__name__
-        if name is '<lambda>':
-            name = 'how to get the signature?'
+        if name == '<lambda>':
+            name = '_lambda_'  # how to get the signature?
         super().__init__(name=name, **kw)
 
     def process(self, *xs, meta=None):

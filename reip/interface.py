@@ -3,7 +3,7 @@ import time
 
 def skip_strategy(source):
     while not source.empty() and source._skip_id < source.skip:
-        source._get()
+        # source._get()
         source.next()  # discard the buffer
         source._skip_id += 1
         source.skipped += 1
@@ -16,7 +16,7 @@ def skip_strategy(source):
 
 def latest_strategy(source):
     while not source.last():
-        source._get()
+        # source._get()
         source.next()  # discard the buffer
         source.skipped += 1
     return source._get()
@@ -31,6 +31,15 @@ class Sink:
     def __init__(self):
         self.dropped = 0
         self._full_delay = 1e-6
+
+    def spawn(self):
+        pass
+
+    def join(self):
+        pass
+
+    def __len__(self):
+        raise NotImplementedError
 
     def full(self):
         raise NotImplementedError
@@ -96,11 +105,14 @@ class Source:
         self._strategy = strategy
         self._strategy_get = self.strategies[strategy]
 
-    def empty(self):
+    def __len__(self):
         raise NotImplementedError
 
+    def empty(self):
+        return not len(self)
+
     def last(self):
-        raise NotImplementedError
+        return len(self) == 1
 
     def next(self):
         raise NotImplementedError

@@ -4,7 +4,7 @@ import numpy as np
 
 class Stopwatch:
     class lap:
-        def __init__(self, sw, name):
+        def __init__(self, sw, name=''):
             self.sw = sw
             self.name = name
 
@@ -25,6 +25,9 @@ class Stopwatch:
         self._ticks = {}
         self._sums = {}
         self._counts = {}
+
+    def __contains__(self, key):
+        return key in self._samples
 
     def _estimate_dt(self, n=100):
         dts = []
@@ -71,6 +74,12 @@ class Stopwatch:
         ts = self._samples.get(name)
         return ts[-1][1] - ts[-1][0] if ts else None
 
+    def avg(self, name=''):
+        return self._sums[name] / self._counts[name]
+
+    def total(self, name=''):
+        return self._sums[name]
+
     def sleep(self, delay=1e-6, name="sleep"):
         self.tick(name)
         time.sleep(delay)
@@ -78,6 +87,9 @@ class Stopwatch:
 
     def __call__(self, name=""):
         return self.lap(self, name)
+
+    def __enter__(self):
+        return self.lap(self).__enter__()
 
     def stats(self, name=""):
         if name not in self._samples:
@@ -89,7 +101,7 @@ class Stopwatch:
         return total, total/count if count else 0, np.std(intervals), count
 
     def __getitem__(self, key):
-        return self._sums[key] / self._counts[key]
+        return self.total(key)
 
     def __str__(self):
         total = self._sums.get('')

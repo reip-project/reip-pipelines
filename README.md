@@ -37,7 +37,7 @@ wav = (
     audio10s.to(B.Debug('Audio 222'))
     .to(B.audio.AudioFile('audio/{time}.wav')))
 
-print(reip.Graph.default)
+print(reip.default_graph())
 reip.run()
 
 ```
@@ -57,7 +57,7 @@ specshow = B.Specshow('plots/{time}.png')(spec)
 # to wavefile
 wav10s = B.audio.AudioFile('audio/{time}.wav')(audio10s)
 
-print(reip.Graph.default)
+print(reip.default_graph())
 reip.run()
 
 ```
@@ -115,7 +115,7 @@ Here's how graph contexts work.
 import reip
 
 # you always start with a default graph.
-top_graph = reip.Graph.default
+top_graph = reip.default_graph()
 
 print(top_graph)
 # [~Graph (0 children) ~]
@@ -175,15 +175,15 @@ And you can modify the default without using contexts.
 ```python
 # after exiting the `with` context the previous
 # default is set.
-assert reip.Graph.default is top_graph
+assert reip.default_graph() is top_graph
 
 # but you can change the default like this too
 separate_graph.as_default()
-assert reip.Graph.default is separate_graph
+assert reip.default_graph() is separate_graph
 
 # and reset it back.
 separate_graph.restore_previous()
-assert reip.Graph.default is top_graph
+assert reip.default_graph() is top_graph
 
 ```
 
@@ -201,7 +201,7 @@ All of the same principles of Graphs apply to Tasks. They can be set as the defa
 ```python
 import reip
 
-top_graph = reip.Graph.default
+top_graph = reip.default_graph()
 
 with reip.Graph() as g:
     with reip.Task() as t:

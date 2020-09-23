@@ -16,22 +16,19 @@ setuptools.setup(
     # entry_points={'console_scripts': ['{name}={name}:main'.format(name=NAME)]},
     install_requires=[
         'numpy',
-        # audio
-        'pyaudio',
-        # 'soundfile',
-        'librosa',
-        'tflite',
-        # plotting
-        'matplotlib',
+        'pyarrow',
+        'tflit>=0.0.13',
         # utils
-        # 'pycrypto',
+        'pycrypto',
         # general
-        # 'ray',
-        # 'readi',
-        # 'confuse@https://github.com/beetbox/confuse/archive/master.zip',
         'fire',
+        'colorlog',
+        # 'netswitch',
     ],
     extras_require={
+        'audio': ['librosa', 'pyaudio'],
+        # 'video': ['opencv-python'],  # already installed on Jetson by default
+        'plot': ['matplotlib'],
         'docs': ['sphinx!=1.3.1', 'sphinx_theme', 'sphinx-gallery'],
     },
     license='MIT License',

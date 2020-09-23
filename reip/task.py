@@ -13,8 +13,8 @@ class Task(reip.Graph):
     _process = None
     _delay = 1#e-5
 
-    def __init__(self, *blocks, graph=None):
-        super().__init__(*blocks, graph=graph)
+    def __init__(self, *blocks, graph=None, **kw):
+        super().__init__(*blocks, graph=graph, **kw)
         self.remote = remote.RemoteProxy(self)
         self._terminated = mp.Value(c_bool, False)
         self._error = mp.Value(c_bool, False)
@@ -22,16 +22,16 @@ class Task(reip.Graph):
     # main run loop
 
     def _run(self, duration=None):
-        print(text.b_(text.green('Starting'), self), flush=True)
+        self.log.info(text.green('Starting'))
         self.remote.listening = True  # XXX: let the main process know that it's listening
         try:
             # initialize
             super().spawn()
-            print(text.b_(text.green('Ready'), self), flush=True)
+            self.log.info(text.green('Ready'))
 
             # main loop
             for _ in timed(loop(), duration):
-                if super().terminated or super().error:
+                if super().done or super().error:
                     break
 
                 self.remote.poll_until_clear()
@@ -42,20 +42,15 @@ class Task(reip.Graph):
 
         except Exception as e:
             # any exception, print tb
-            print(text.b_(
-                text.red(f'Exception occurred in {self}'),
-                text.red(traceback.format_exc()),
-            ), flush=True)
+            self.log.error(e, exc_info=True)
             self.error = True
 
             # send exception
             self.remote._local.put((None, None, e))
         except KeyboardInterrupt as e:
-            print(text.b_(
-                text.yellow('Interrupting'), self, text.yellow('--')))
+            self.log.info(text.yellow('Interrupting'))
         finally:
-            super().terminate()
-            super().join(terminate=False)
+            super().join()
             self.error = super().error  # get child errors before closing, just in case
             self.remote.poll_until_clear()
             self.remote.listening = False
@@ -66,19 +61,19 @@ class Task(reip.Graph):
         if self._process is not None:  # only start once
             return
 
-        print(text.b_(text.blue('Spawning'), self))
+        # self.log.debug(text.blue('Spawning'))
         self._process = mp.Process(target=self._run, daemon=True)
         self._process.start()
         if wait:
             self.wait_until_ready()
         self._check_errors()
 
-    def join(self, terminate=True, timeout=0.5):
+    def join(self, *a, timeout=0.5, **kw):
         if self._process is None:
             return
 
-        print(text.b_(text.blue('Joining'), self))
-        self.remote.super.join(terminate=terminate, default=None)  # join children
+        # self.log.debug(text.blue('Joining'))
+        self.remote.super.join(*a, default=None, **kw)  # join children
         self._process.join(timeout=timeout)  # join process
         self._process = None
         self._check_errors()
@@ -88,12 +83,11 @@ class Task(reip.Graph):
         result = self.remote.get_result(None, wait=False)
         if result is not None:  # returns None if already closed.
             x, exc = result
-            if self._exception is not None:
-                raise Exception(f'Exception in {self}') from self._exception
+            if exc is not None:
+                raise exc  # TODO: set traceback before pickling - see https://github.com/python/cpython/blob/3.8/Lib/concurrent/futures/process.py
 
     def wait_until_ready(self):
         while not self.ready and not self.error and not self.done:
-            self.remote.poll_until_clear()
             time.sleep(self._delay)
 
     # children state

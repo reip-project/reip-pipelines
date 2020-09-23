@@ -36,6 +36,7 @@ __all__ = ['RemoteProxy']
 
 
 FAIL_UNPICKLEABLE = False
+SELF = reip.make_token('self')
 
 
 def retrieve(view, **kw):
@@ -132,6 +133,7 @@ class RemoteProxy(RemoteView):
         self._results = {}
         # self._local, self._remote = mp.Pipe()
         self._local, self._remote = mp.SimpleQueue(), mp.SimpleQueue()
+        self._local_name = mp.current_process().name
         self._listening = mp.Value('i', 0, lock=False)
         self._default = default
 
@@ -144,9 +146,9 @@ class RemoteProxy(RemoteView):
                     _local=None, _remote=None)
 
     @property
-    def is_main(self):  # TODO: cache this.
+    def is_local(self):
         '''Is the current process the main process or a child one?'''
-        return mp.current_process().name == 'MainProcess'
+        return mp.current_process().name == self._local_name
 
     # internal view mechanics. These override RemoteView methods.
 
@@ -187,6 +189,8 @@ class RemoteProxy(RemoteView):
                 self._local.put((result_id, None, e))
 
             try:
+                if result is self._obj:  # solution for chaining
+                    result = SELF
                 self._local.put((result_id, result, None))
             except RuntimeError as e:
                 if FAIL_UNPICKLEABLE:
@@ -197,14 +201,14 @@ class RemoteProxy(RemoteView):
                     "via a pipe. We'll assume this was an oversight and "
                     "will return `None`. The remote caller interface "
                     "is meant more for remote operations rather than "
-                    "passing data. Check the return value for any "
+                    "passing objects. Check the return value for any "
                     "unpickleable objects. "
                     f"The return value: {result}")
 
     # parent calling interface
 
     def retrieve(self, default=...):
-        if not self.is_main:  # if you're in the main thread, just run the function.
+        if not self.is_local:  # if you're in the main thread, just run the function.
             return self.resolve_view(self._obj)
         if self.listening:  # if the remote process is listening, run
             # send command and wait for response
@@ -219,6 +223,8 @@ class RemoteProxy(RemoteView):
             if result is not None:  # valid results are tuples
                 # raise any exceptions returned
                 x, exc = result
+                if result == SELF:
+                    result = self
                 if exc is not None:
                     raise Exception(f'Remote exception in {self._obj}') from exc
                 return x
@@ -229,25 +235,35 @@ class RemoteProxy(RemoteView):
             raise RuntimeError(f'Remote instance is not running for {self}')
         return default
 
-    def get_result(self, result_id, wait=True):
-        '''Get the result from the queue. If there are overlapping calls, and
-        if you pull the result meant for a different thread, save it to
-        the results dictionary and keep pulling results until you get
-        your result id.
-        '''
-        # makes overlapping calls concurrency-safe
-        #
-        while result_id not in self._results and self.listening:
+    def get_result(self, expected_id, wait=True):
+        while self.listening:
             if not self._local.empty():
                 out_id, x, exc = self._local.get()
-                if out_id is result_id:
-                    return x, exc
-                self._results[out_id] = x, exc
+                assert expected_id == out_id  # safety check
+                return x, exc
             if not wait:
                 break
             time.sleep(self._delay)
 
-        return self._results.pop(result_id, None)
+
+    # def get_result(self, result_id, wait=True):
+    #     '''Get the result from the queue. If there are overlapping calls, and
+    #     if you pull the result meant for a different thread, save it to
+    #     the results dictionary and keep pulling results until you get
+    #     your result id.
+    #     '''
+    #     # makes overlapping calls concurrency-safe
+    #     while result_id not in self._results and self.listening:
+    #         if not self._local.empty():
+    #             out_id, x, exc = self._local.get()
+    #             if out_id is result_id:
+    #                 return x, exc
+    #             self._results[out_id] = x, exc
+    #         if not wait:
+    #             break
+    #         time.sleep(self._delay)
+    #
+    #     return self._results.pop(result_id, None)
 
     ########################################################################
     # If we don't want to poll for commands in the background and we
@@ -266,41 +282,48 @@ class RemoteProxy(RemoteView):
     def listening(self, value):
         self._listening.value = int(value)
 
-    # remote background listening interface
-
-    def listen(self, block=False):
-        '''Start listening. By default, this will launch in a background thread.'''
-        # print('Starting listening...', self, flush=True)
-        return self._run() if block else self._spawn()
-
-    def _spawn(self):
-        if self._thread is None:
-            self._thread = threading.Thread(target=self._run)
-            self._thread.daemon = True
-            self._thread.start()
-        return self
-
-    def _join(self):
-        self.listening = False
-        if self._thread is not None:
-            self._thread.join()
-            self._thread = None
-        return self
-
-    def _run(self):
-        self.listening = True
-        while self.listening:
-            self.poll()
-            time.sleep(self._delay)
-        self.listening = False
-        time.sleep(0.1)
-        self.poll() # one last check in case of race condition? idk may delete.
-
     def __enter__(self):
-        return self.listen()
+        self.listening = True
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self._join()
+        self.listening = False
+
+
+    # remote background listening interface
+
+    # def listen(self, block=False):
+    #     '''Start listening. By default, this will launch in a background thread.'''
+    #     # print('Starting listening...', self, flush=True)
+    #     return self._run() if block else self._spawn()
+    #
+    # def _spawn(self):
+    #     if self._thread is None:
+    #         self._thread = threading.Thread(target=self._run)
+    #         self._thread.daemon = True
+    #         self._thread.start()
+    #     return self
+    #
+    # def _join(self):
+    #     self.listening = False
+    #     if self._thread is not None:
+    #         self._thread.join()
+    #         self._thread = None
+    #     return self
+    #
+    # def _run(self):
+    #     self.listening = True
+    #     while self.listening:
+    #         self.poll()
+    #         time.sleep(self._delay)
+    #     self.listening = False
+    #     time.sleep(0.1)
+    #     self.poll() # one last check in case of race condition? idk may delete.
+    #
+    # def __enter__(self):
+    #     return self.listen()
+    #
+    # def __exit__(self, exc_type, exc_val, exc_tb):
+    #     self._join()
 
 
 # def _find_type_matching(module_name):

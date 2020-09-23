@@ -26,13 +26,20 @@ t2 = ' '*2
 
 # block text helpers
 
-def indent(x, w=4, n=1, ch=' '):
+def indent(x, n=1, w=4, ch=' '):
     '''Indent text using spaces.'''
     return ''.join(ch * w * n + l for l in str(x).splitlines(keepends=True))
 
-def tabindent(x, n=1):
+def tabindent(x, n=1, w=4):
     '''Indent text using tabs.'''
-    return indent(x, w=1, n=n, ch='\t')
+    return indent(space2tab(x, w=w), w=1, n=n, ch='\t')
+
+
+def tab2space(text, w=4):
+    return text.replace('\t', ' '*w)
+
+def space2tab(text, w=4):
+    return text.replace(' '*w, '\t')
 
 
 def trim_indent(text, tw=2):
@@ -55,11 +62,14 @@ def striplines(text):
     leaves text indentation.'''
     lines = text.splitlines()
     i, j = 0, len(lines)
-    while lines[i].strip():
+    while not lines[i].strip():
         i += 1
-    while lines[j-1].strip():
+    while not lines[j-1].strip():
         j -= 1
     return '\n'.join(lines[i:j])
+
+def strip_each_line(txt):
+    return '\n'.join(l.rstrip() for l in txt.splitlines())
 
 def comment(txt, ch='#', n=1, spaces=1):
     '''Apply prefix to each line. Defaults to python comments.'''
@@ -67,19 +77,20 @@ def comment(txt, ch='#', n=1, spaces=1):
     return '\n'.join(f'{ch}{spaces}{l}' for l in txt.splitlines())
 
 
-def block_text(*txts, n=20, ch='*'):
+def block_text(*txts, n=20, ch='*', div=''):
     '''Create a block of text with a character border.'''
-    return ch * n + f'\n{comment(b_(*txts), ch=ch)}\n' + ch * n
+    return ch * n + f'\n{comment(b_(*txts, div=div), ch=ch)}\n' + ch * n
 
-def b_(*lines):
+def b_(*lines, div=''):
     '''Convert arguments to lines. Lines can be tuples (will be joined by a space.)'''
-    return '\n'.join(
+    div = f'\n{div}\n' if div else '\n'
+    return div.join(
         l_(*l) if isinstance(l, (list, tuple)) else str(l)
         for l in lines if l is not None)
 
-def l_(*line):
+def l_(*line, div=' '):
     '''Convert arguments to a space separated string'''
-    return ' '.join(map(str, line))
+    return div.join(map(str, line))
 
 
 def fw_(*line, w=20, right=False):
@@ -90,7 +101,7 @@ def tbl(*rows, buffer=2):
     '''Format as a table. Calculates column widths.'''
     rows = [[str(c) for c in cs] for cs in rows]
     widths = [max((len(c) for c in cs), default=0) for cs in zip(*rows)]
-    return b_(*([fw_(c, w=w + buffer) for c, w in zip(cs, widths)] for cs in rows))
+    return b_(*([fw_(c, w=w + buffer-1) for c, w in zip(cs, widths)] for cs in rows))
 
 
 if __name__ == '__main__':

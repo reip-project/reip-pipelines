@@ -42,17 +42,22 @@ class SharedPointer:
 
 
 class BufferStore(Sink):
-    def __init__(self, size, **kw):
+    def __init__(self, size, debug=False, **kw):
         self.size = size + 1  # need extra slot because head == tail means empty
         self.data_ids = [UniqueID.Gen() for i in range(self.size)]
         self.meta_ids = [UniqueID.Gen() for i in range(self.size)]
         self.both_ids = [UniqueID.Gen() for i in range(self.size)]
         self.head = SharedPointer(self.size)
         self.tail = SharedPointer(self.size)
+        self.debug = debug
         self.customers = []
         self.pipes = []
         self.client = plasma.connect("/tmp/plasma")
-        print("Store Connected")
+        print("Store Connected. Warming up...")
+        t0 = time.time()
+        ret = self.client.get(self.client.put("warm-up"))
+        assert (ret == "warm-up")
+        print("Warmed up in %.4f sec" % (time.time()- t0))
         super().__init__(**kw)
 
     def full(self):
@@ -77,7 +82,7 @@ class BufferStore(Sink):
 
         # save_data(self.client, data, id=self.data_ids[self.head.pos])
         # save_meta(self.client, meta, id=self.meta_ids[self.head.pos])
-        save_both(self.client, data, meta, id=self.both_ids[self.head.pos])
+        save_both(self.client, data, meta, id=self.both_ids[self.head.pos], debug=self.debug)
 
         self.head.value += 1
 
@@ -110,7 +115,7 @@ class Customer(Source):
 
         # data = load_data(self.client, self.store.data_ids[self.store.customers[self.id].pos])
         # meta = load_meta(self.client, self.store.meta_ids[self.store.customers[self.id].pos])
-        data, meta = load_both(self.client, self.store.both_ids[self.store.customers[self.id].pos])
+        data, meta = load_both(self.client, self.store.both_ids[self.store.customers[self.id].pos], debug=self.store.debug)
 
         return data, meta
 

@@ -1,52 +1,40 @@
-import os
 import csv
 import reip
+import numpy as np
 
+
+class _CsvWriter(reip.util.CycledWriter):
+    _file = None
+    def __init__(self, filename, headers=None, max_rows=60, **kw):
+        self.headers = headers
+        self._kw = kw
+        super().__init__(filename, file_length=max_rows)
+
+    def _new_writer(self, fname, meta):
+        self._file = open(fname, 'w', newline='')
+
+        writer = csv.writer(self._file, **self._kw)
+        if self.headers:
+            writer.writerow(self.headers)
+        return writer
+
+    def _close_writer(self):
+        if self._file is not None:
+            self._file.close()
 
 class Csv(reip.Block):
     _fname = _file = _writer = None
     def __init__(self, filename='{time}.csv', headers=None, max_rows=1000, **kw):
-        self.filename = filename
-        self.max_rows = max_rows
-        self.headers = headers
-        self.n_rows = 0
-        self.kw = kw
-        super().__init__()
-
-    def should_get_new_writer(self, meta):
-        return self.max_rows and self.n_rows > self.max_rows
-
-    def get_writer(self, meta):
-        closed_file = None
-        if self._writer is None or self.should_get_new_writer(meta):
-            closed_file = self.close_writer()
-            # get filename
-            fname = self.filename.format(**meta)
-            os.makedirs(os.path.dirname(fname), exist_ok=True)
-            # print('opening new csv writer:', fname)
-            # make writer
-            self._fname = fname
-            self._file = open(fname, 'w', newline='')
-            self._writer = csv.writer(self._file, **self.kw)
-            self.n_rows = 0
-            if self.headers:
-                self._writer.writerow(self.headers)
-        return self._writer, closed_file
-
-    def close_writer(self):
-        if self._file is not None:
-            self._file.close()
-        return self._fname
+        self.writer = _CsvWriter(filename, headers=headers, max_rows=max_rows)
+        super().__init__(**kw)
 
     def process(self, X, meta):
-        writer, closed_file = self.get_writer(meta)
-        # print(self, X, self.max_rows, self.n_rows, closed_file)
-        for x in X:
+        for x in np.atleast_2d(X):
+            writer = self.writer.get(meta)
             writer.writerow(list(x))
-            self.n_rows += 1
-        # print(self, X.shape, self.n_rows)
-        if closed_file:
-            return [closed_file], {}
+            self.writer.increment(1)
+        self.writer.get(meta)
+        return self.writer.output_closed_file()
 
     def finish(self):
-        self.close_writer()
+        self.writer.close()
