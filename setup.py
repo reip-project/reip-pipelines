@@ -16,7 +16,7 @@ setuptools.setup(
     # entry_points={'console_scripts': ['{name}={name}:main'.format(name=NAME)]},
     install_requires=[
         'numpy',
-        'pyarrow',
+        # 'pyarrow',
         'tflit>=0.0.13',
         'remoteobj>=0.1.5'
         # utils
