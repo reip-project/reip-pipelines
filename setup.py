@@ -18,7 +18,7 @@ setuptools.setup(
         'numpy',
         'pyarrow',
         'tflit>=0.0.13',
-        'remoteobj>=0.1.3'
+        'remoteobj>=0.1.5'
         # utils
         'pycrypto',
         # general
