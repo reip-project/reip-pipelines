@@ -38,7 +38,7 @@ class AudioRecord(reip.ShellProcess):  # AudioRecord(channels=16, sr=48000, devi
     _read_delay = 0.05
     def __init__(self, device, outdir='audio', fname='{}.wav'.format(DATE_FMT), channels=16, sr=48000,
                  codec='pcm_s32le', duration=10, max_rate=5, **kw):
-        self.fname = fname
+        self.fname = os.path.join(outdir, fname)
         self.sr, self.channels = sr, channels
         self.device, self.codec = device, codec
         self.duration = duration
@@ -56,7 +56,7 @@ class AudioRecord(reip.ShellProcess):  # AudioRecord(channels=16, sr=48000, devi
     def init(self):
         self._last_file = None
         self._meta = {}
-        os.makedirs(os.path.dirname(self.fname), exist_ok=True)
+        reip.util.ensure_dir(self.fname)
         super().init()
 
     def process(self, meta):
