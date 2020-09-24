@@ -2,6 +2,7 @@ import time
 import reip
 from reip.util import text, iters
 
+
 class Stream:
     '''Multiplexing multiple sources together. Abstracts away the internals of
     a block so that they can be used outside of a threaded context.
@@ -22,12 +23,12 @@ class Stream:
     running = True
     terminated = False
     signal = None
-    def __init__(self, sources, loop=None, auto_next=True, should_wait=True,
+    def __init__(self, sources, get_loop=None, auto_next=True, should_wait=True,
                  timeout=None, name='', **kw):
         self.name = name or ''
         self.sources = sources
         self._loop_kw = kw
-        # self.loop = self.make_loop(**kw) if loop is None else loop
+        self._get_loop = get_loop
         self.auto_next = auto_next
         self.should_wait = should_wait
         self.timeout = timeout
@@ -42,45 +43,57 @@ class Stream:
         # srcs = ''.join(f'\n{s}' for s in self.sources)
         return f'<{self.__class__.__name__}({self.name}) {state} available={[len(s) for s in self.sources]}>'
 
+    def get_loop(self, **kw):
+        return (
+            self._get_loop(**kw) if callable(self._get_loop) else
+            self.default_loop(**dict(self._loop_kw, **kw)))
+
     @classmethod
-    def make_loop(cls, duration=None, max_rate=None, delay=None):
+    def default_loop(cls, duration=None, max_rate=None, delay=None):
         '''A master loop function that will contain'''
+        delay = delay or cls._delay
         return iters.throttled(
-            iters.timed(iters.loop(), duration),
-            max_rate, delay or cls._delay)
+            iters.timed(iters.sleep_loop(delay), duration),
+            max_rate, delay)
 
     def __iter__(self):
-        self.reset()
-        for _ in self.make_loop(**self._loop_kw):
+        self._reset()
+        for _ in self.get_loop():
             inputs = self.get()
-            if inputs is None and self.running and not self.should_wait:
+            if self.terminated or (inputs is None and not self.should_wait):
                 return
-            yield inputs
-            if self.auto_next:
-                self.next()
+            if inputs is not None:
+                yield inputs
+                if self.auto_next:
+                    self.next()
         # the only time this runs is when self.loop stops iterating.
         self.signal = reip.CLOSE
 
-    def poll(self, block=False, timeout=None): # FIXME: return value? exception? ?????
+    def poll(self, block=True, timeout=None): # FIXME: return value? exception? ?????
+        '''Returns whether or not the stream is ready to pull from.'''
         # for streams with no sources, there's nothing to wait for
-        if not self.sources:
-            return block and self.running and self.should_wait
-
-        timeout = timeout or self.timeout
-        t0 = time.time()
-        while not self.terminated:
-            time.sleep(self._delay)
+        for _ in iters.timed(iters.sleep_loop(), timeout or self.timeout):
+            if self.terminated:
+                return False
+            if not self.sources and not self.should_wait:
+                return False
             if self.running and all(not s.empty() for s in self.sources):
                 return True
-            if not (block and self.should_wait):
-                return
-            if timeout and time.time() - t0 >= timeout:
-                raise TimeoutError(
-                    'Sources did not return a value in under {} seconds.'.format(timeout))
+            if not block or not self.should_wait:
+                return False
+        return False
 
     def get(self, block=True, timeout=None):
-        ready = self.poll(block=block, timeout=timeout)
-        return self._get() if ready else None
+        # FIXME loop because if we see any signals, _get will be None and we'll have to
+        #       try again. But we also
+        for _ in iters.timed(iters.sleep_loop(), timeout or self.timeout):
+            ready = self.poll(block=block, timeout=timeout)
+            if not ready:  # either block=False or timeout
+                return
+            value = self._get()
+            if value is not None:
+                return value
+            # otherwise it was a signal, retry
 
     def _get(self):
         inputs = [s.get_nowait() for s in self.sources]
@@ -100,6 +113,7 @@ class Stream:
 
     def retry(self):
         self._retry = True
+        return self
 
     def next(self):
         if not self._retry:
@@ -126,12 +140,15 @@ class Stream:
 
     def pause(self):
         self.running = False
+        return self
 
     def resume(self):
         self.running = True
+        return self
 
     def terminate(self):
         self.terminated = True
+        return self
 
     def __enter__(self):
         self.open()
