@@ -126,7 +126,7 @@ class RemoteProxy(RemoteView):
 
     '''
     _thread = None
-    _delay = 0.1
+    _delay = 1e-5
     def __init__(self, instance, *a, default=..., **kw):
         super().__init__(*a, **kw)
         self._obj = instance
@@ -272,6 +272,13 @@ class RemoteProxy(RemoteView):
     ########################################################################
 
     # running state - to avoid dead locks, let the other process know if you will respond
+
+    def wait_until_listening(self, timeout=None):
+        t0 = time.time()
+        while not self.listening:
+            if timeout and time.time() - t0 > timeout:
+                raise TimeoutError('Waiting for remote {} instance to listen timed out.'.format(self))
+            time.sleep(self._delay)
 
     @property
     def listening(self):

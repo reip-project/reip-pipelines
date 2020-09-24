@@ -18,10 +18,16 @@ class Streamer(reip.Block):
         self.__class__ = type(new.__name__, (self.__class__,), {})
         super().__init__(name=name, **kw)
 
-    def _init_stream(self):
-        stream = super()._init_stream()
-        self._block = self._new_block(stream, *self._extra_args, **self.extra_kw)
-        return self._block  # self._sw.iter(self._block, 'process')
+    def init(self):
+        self._feeder = _feeder()
+        next(self._feeder)  # clear initial value
+        self._block = self._new_block(
+            self._feeder, *self._extra_args, **self.extra_kw)
+
+    def process(self, *xs, meta):
+        # still assumes 1-to-1
+        self._feeder.send(*xs, meta)
+        return next(self._block)
 
     def finish(self):
         # run to completion and discard anything additional
@@ -30,6 +36,11 @@ class Streamer(reip.Block):
         # for _ in self._block:
         #     pass
         self._block.close()
+
+
+def _feeder(value=None):
+    while True:
+        value = yield value
 
 
 def streamer(func=None):

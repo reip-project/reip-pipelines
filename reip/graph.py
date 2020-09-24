@@ -10,8 +10,7 @@ from contextlib import contextmanager
 import weakref
 
 import reip
-from reip.util.iters import timed, loop
-from reip.util import text
+from reip.util import text, iters
 
 
 def default_graph():
@@ -199,7 +198,7 @@ class Graph(BaseContext):
             self.wait(duration)
 
     @contextmanager
-    def run_scope(self, raise_exc=False):
+    def run_scope(self, raise_exc=True):
         self.log.info(text.green('Starting'))
         try:
             self.spawn()
@@ -209,14 +208,15 @@ class Graph(BaseContext):
             self.log.info(text.yellow('Interrupting'))
             self.terminate()
         finally:
-            self.join(raise_exc=raise_exc)
-            self.log.info(text.green('Done'))
+            try:
+                self.join(raise_exc=raise_exc)
+            finally:
+                self.log.info(text.green('Done'))
 
     def wait(self, duration=None):
-        for _ in timed(loop(), duration):
+        for _ in iters.timed(iters.sleep_loop(self._delay), duration):
             if self.done or self.error:
                 return True
-            time.sleep(self._main_delay)
 
     # state
 
@@ -256,13 +256,13 @@ class Graph(BaseContext):
         while not self.ready and not self.error and not self.done:
             time.sleep(self._delay)
 
-    def join(self, close=True, terminate=False, raise_exc=False, **kw):
+    def join(self, close=True, terminate=False, raise_exc=True, **kw):
         if close:
             self.close()
         if terminate:
             self.terminate()
         for block in self.blocks:
-            block.join(terminate=False, **kw)
+            block.join(terminate=False, raise_exc=False, **kw)
         if raise_exc:
             self.raise_exception()
 

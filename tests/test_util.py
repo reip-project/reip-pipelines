@@ -130,6 +130,28 @@ def _run_remote(obj, event):  # some remote job
             time.sleep(0.0001)
 
 
+import functools
+from contextlib import contextmanager
+@contextmanager
+def _profile():
+    try:
+        import pyinstrument
+        prof = pyinstrument.Profiler()
+        prof.start()
+        yield
+    finally:
+        prof.stop()
+        print(prof.output_text(unicode=True, color=True, show_all=True))
+
+def _profile_func(func):
+    @functools.wraps(func)
+    def inner(*a, **kw):
+        with _profile():
+            print('profiling', func.__name__, a, kw)
+            return func(*a, **kw)
+    return inner
+
+@_profile_func
 def test_remote():
     obj = ObjectB()
     event = mp.Event()

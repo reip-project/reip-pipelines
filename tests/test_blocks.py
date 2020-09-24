@@ -219,22 +219,22 @@ def test_shell():
     assert outputs.results == [str(x) for x in range(len(outputs.results))]
 
 
-def test_streamer():
-    @B.streamer
-    def basic_block(stream, x=111):
-        assert x > 444
-        for i, ((data,), meta) in enumerate(stream):
-            assert data == i
-            yield [x + data], meta
-        yield [0], {}
-
-    n = 10
-    x = 555
-    with reip.Graph() as g:
-        outputs = B.Increment(n).to(basic_block(555)).to(B.Results())  # ; echo 16 >&2
-    g.run()
-
-    assert outputs.results == [x + i for i in range(n)] + [0]
+# def test_streamer():
+#     @B.streamer
+#     def basic_block(stream, x=111):
+#         assert x > 444
+#         for i, ((data,), meta) in enumerate(stream):
+#             assert data == i
+#             yield [x + data], meta
+#         yield [0], {}
+#
+#     n = 10
+#     x = 555
+#     with reip.Graph() as g:
+#         outputs = B.Increment(n).to(basic_block(555)).to(B.Results())  # ; echo 16 >&2
+#     g.run()
+#
+#     assert outputs.results == [x + i for i in range(n)] + [0]
 
 
 def test_process_func():
