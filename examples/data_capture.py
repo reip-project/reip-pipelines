@@ -46,7 +46,7 @@ class AudioRecord(reip.ShellProcess):  # AudioRecord(channels=16, sr=48000, devi
             'ffmpeg -f alsa -ac {ch} -ar {sr} -c:a {acodec} -i {device} '
             '-f segment -segment_time {duration} -strftime 1 {fname}'
         ).format(ch=channels, sr=sr, device=device, acodec=codec,
-                 duration=duration, fname=fname)
+                 duration=duration, fname=self.fname)
         super().__init__(cmd, n_source=None, max_rate=max_rate, **kw)
 
         self._speed = re.compile(r"speed=\s*([^\s]+)x")
@@ -119,7 +119,7 @@ def record(duration=30, channels=16, sr=48000, outdir=None, **kw):
     with graph.run_scope():
         # it = B.video.stream_imshow(out.output_stream(strategy='latest'), 'blah')
         it = reip.util.iters.loop()
-        for _ in reip.util.iters.resample_iter(it, 5):
+        for _ in reip.util.iters.resample_iter(it, 60*5):
             print(graph.status())
 
 
