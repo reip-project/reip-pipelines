@@ -1,3 +1,4 @@
+import time
 import pytest
 import reip
 
@@ -79,10 +80,10 @@ class StateTester(reip.Block):
         super().__init__(*a, n_source=None, **kw)
 
     def _check_state(self, ready=True, running=True, done=False, terminated=False, error=None):
-        assert self.ready == ready
-        assert self.running == running
-        assert self.done == done
-        assert self.terminated == terminated
+        assert ready is None or self.ready == ready
+        assert running is None or self.running == running
+        assert done is None or self.done == done
+        assert terminated is None or self.terminated == terminated
         assert self.error == (error is not None)
         assert (
             self._exception is None if error is None else
@@ -170,36 +171,45 @@ def test_term_state():
 
 class PauseStateTester(StateTester):
     def process(self, meta):
-        self._check_state(running=self.running)
+        self._check_state(running=None)
         return [], meta
+
+    def finish(self):
+        self._check_state(running=None)
 
 
 def test_pause_resume_state():
     with reip.Graph() as g:
-        tester = StateTester()
+        tester = PauseStateTester()
 
     delay = 0.01
     processed = 0
     for _ in range(5):
         assert tester.processed == processed
         with g.run_scope():
+            print(tester, 111)
             assert tester.running == True
             g.wait(duration=delay)
-            processed = tester.processed
-            assert processed > 0
+            assert tester.processed > 0
 
+            print(tester, 112)
             tester.pause()
+            time.sleep(1e-5)
+            processed = tester.processed
+            print(tester, 222)
             assert tester.running == False
             g.wait(duration=delay)
             assert tester.processed == processed
-            processed = tester.processed
 
+            print(tester, 223)
             tester.resume()
+            processed = tester.processed
+            print(tester, 333)
             assert tester.running == True
             g.wait(duration=delay)
             assert tester.processed > processed
         processed = tester.processed
-
+        tester.raise_exception()
         g.raise_exception()
 
 

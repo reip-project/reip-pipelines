@@ -120,10 +120,13 @@ class Stream:
             for s in self.sources:
                 s.next()
         self._retry = False
+        return self
 
-    def reset(self):
+    def _reset(self):
         self.signal = None
+        self.terminated = False
         self.resume()
+        return self
 
     def open(self):
         self.should_wait = True

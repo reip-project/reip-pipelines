@@ -18,6 +18,7 @@ setuptools.setup(
         'numpy',
         'pyarrow',
         'tflit>=0.0.13',
+        'remoteobj>=0.1.3'
         # utils
         'pycrypto',
         # general
@@ -26,9 +27,9 @@ setuptools.setup(
         # 'netswitch',
     ],
     extras_require={
-        'audio': ['librosa', 'pyaudio'],
+        'audio': ['pyaudio'], # 'librosa',
         # 'video': ['opencv-python'],  # already installed on Jetson by default
-        'plot': ['matplotlib'],
+        'vis': ['matplotlib'],
         'docs': ['sphinx!=1.3.1', 'sphinx_theme', 'sphinx-gallery'],
     },
     license='MIT License',

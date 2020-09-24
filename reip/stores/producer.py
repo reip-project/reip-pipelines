@@ -42,7 +42,9 @@ class Producer(reip.Sink):
         '''Delete any stale items from the queue.'''
         if self.readers:
             # get the number of stale entries
-            new_value = min(reader.counter for reader in self.readers)
+            new_value = min(
+                (r.counter for r in self.readers),
+                default=self.tail.counter)
             to_delete = [
                 v % self.size for v in range(self.tail.counter, new_value)]
 

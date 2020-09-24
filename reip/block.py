@@ -1,6 +1,7 @@
 import time
 import threading
 import traceback
+from contextlib import contextmanager
 
 import reip
 from reip.stores import Producer
@@ -64,6 +65,7 @@ class Block:
     _thread = None
     _stream = None
     _delay = 1e-6
+    _finish_exception = None
     parent_id, task_id = None, None
 
     def __init__(self, n_source=1, n_sink=1, queue=1000, blocking=False,
@@ -98,11 +100,11 @@ class Block:
     def _reset_state(self):
         # state
         self.ready = False
-        self.error = False  # QUESTION: can we combine error + _exception?
         self._exception = None
         self.done = False
         # stats
         self.processed = 0
+        self.all_exceptions = []
         # self._sw.reset()
 
     def __repr__(self):
@@ -185,7 +187,27 @@ class Block:
 
     # main process loop
 
-    def _main(self, *a, **kw):
+    # TODO common worker class
+    def run(self, duration=None, **kw):
+        with self.run_scope(**kw):
+            self.wait(duration)
+
+    @contextmanager
+    def run_scope(self, raise_exc=True):
+        try:
+            self.spawn()
+            yield self
+        except KeyboardInterrupt:
+            self.terminate()
+        finally:
+            self.join(raise_exc=raise_exc)
+
+    def wait(self, duration=None):
+        for _ in reip.util.iters.timed(reip.util.iters.sleep_loop(self._delay), duration):
+            if self.done or self.error:
+                return True
+
+    def _main(self, **kw):
         '''The main thread target function. Handles uncaught exceptions and
         generic Block context management.'''
         try:
@@ -194,7 +216,45 @@ class Block:
             self.log.debug(text.blue('Starting...'))
             time.sleep(self._delay)
             with self._sw():
-                self._run(self._init_stream(*a, **kw))
+                # create a stream from sources with a custom control loop
+                self._stream = reip.Stream.from_block_sources(self, name=self.name)
+                self._stream.open()
+                try:
+                    # block initialization
+                    with self._sw('init'):
+                        self.init()
+                    self.ready = True
+                    self.log.info(text.green('Ready.'))
+
+                    for _ in self._stream.get_loop(**kw):
+                        with self._sw('source'):
+                            inputs = self._stream.get()
+                            if inputs is None:
+                                break
+
+                        # process each input batch
+                        with self._sw('process'):
+                            buffers, meta = inputs
+                            outputs = self.process(*buffers, meta=meta)
+                        # send each output batch to the sinks
+                        with self._sw('sink'):
+                            self._send_to_sinks(outputs, meta)
+
+                except Exception as e:
+                    self._exception = e
+                finally:
+                    # finish up and shut down block
+                    self.log.debug(text.yellow('Finishing...'))
+                    self._stream.close()  # may be redundant
+                    # run block finish
+                    with self._sw('finish'):
+                        self.finish()
+                    # propagate stream signals to sinks e.g. CLOSE
+                    if self._stream.signal is not None:
+                        self._send_sink_signal(self._stream.signal)
+                    self.done = True
+        except Exception as e:
+            self._finish_exception = e
         except KeyboardInterrupt:
             self.log.info(text.yellow('Interrupting'))
         finally:
@@ -202,61 +262,6 @@ class Block:
             # profiler.stop()
             # print(profiler.output_text(unicode=True, color=True))
             self.log.info(text.green('Done.'))
-
-    def _run(self, stream):
-        '''The abstract block logic. This is meant to be overrideable in case
-        someone needs to modify the logic organization.'''
-        try:
-            # block initialization
-            with self._sw('init'):
-                self.init()
-            self.ready = True
-            self.log.info(text.green('Ready.'))
-
-            # iterate over the input data gathered from the sources
-            for buffers, meta in stream:
-                # process each input batch
-                with self._sw('process'):
-                    outputs = self.process(*buffers, meta=meta)
-                # send each output batch to the sinks
-                with self._sw('sink'):
-                    self._send_to_sinks(outputs, meta)
-        except Exception as e:
-            self._exception = e
-            self.error = True
-            self.log.exception(e)
-            self.close()
-        finally:
-            # finish up and shut down block
-            self.log.debug(text.yellow('Finishing...'))
-            self._stream.close()  # may be redundant
-            # run block finish
-            with self._sw('finish'):
-                self.finish()
-            # propagate stream signals to sinks e.g. CLOSE
-            # this is run when:
-            #   - the block sends reip.CLOSE, reip.TERMINATE as a signal from process.
-            #     (if you only want to close the current block and not downstream ones,
-            #      just call self.close()/self.terminate() directly)
-            #   - a stream finishes running e.g. when you set a block run duration.
-            if self._stream.signal is not None:
-                self._send_sink_signal(self._stream.signal)
-            self.done = True
-
-    def _init_stream(self, duration=None):
-        '''Initialize the source stream.
-
-        NOTE: this should set self._stream to be the reip.Stream object so that
-        we can call Stream methods to pause, terminate, etc.
-        It can return a wrapped iterable which will be used to iterate inside
-        the run function, e.g. wrap it with a timer, or additional formatting.
-        '''
-        # create a stream from sources with a custom control loop
-        self._stream = reip.Stream.from_block_sources(
-            self, duration=duration, name=self.name)
-        self._stream.open()
-        # wrap stream in a timer
-        return self._sw.iter(self._stream, 'source')
 
     def _send_to_sinks(self, outputs, meta_in=None):
         '''Send the outputs to the sink.'''
@@ -293,16 +298,16 @@ class Block:
     def _send_sink_signal(self, signal, block=True, meta=None):
         '''Emit a signal to all sinks.'''
         self.log.debug(text.yellow(text.l_('sending', signal)))
-        # print(text.yellow(text.l_(self, 'sending', signal)))
         for sink in self.sinks:
             if sink is not None:
                 sink.put((signal, meta or {}), block=block)
+
     # Thread management
 
     def spawn(self, wait=True):
         '''Spawn the block thread'''
         self.log.debug(text.blue('Spawning...'))
-        print(self.summary())
+        # print(self.summary())
 
         self._check_source_connections()
         # spawn any sinks that need it
@@ -342,7 +347,7 @@ class Block:
         while not self.ready and not self.error and not self.done:
             time.sleep(self._delay)
 
-    def join(self, close=True, terminate=False, raise_exc=False, timeout=None):
+    def join(self, close=True, terminate=False, raise_exc=True, timeout=None):
         # close stream
         if close:
             self.close()
@@ -355,15 +360,25 @@ class Block:
                 s.join()
 
         # close thread
-        # self.log.debug(text.blue('Joining'))
         if self._thread is not None:
             self._thread.join(timeout=timeout)
+        self.all_exceptions = [
+            e for e in (self._exception, self._finish_exception) if e is not None
+        ]
         if raise_exc:
             self.raise_exception()
 
     def raise_exception(self):
         if self._exception is not None:
             raise self._exception
+        if self._finish_exception is not None:
+            raise self._finish_exception
+
+    def log_exception(self):
+        if self._exception is not None:
+            self.log.exception(self._exception)
+        if self._finish_exception is not None:
+            self.log.exception(self._finish_exception)
 
     # State management
 
@@ -387,6 +402,10 @@ class Block:
         if propagate:
             self._send_sink_signal(reip.TERMINATE)
 
+    @property
+    def error(self):
+        return self._exception is not None or self._finish_exception is not None
+
     # XXX: this is temporary. idk how to elegantly handle this
     @property
     def running(self):
@@ -398,13 +417,13 @@ class Block:
 
     # debug
 
-    def stats(self):
-        return {
-            'name': self.name,
-            'processed': self.processed,
-            'dropped': [getattr(sink, "dropped", None) for sink in self.sinks],
-            'sw': self._sw,
-        }
+    # def stats(self):
+    #     return {
+    #         'name': self.name,
+    #         'processed': self.processed,
+    #         'dropped': [getattr(sink, "dropped", None) for sink in self.sinks],
+    #         'sw': self._sw,
+    #     }
 
     def summary(self):
         return text.block_text(

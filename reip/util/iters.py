@@ -8,7 +8,10 @@ def loop():
     while True:
         yield
 
-def timed(it, duration=None):
+def sleep_loop(delay=1e-6):
+    return thread_sleep(loop(), delay=delay)
+
+def timed(it, duration=None, error=False):
     '''Run a loop for a predetermined amount of time.'''
     if not duration:
         yield from it
@@ -17,6 +20,8 @@ def timed(it, duration=None):
     t0 = time.time()
     for x in it:
         if time.time() - t0 >= duration:
+            if error:
+                raise TimeoutError('Loop did not exit in under {} seconds.'.format(duration))
             break
         yield x
 
@@ -37,6 +42,16 @@ def throttled(it, rate=None, delay=1e-6):
         # wraps around for _ in because that may take a non-trivial amount of time
         # e.g. (time.sleep(1) for _ in loop())
         t1 = time.time()
+
+
+def thread_sleep(it, delay=1e-6):
+    if not delay:
+        yield from it
+        return
+
+    for _ in it:
+        yield _
+        time.sleep(delay)
 
 
 def resample_iter(it, interval):
