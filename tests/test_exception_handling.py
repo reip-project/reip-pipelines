@@ -51,18 +51,15 @@ def test_block_error_in_task():
 
     with pytest.raises(TypeError):
         g.run()
-    g._catch.clear() # XXX
 
     with pytest.raises(TypeError):
         with g.run_scope():
             time.sleep(0.02)
-    g._catch.clear() # XXX
 
     g.spawn()
     time.sleep(0.02)
     with pytest.raises(TypeError):
         g.join()
-    g._catch.clear() # XXX
 
 
 def test_block_error_solo():

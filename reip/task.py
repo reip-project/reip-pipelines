@@ -45,7 +45,7 @@ class Task(reip.Graph):
     def _run(self, duration=None):
         self.log.info(text.green('Starting'))
         with self._catch(raises=False):
-            with self.remote:
+            with self.remote.listen_():
                 try:
                     # initialize
                     super().spawn()
@@ -78,6 +78,7 @@ class Task(reip.Graph):
         if self._process is not None:  # only start once
             return
         self.done = False
+        self._catch.clear()
         self._process = mp.Process(target=self._run, daemon=True)
         self._process.start()
         if wait:

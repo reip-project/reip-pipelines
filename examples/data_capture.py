@@ -38,7 +38,7 @@ class AudioRecord(reip.ShellProcess):  # AudioRecord(channels=16, sr=48000, devi
     _read_delay = 0.05
     def __init__(self, device, outdir='audio', fname='{}.wav'.format(DATE_FMT), channels=16, sr=48000,
                  codec='pcm_s32le', duration=10, max_rate=5, **kw):
-        self.fname = fname
+        self.fname = os.path.join(outdir, fname)
         self.sr, self.channels = sr, channels
         self.device, self.codec = device, codec
         self.duration = duration
@@ -46,7 +46,7 @@ class AudioRecord(reip.ShellProcess):  # AudioRecord(channels=16, sr=48000, devi
             'ffmpeg -f alsa -ac {ch} -ar {sr} -c:a {acodec} -i {device} '
             '-f segment -segment_time {duration} -strftime 1 {fname}'
         ).format(ch=channels, sr=sr, device=device, acodec=codec,
-                 duration=duration, fname=fname)
+                 duration=duration, fname=self.fname)
         super().__init__(cmd, n_source=None, max_rate=max_rate, **kw)
 
         self._speed = re.compile(r"speed=\s*([^\s]+)x")
@@ -56,7 +56,7 @@ class AudioRecord(reip.ShellProcess):  # AudioRecord(channels=16, sr=48000, devi
     def init(self):
         self._last_file = None
         self._meta = {}
-        os.makedirs(os.path.dirname(self.fname), exist_ok=True)
+        reip.util.ensure_dir(self.fname)
         super().init()
 
     def process(self, meta):
@@ -121,7 +121,7 @@ def record(duration=30, channels=16, sr=48000, outdir=None, audio=True, video=Tr
     with graph.run_scope():
         # it = B.video.stream_imshow(out.output_stream(strategy='latest'), 'blah')
         it = reip.util.iters.loop()
-        for _ in reip.util.iters.resample_iter(it, 5):
+        for _ in reip.util.iters.resample_iter(it, 60*5):
             print(graph.status())
 
 
