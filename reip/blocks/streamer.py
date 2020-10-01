@@ -6,7 +6,9 @@ Outstanding issues:
     - is there any way to
 
 '''
+import sys
 import functools
+from contextlib import contextmanager
 import reip
 
 
@@ -62,6 +64,29 @@ def process_func(func, **kw):
     })
 
 
+class _ContextFunc(reip.Block):
+    _context = _process = None
+    def __init__(self, func, **kw):
+        self.func = contextmanager(func)
+        super().__init__(**kw)
+
+    def init(self):
+        self._context = self.func(**self.extra_kw)
+        self._process = self._context.__enter__()
+
+    def process(self, *xs, meta):
+        return self._process(*xs, meta)
+
+    def finish(self):
+        self._context.__exit__(*sys.exc_info())
+
+def context_func(func=None):
+    @functools.wraps(func)
+    def outer(*a, **kw):
+        return _ContextFunc(func, *a, **kw)
+    return outer
+
+
 # __name__ = '__main__'
 if __name__ == '__main__':
     import reip.blocks as B
@@ -84,3 +109,13 @@ if __name__ == '__main__':
      .to(custom_block(step=4))  # no stream parameter was making pylint freak out
      .to(B.Debug('asdf')))
     reip.run(duration=6)
+
+    @ContextFunc
+    def block():
+        try:
+            ... # do_init()
+            def process(x, meta):
+                return [x], {}
+            yield process
+        finally:
+            ... # do_finish()
