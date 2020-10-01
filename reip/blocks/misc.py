@@ -32,13 +32,13 @@ class Interval(reip.Block):
 
 
 class Time(reip.Block):
-    '''Call this function every X seconds'''
+    '''Add system time to metadata.'''
     def process(self, x, meta=None):
         return [x], {'time': time.time()}
 
 
 class Meta(reip.Block):
-    '''Call this function every X seconds'''
+    '''Add arbitrary data to metadata.'''
     def __init__(self, meta, *a, **kw):
         self.meta = meta or {}
         super().__init__(*a, **kw)
