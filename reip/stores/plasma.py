@@ -104,7 +104,8 @@ def save_both(client, data, meta=None, id=None):
         tensor = pa.Tensor.from_numpy(data)
         object_size = pa.ipc.get_tensor_size(tensor)
     else:
-        raise ValueError("Unsupported data type")
+        data = pa.serialize(data).to_buffer()
+        object_size = len(data)
 
     meta = pa.serialize(meta).to_buffer().to_pybytes()
 
@@ -112,7 +113,7 @@ def save_both(client, data, meta=None, id=None):
 
     buf = client.create(object_id, object_size, metadata=meta)
     stream = pa.FixedSizeBufferWriter(buf)
-    if isinstance(data, bytes):
+    if isinstance(data, (bytes, pa.lib.Buffer)):
         stream.write(data)
     elif data is not None:
         stream.set_memcopy_threads(4)
@@ -124,7 +125,7 @@ def save_both(client, data, meta=None, id=None):
 def load_both(client, id):
     meta, data = client.get_buffers([id], timeout_ms=1, with_meta=True)[0]
     meta = pa.deserialize(meta)
-    dtype = meta.pop(TYPE)
+    dtype = meta.pop(TYPE, None)
     if dtype == "void":
         data = None
     elif dtype == "string":
@@ -134,7 +135,7 @@ def load_both(client, id):
         tensor = pa.ipc.read_tensor(reader)
         data = tensor.to_numpy()
     else:
-        raise ValueError("Unsupported data type", dtype)
+        data = pa.deserialize(data)
     return data, meta
 
 
