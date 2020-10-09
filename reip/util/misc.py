@@ -46,6 +46,10 @@ def decorator(__func__=None, **kw):
     return decorated(__func__) if callable(__func__) else decorated
 
 
+def resolve_call(func, *a, **kw):
+    return func(*a, **kw) if callable(func) else func
+
+
 def ensure_dir(fname):
     '''Make sure that the directory that this filename is in exists. Does nothing
     if this file is in the current working directory.'''

@@ -13,6 +13,8 @@ def sleep_loop(delay=1e-6):
 
 def timed(it, duration=None, error=False):
     '''Run a loop for a predetermined amount of time.'''
+    if isinstance(it, (float, int)):
+        duration, it = it, loop()
     if not duration:
         yield from it
         return

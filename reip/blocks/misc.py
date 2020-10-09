@@ -49,6 +49,15 @@ class Meta(reip.Block):
         }
 
 
+class Dict(reip.Block):
+    '''Merge block outputs into a dict.'''
+    def __init__(self, meta, *a, **kw):
+        super().__init__(*a, **kw)
+
+    def process(self, *xs, meta=None):
+        return [xs], {}
+
+
 class Sleep(reip.Block):
     def __init__(self, sleep=2, **kw):
         self.sleep = sleep
