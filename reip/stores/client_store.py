@@ -12,6 +12,12 @@ from ctypes import c_bool
 from . import SharedPointer, Store, Customer, ArrowQueue, HAS_PYARROW
 
 
+class _RemoteTraceback(Exception):
+    def __init__(self, tb):
+        self.tb = tb
+    def __str__(self):
+        return self.tb
+
 class QueueCustomer(Customer):
     cache = None
     def __init__(self, *a, arrow=False, **kw):
@@ -28,8 +34,15 @@ class QueueCustomer(Customer):
 
     def _get(self):
         if self.cache is None:
+            if self.store.quit.value:
+                raise RuntimeError('Store is not running.')
             self.requested.value = True
-            self.cache = self.data_queue.get()
+            v = self.data_queue.get()
+            if self.store.error.value:
+                exc = RuntimeError('Exception {} in {}'.format(v[0], self.store.__class__.__name__))
+                exc.__cause__ = _RemoteTraceback(v[1])
+                raise exc
+            self.cache = v
         return self.cache
 
 
@@ -60,11 +73,13 @@ class ClientStore(Store):
     def __init__(self, *a, **kw):
         self.customers = []
         self.quit = mp.Value(c_bool, False, lock=False)
+        self.error = mp.Value(c_bool, False, lock=False)
         super().__init__(*a, **kw)
 
     def spawn(self):
         if self.debug:
             print("Spawning producer", self)
+        self.quit.value = self.error.value = False
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
 
@@ -84,8 +99,13 @@ class ClientStore(Store):
         while not self.quit.value:
             for c in self.customers:
                 if c.requested.value:
-                    c.requested.value = False
-                    c.data_queue.put(self.items[c.cursor.pos])
+                    try:
+                        c.requested.value = False
+                        c.data_queue.put(self.items[c.cursor.pos])
+                    except Exception as e:
+                        self.error.value = True
+                        import traceback
+                        c.data_queue.put((type(e).__name__, traceback.format_exc()))
             time.sleep(1e-6)
         if self.debug:
             print("Exiting producer", self)
