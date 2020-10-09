@@ -1,4 +1,5 @@
 import time
+import copy
 import reip
 from reip.util import text, iters
 
@@ -24,7 +25,7 @@ class Stream:
     terminated = False
     signal = None
     def __init__(self, sources, get_loop=None, auto_next=True, should_wait=True,
-                 timeout=None, name='', **kw):
+                 timeout=None, squeeze=False, name='', slice_key=None, **kw):
         self.name = name or ''
         self.sources = sources
         self._loop_kw = kw
@@ -32,6 +33,8 @@ class Stream:
         self.auto_next = auto_next
         self.should_wait = should_wait
         self.timeout = timeout
+        self._squeeze = squeeze
+        self._slice_key = slice_key
 
     def __str__(self):
         state = (
@@ -63,6 +66,13 @@ class Stream:
             if self.terminated or (inputs is None and not self.should_wait):
                 return
             if inputs is not None:
+                if self._squeeze and len(self.sources) == 1:
+                    inputs = inputs[0][0], inputs[1]
+                if self._slice_key:
+                    if self._slice_key == 'data':
+                        inputs = inputs[0]
+                    elif self._slice_key == 'meta':
+                        inputs = inputs[1]
                 yield inputs
                 if self.auto_next:
                     self.next()
@@ -206,25 +216,11 @@ class Stream:
 
     # Stream slicing
 
-    @property
-    def data(self):
-        return StreamSlice(self.sources, key='data')
-
-    @property
-    def meta(self):
-        return StreamSlice(self.sources, key='meta')
-
-    def __getitem__(self, index):
-        return StreamSlice(self.sources)[index]
-
-
-
-class StreamSlice(Stream):
     '''Allows you to take a stream and select to only return a certain output
     or only the metadata.
 
     TODO: currently this will produce unexpected results if you were to iterate over
-    multiple StreamSlices because they drop the buffers that they're not interested in.
+    multiple StreamSlices because they don't copy sources.
     A fix for this would be to generate a new source with its own Pointer objects.
 
     TODO: also, this could be optimized by not deserializing data if we are only requesting meta.
@@ -242,27 +238,27 @@ class StreamSlice(Stream):
     ...     assert set(data) == { [5] }        # all data buffers
     ...     assert set(full) == { 5 }          # only the first buffer
     ...     assert set(full) == { {} }         # only meta dicts
-
     '''
-    def __init__(self, sources, key=None, index=slice(None), *a, **kw):
-        super().__init__(sources, *a, **kw)
-        self._slice_key = key
-        self._slice_index = index
 
-    def __iter__(self):
-        for data, meta in super().__iter__():
-            if self._slice_index is not None:
-                data = data[self._slice_index]
-            if self._slice_key == 'data':
-                yield data
-            elif self._slice_key == 'meta':
-                yield meta
-            else:
-                yield data, meta
+    @property
+    def data(self):
+        stream = copy.copy(self)
+        stream._slice_key = 'data'
+        return stream
+
+    @property
+    def meta(self):
+        stream = copy.copy(self)
+        stream._slice_key = 'meta'
+        return stream
 
     def __getitem__(self, index):
-        self._slice_index = index
-        return self
+        stream = copy.copy(self)
+        stream.sources = reip.util.as_list(self.sources[index])
+        stream._squeeze = stream._squeeze or not isinstance(index, slice)
+
+        return stream
+
 
 def prepare_input(inputs):
     '''Take the inputs from multiple sources and prepare to be passed to block.process.'''
