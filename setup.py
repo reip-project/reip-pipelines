@@ -28,7 +28,7 @@ setuptools.setup(
     ],
     extras_require={
         'audio': ['pyaudio'], # 'librosa',
-        # 'video': ['opencv-python'],  # already installed on Jetson by default
+        'video': ['opencv-python'],  # already installed on Jetson by default
         'vis': ['matplotlib'],
         'docs': ['sphinx!=1.3.1', 'sphinx_theme', 'sphinx-gallery'],
     },
