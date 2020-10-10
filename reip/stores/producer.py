@@ -3,7 +3,7 @@ from reip.stores import Store, PlasmaStore, ClientStore, Pointer, HAS_PYARROW
 
 
 class Producer(reip.Sink):
-    def __init__(self, size, delete_rate=5, task_id=reip.UNSET, **kw):
+    def __init__(self, size=1000, delete_rate=5, task_id=reip.UNSET, **kw):
         self.size = size + 1  # need extra slot because head == tail means empty
         self.delete_rate = delete_rate
         self.task_id = task_id

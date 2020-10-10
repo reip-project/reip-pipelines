@@ -30,7 +30,7 @@ def _from_camera(gs, device, width=2592, height=1944, fps=15, outdir='video', du
 
     sink.connect("format-location", lambda m, id:
         os.path.join(outdir, '{}_{}.avi'.format(
-            name, datetime.datetime.now().strftime(DATE_FMT))))
+            name, (datetime.datetime.now() - datetime.timedelta(seconds=duration)).strftime(DATE_FMT))))
     gs.link(start=start)
 
 

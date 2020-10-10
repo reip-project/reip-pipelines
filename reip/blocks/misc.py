@@ -32,13 +32,13 @@ class Interval(reip.Block):
 
 
 class Time(reip.Block):
-    '''Call this function every X seconds'''
+    '''Add system time to metadata.'''
     def process(self, x, meta=None):
         return [x], {'time': time.time()}
 
 
 class Meta(reip.Block):
-    '''Call this function every X seconds'''
+    '''Add arbitrary data to metadata.'''
     def __init__(self, meta, *a, **kw):
         self.meta = meta or {}
         super().__init__(*a, **kw)
@@ -47,6 +47,15 @@ class Meta(reip.Block):
             k: v(meta) if callable(v) else v
             for k, v in self.meta.items()
         }
+
+
+class Dict(reip.Block):
+    '''Merge block outputs into a dict.'''
+    def __init__(self, meta, *a, **kw):
+        super().__init__(*a, **kw)
+
+    def process(self, *xs, meta=None):
+        return [xs], {}
 
 
 class Sleep(reip.Block):

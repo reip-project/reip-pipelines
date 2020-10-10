@@ -237,7 +237,29 @@ def test_shell():
 #     assert outputs.results == [x + i for i in range(n)] + [0]
 
 
-def test_process_func():
+def test_context_func():
+    class A:
+        init = finish = False
+    @B.context_func
+    def basic_block():
+        try:
+            A.init = True
+            def process(x, meta):
+                return [x * 2], {}
+            yield process
+        finally:
+            A.finish = True
+    n = 10
+    with reip.Graph() as g:
+        outputs = B.Increment(n).to(basic_block()).to(B.Results())
+    g.run()
+
+    assert outputs.results == [i*2 for i in range(n)]
+    assert A.init
+    assert A.finish
+
+
+def test_lambda_block():
     @B.process_func
     def basic_block(block, x, meta):
         return [x * 2], {}

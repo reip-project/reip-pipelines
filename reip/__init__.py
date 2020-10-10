@@ -1,5 +1,6 @@
 import time
 from .constants import *
+from . import exceptions
 from . import util
 
 from .interface import *

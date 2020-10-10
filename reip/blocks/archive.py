@@ -7,8 +7,7 @@ import reip
 class TarGz(reip.Block):
     def __init__(self, filename='{time}.tar.gz', **kw):
         self.filename = filename
-        self.kw = kw
-        super().__init__()
+        super().__init__(**kw)
 
     def process(self, *files, meta):
         # get filename

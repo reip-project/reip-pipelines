@@ -1,4 +1,5 @@
 import time
+import numpy as np
 import reip
 import pytest
 from remote_func import remote_func
@@ -28,15 +29,35 @@ def run(srcs, expects):
         time.sleep(0.5)
     print('Done')
 
+DEFAULT = 'some process context idk'
+OTHER_ID = 'adsf'
 
-def run_test_producer(task_id='some process context idk',
-                      CustomerCls=reip.stores.Customer,
-                      PointerCls=reip.stores.Pointer,
-                      StoreCls=reip.stores.BaseStore, **kw):
+
+@pytest.mark.parametrize("task_id,throughput,CustomerCls,PointerCls,StoreCls", [
+    (DEFAULT, None, reip.stores.Customer, reip.stores.Pointer, reip.stores.Store),
+    (OTHER_ID, 'small', reip.stores.QueueCustomer, reip.stores.SharedPointer, reip.stores.ClientStore),
+    (OTHER_ID, 'medium', reip.stores.QueueCustomer, reip.stores.SharedPointer, reip.stores.ClientStore),
+    (OTHER_ID, 'large', reip.stores.Customer, reip.stores.SharedPointer, reip.stores.PlasmaStore)
+])
+@pytest.mark.parametrize("data_func", [
+    (str),
+    (int),
+    (float),
+    (lambda x: [x]),
+    (lambda x: {'adsf': x}),
+    (lambda x: {x}),
+    # (np.array),
+    (lambda x: np.array([x])),
+    # (lambda x, d=10: np.array([[x]*d]*d)),
+])
+def test_producer(task_id, throughput, CustomerCls, PointerCls, StoreCls, data_func, **kw):
+    print(task_id, throughput, CustomerCls, PointerCls, StoreCls, data_func, **kw)
     # get sink
-    sink = reip.stores.Producer(100, task_id='some process context idk')
+    sink = reip.stores.Producer(100, task_id=DEFAULT)
 
     # get sources
+    if throughput is not None:
+        kw['throughput'] = throughput
     kw['task_id'] = task_id
     src0 = sink.gen_source(**kw)
     src1 = sink.gen_source(strategy=reip.Source.Skip, skip=1, **kw)
@@ -72,8 +93,8 @@ def run_test_producer(task_id='some process context idk',
     sink.spawn()
 
     # build queue inputs
-    all_expects1 = [(str(i), {"buffer": i}) for i in range(10)]
-    all_expects2 = [(str(i), {"buffer": i}) for i in range(40, 50)]
+    all_expects1 = [(data_func(i), {"buffer": i}) for i in range(10)]
+    all_expects2 = [(data_func(i), {"buffer": i}) for i in range(40, 50)]
     # pre-load
     for x in all_expects1:
         sink.put(x)
@@ -94,24 +115,20 @@ def run_test_producer(task_id='some process context idk',
     f.result()
     sink.join()
 
-def test_producer_threaded():
-    print('Threaded:')
-    run_test_producer(
-        CustomerCls=reip.stores.Customer, StoreCls=reip.stores.Store,
-        PointerCls=reip.stores.Pointer,
-    )
-
-
-@pytest.mark.parametrize("throughput,CustomerCls,StoreCls", [
-    ('small', reip.stores.QueueCustomer, reip.stores.ClientStore),
-    ('medium', reip.stores.QueueCustomer, reip.stores.ClientStore),
-    ('large', reip.stores.Customer, reip.stores.PlasmaStore)
-])
-def test_producer_process(throughput, CustomerCls, StoreCls):
-    for th in ['small', 'medium', 'large']:
-        print(f'Process: Throughput: {th}')
-        run_test_producer(
-            task_id='something else',
-            CustomerCls=CustomerCls, StoreCls=StoreCls,
-            PointerCls=reip.stores.SharedPointer,
-            throughput=throughput)
+# def test_producer_threaded():
+#     print('Threaded:')
+#     run_test_producer(
+#         CustomerCls=reip.stores.Customer, StoreCls=reip.stores.Store,
+#         PointerCls=reip.stores.Pointer,
+#     )
+#
+#
+#
+# def test_producer_process(throughput, CustomerCls, StoreCls):
+#     for th in ['small', 'medium', 'large']:
+#         print(f'Process: Throughput: {th}')
+#         run_test_producer(
+#             task_id='something else',
+#             CustomerCls=CustomerCls, StoreCls=StoreCls,
+#             PointerCls=reip.stores.SharedPointer,
+#             throughput=throughput)
