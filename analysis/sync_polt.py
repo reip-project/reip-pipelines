@@ -27,6 +27,7 @@ if __name__ == '__main__':
     plt.plot([0, duration], [0, 0], "--", color="grey")
     plt.plot(data[offset:offset+duration+1, 0], "b-", label="Channel 1", linewidth=2)
     plt.xlim([0, duration])
+    plt.gca().get_xaxis().set_visible(False)
     plt.ylim([-550, 550])
     plt.ylabel("Amplitude, 16-bit")
     plt.legend(loc="upper left")
