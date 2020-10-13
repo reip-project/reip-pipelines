@@ -76,7 +76,7 @@ def run(duration=6, id=DEFAULT_ID):
 
 
 def _plot_results(results, id=DEFAULT_ID):
-    plt.figure(figsize=(7, 3), dpi=300)
+    plt.figure(figsize=(6, 3), dpi=300)
     for (name, res), marker, ls in zip(results.items(), MARKERS, LINESTYLES):
         x, y = zip(*sorted(((float(k), float(v)) for k, v in res.items())))
         plt.plot(x, y, label=name, color='k', ls=ls)  # , marker=marker, markersize=4
@@ -86,14 +86,47 @@ def _plot_results(results, id=DEFAULT_ID):
     plt.ylabel('Speed (buffers/sec)')
     plt.xscale('log')
     plt.yscale('log')
-    plt.title('Buffer throughput speeds across several serialization strategies.')
+    plt.title('Buffer throughput speeds vs serialization.')
     plt.tight_layout()
     plt.savefig(PLT_FILE.format(id))
 
-def plot(id=DEFAULT_ID):
+
+def _plot_lines(results, gbps=False):
+    for (name, res), marker, ls in zip(results.items(), MARKERS, LINESTYLES):
+        x, y = zip(*sorted(((float(k), float(v)) for k, v in res.items())))
+        if gbps:
+            y = [x*y for x, y in zip(x, y)]
+        plt.plot(x, y, label=name, color='k', ls=ls)  # , marker=marker, markersize=4
+
+def _plot_results(results, id=DEFAULT_ID):
+    plt.figure(figsize=(6, 4), dpi=300)
+
+    ax = plt.subplot(2, 1, 1)
+    _plot_lines(results, gbps=False)
+    plt.legend()
+    plt.gca().xaxis.set_visible(False)
+    plt.ylabel('Speed (buffers/sec)')
+    plt.xscale('log')
+    # plt.xticks([1000**i for i in np.linspace(-2, 0, 9)], ['{}{}'.format(i, u) for u in ['kb', 'mb', 'gb'] for i in [1, 10, 100]])
+    plt.yscale('log')
+
+    plt.subplot(2, 1, 2, sharex=ax)
+    _plot_lines(results, gbps=True)
+    plt.xlabel('Buffer Size (gb)')
+    plt.ylabel('Speed ({}/sec)'.format('gb'))
+    plt.xscale('log')
+    # plt.xticks([1000**i for i in np.linspace(-2, 0, 9)], ['{}{}'.format(i, u) for u in ['kb', 'mb', 'gb'] for i in [1, 10, 100]])
+    plt.yscale('log')
+    plt.suptitle('Buffer throughput speeds vs serialization.')
+
+    plt.tight_layout()
+    plt.savefig(PLT_FILE.format(id))
+
+
+def plot(id=DEFAULT_ID, **kw):
     with open(RESULTS_FILE.format(id), 'r') as f:
         results = json.load(f)
-    _plot_results(results, id)
+    _plot_results(results, id, **kw)
 
 if __name__ == '__main__':
     import fire
