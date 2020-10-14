@@ -1,6 +1,7 @@
 from .base import *
 from .pointers import *
 from .store import *
+from .queue import *
 from .customer import *
 try:
     import pyarrow

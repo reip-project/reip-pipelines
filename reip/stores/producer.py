@@ -88,7 +88,7 @@ class Producer(reip.Sink):
                 else:
                     store = ClientStore(self.size)
                     if HAS_PYARROW and throughput == 'medium':
-                        kw['arrow'] = True
+                        kw.setdefault('serializer', 'arrow')
 
                 # convert pointers to shared pointers
                 self.head = self.head.as_shared()

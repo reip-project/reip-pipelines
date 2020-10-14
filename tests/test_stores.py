@@ -3,6 +3,7 @@ import numpy as np
 import reip
 import pytest
 from remote_func import remote_func
+import remoteobj
 
 
 def get_all_available(src, n=None):
@@ -33,11 +34,22 @@ DEFAULT = 'some process context idk'
 OTHER_ID = 'adsf'
 
 
+def keyboard_interrupts(func):
+    import functools
+    @functools.wraps(func)
+    def inner(*a, **kw):
+        try:
+            return func(*a, **kw)
+        except KeyboardInterrupt as e:
+            raise RuntimeError("interrupted - now you'll flipping show me. eat my shorts pytest.") from e
+    return inner
+
 @pytest.mark.parametrize("task_id,throughput,CustomerCls,PointerCls,StoreCls", [
     (DEFAULT, None, reip.stores.Customer, reip.stores.Pointer, reip.stores.Store),
     (OTHER_ID, 'small', reip.stores.QueueCustomer, reip.stores.SharedPointer, reip.stores.ClientStore),
     (OTHER_ID, 'medium', reip.stores.QueueCustomer, reip.stores.SharedPointer, reip.stores.ClientStore),
-    (OTHER_ID, 'large', reip.stores.Customer, reip.stores.SharedPointer, reip.stores.PlasmaStore)
+    (OTHER_ID, 'large', reip.stores.Customer, reip.stores.SharedPointer, reip.stores.PlasmaStore),
+    (OTHER_ID, None, reip.stores.QueueCustomer, reip.stores.SharedPointer, reip.stores.ClientStore),
 ])
 @pytest.mark.parametrize("data_func", [
     (str),
@@ -50,6 +62,7 @@ OTHER_ID = 'adsf'
     (lambda x: np.array([x])),
     # (lambda x, d=10: np.array([[x]*d]*d)),
 ])
+@keyboard_interrupts
 def test_producer(task_id, throughput, CustomerCls, PointerCls, StoreCls, data_func, **kw):
     print(task_id, throughput, CustomerCls, PointerCls, StoreCls, data_func, **kw)
     # get sink
@@ -64,10 +77,6 @@ def test_producer(task_id, throughput, CustomerCls, PointerCls, StoreCls, data_f
     src2 = sink.gen_source(strategy=reip.Source.Latest, **kw)
     srcs = [src0, src1, src2]
 
-    print(srcs, CustomerCls, PointerCls)
-    print([s.cursor for s in srcs])
-    print([s.source.head for s in srcs])
-    print([s.source.tail for s in srcs])
     if CustomerCls is not None:
         assert all(isinstance(s, CustomerCls) for s in srcs)
     if PointerCls is not None:
@@ -88,7 +97,6 @@ def test_producer(task_id, throughput, CustomerCls, PointerCls, StoreCls, data_f
 
     # wrap run with a remote process/thread
     print('threaded', task_id is not sink.task_id)
-    remote_run = remote_func(run, threaded=task_id == sink.task_id)
 
     sink.spawn()
 
@@ -100,35 +108,13 @@ def test_producer(task_id, throughput, CustomerCls, PointerCls, StoreCls, data_f
         sink.put(x)
 
     # start remote process
-    f = remote_run(srcs, [
-        get_expects(all_expects1),
-        get_expects(all_expects2),
-    ])
-
-    # wait for srcs to catch up
-    while srcs[-1].cursor.counter < sink.head.counter:
-        time.sleep(1e-3)
-    # add second round of sources
-    for x in all_expects2:
-        sink.put(x)
-
-    f.result()
+    exps = [get_expects(all_expects1), get_expects(all_expects2)]
+    with remoteobj.util.job(run, srcs, exps, threaded_=task_id == sink.task_id, timeout_=3) as p:
+        # wait for srcs to catch up
+        while srcs[-1].cursor.counter < sink.head.counter:
+            time.sleep(1e-2)
+            p.raise_any()
+        # add second round of sources
+        for x in all_expects2:
+            sink.put(x)
     sink.join()
-
-# def test_producer_threaded():
-#     print('Threaded:')
-#     run_test_producer(
-#         CustomerCls=reip.stores.Customer, StoreCls=reip.stores.Store,
-#         PointerCls=reip.stores.Pointer,
-#     )
-#
-#
-#
-# def test_producer_process(throughput, CustomerCls, StoreCls):
-#     for th in ['small', 'medium', 'large']:
-#         print(f'Process: Throughput: {th}')
-#         run_test_producer(
-#             task_id='something else',
-#             CustomerCls=CustomerCls, StoreCls=StoreCls,
-#             PointerCls=reip.stores.SharedPointer,
-#             throughput=throughput)

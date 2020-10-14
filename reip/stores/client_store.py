@@ -9,7 +9,7 @@ import time
 import threading
 import multiprocessing as mp
 from ctypes import c_bool
-from . import SharedPointer, Store, Customer, ArrowQueue, HAS_PYARROW
+from . import SharedPointer, Store, Customer, Queue
 
 
 class _RemoteTraceback(Exception):
@@ -20,12 +20,10 @@ class _RemoteTraceback(Exception):
 
 class QueueCustomer(Customer):
     cache = None
-    def __init__(self, *a, arrow=False, **kw):
+    def __init__(self, *a, serializer=None, **kw):
         super().__init__(*a, **kw)
         self.requested = mp.Value(c_bool, False, lock=False)
-        self.data_queue = (
-            ArrowQueue(ctx=mp.get_context()) if arrow and HAS_PYARROW else
-            mp.SimpleQueue())
+        self.data_queue = Queue(serializer)
         self.store.customers.append(self)  # circular reference - garbage collection issue?
 
     def next(self):

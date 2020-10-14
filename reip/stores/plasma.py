@@ -1,21 +1,16 @@
 import os
-import time
-import multiprocessing as mp
-import multiprocessing.queues
-
 import numpy as np
 import pyarrow as pa
 import pyarrow.plasma as plasma
 from .base import BaseStore
 from .pointers import SharedPointer
+from . import queue as q_
 
 
 __all__ = ['PlasmaStore', 'ArrowQueue']
 
 
 def get_plasma_path():
-    # import ray
-    # plasma_socket = plasma_socket or ray.nodes()[0]['ObjectStoreSocketName']
     return os.path.join(os.getenv('TMPDIR') or '/tmp', 'plasma')
 
 # def start_plasma(plasma_socket=None, plasma_store_memory=1e9):
@@ -139,31 +134,16 @@ def load_both(client, id):
     return data, meta
 
 
-class ArrowQueue(mp.queues.SimpleQueue):
-    def __init__(self, ctx=None):
-        super().__init__(ctx=mp.get_context() if ctx is None else ctx)
-
-    def _dumps(self, obj):
-        # return _ForkingPickler.dumps(obj)
-        return pa.serialize(obj).to_buffer()
-
-    def _loads(self, obj):
-        # return _ForkingPickler.loads(res)
+class pyarrow_serializer:
+    def loads(self, obj):
         return pa.deserialize(obj)
 
-    def get(self):
-        with self._rlock:
-            res = self._reader.recv_bytes()
-        return self._loads(res)
+    def dumps(self, obj):
+        return pa.serialize(obj).to_buffer()
+q_.register_serializer(pyarrow_serializer(), 'arrow')
 
-    def put(self, obj):
-        obj = self._dumps(obj)
-        if self._wlock is None:  # writes to win32 pipe are atomic
-            self._writer.send_bytes(obj)
-        else:
-            with self._wlock:
-                self._writer.send_bytes(obj)
-
+class ArrowQueue(q_.Queue):
+    serializer = 'arrow'
 
 #
 #
