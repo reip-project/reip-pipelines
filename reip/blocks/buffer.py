@@ -66,7 +66,7 @@ class GatedRebuffer(Rebuffer):
             sampler if callable(sampler) else
             (lambda: sampler) if sampler else None)
         self.n_pass = n_pass
-        self.pause_until = None
+        self.pause_until = 0
         self.allow_index = None
         super().__init__(**kw)
 
