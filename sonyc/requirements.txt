@@ -1,0 +1,9 @@
+# reip
+fire
+remoteobj
+colorlog
+tflit
+pyaudio
+librosa
+matplotlib
+netswitch
