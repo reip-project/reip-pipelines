@@ -9,6 +9,7 @@ from reip.util import iters, text
 
 
 class Task(reip.Graph):
+    all_exceptions = ()
     _exception = None
     _process = None
     _delay = 1e-5
@@ -88,7 +89,7 @@ class Task(reip.Graph):
     def join(self, *a, timeout=0.5, raise_exc=True, **kw):
         if self._process is None:
             return
-        self.remote.super.join(*a, raise_exc=False, default=None, **kw)  # join children
+        self.remote.super.join(*a, raise_exc=False, _default=None, **kw)  # join children
         self._process.join(timeout=timeout)  # join process
         self.done = True
         self._process = None
