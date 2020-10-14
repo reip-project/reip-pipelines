@@ -73,36 +73,34 @@ class UploadFile(Upload):
         self.remove_on_success = remove_on_success
         super().__init__(*a, **kw)
 
-    def process(self, *files, meta=None):
-        # data_dir = os.path.basename(os.path.dirname(fname))
-        files = {os.path.basename(fname): fname for fname in files}
+    def process(self, *fs, meta=None):
+        files = {os.path.basename(fname): fname for fname in fs}
 
         # send request
         url = self.get_url()
         names = ', '.join(files.keys())
-        self.log.info("Uploading: {} to {}".format(names, url))
+        self.log.debug("Uploading: {} to {}".format(names, url))
         response = self.sess.post(
             url, files={
                 name: (name, open(fname, 'rb'))
                 for name, fname in files.items()
-            }, data=self.data,
+            },
+            data=reip.util.resolve_call(self.data, *fs, meta=meta),
             timeout=self.timeout)
 
         # return response info
         secs = response.elapsed.total_seconds()
         output = response.text
         speed = sum(os.path.getsize(f) for f in files.values()) / secs / 1024.0
-
-        if output == '0':
-            self.log.info('{} uploaded at {:.1f} Kb/s in {:.1f}s'.format(
+        # handle output
+        if response.ok:
+            self.log.debug('{} uploaded at {:.1f} Kb/s in {:.1f}s'.format(
                 names, speed, secs))
             if self.remove_on_success: # delete file
                 for f in files.values():
                     os.remove(f)
         else:
             self.log.error(output)
-
-        secs = response.elapsed.total_seconds()
         return [output], {'upload_time': secs, 'upload_kbs': speed}
 
 
@@ -112,9 +110,10 @@ class UploadStatus(Upload):
         for d in data:
             status.update(d)
 
+        # send request
         url = self.get_url()
         name = 'status'
-        self.log.info("Uploading: {} to {}".format(name, url))
+        self.log.debug("Uploading: {} to {}".format(name, url))
         response = self.sess.post(
             url, files={
                 'file': ('{}.json'.format(name), json.dumps(status))
@@ -125,12 +124,10 @@ class UploadStatus(Upload):
         secs = response.elapsed.total_seconds()
         output = response.text
         speed = sys.getsizeof(status) / secs / 1024.0
-
-        if output == '0':
-            self.log.info('{} uploaded at {:.1f} Kb/s in {:.1f}s'.format(
+        # handle output
+        if response.ok:
+            self.log.debug('{} uploaded at {:.1f} Kb/s in {:.1f}s'.format(
                 name, speed, secs))
         else:
-            self.log.error(output)
-
-        secs = response.elapsed.total_seconds()
+            self.log.error('Error when uploading to {}.\n{}'.format(url, output))
         return [output], {'upload_time': secs, 'upload_kbs': speed}

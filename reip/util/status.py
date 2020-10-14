@@ -1,3 +1,4 @@
+import os
 import re
 import socket
 from datetime import datetime
@@ -8,25 +9,29 @@ import reip
 
 
 STATS_FUNCTIONS = {}
-def register_stats(name=None, func=None):
-    def inner(func, name=name):
-        name = name or stripsfx(func.__name__, 'Stats')
-        func = misc.log_error_as_error(logger, default=dict)(func)
-        STATS_FUNCTIONS[name] = func
-        return func
-    return (
-        # @register_stats
-        inner(name, name=None) if callable(name)
-        # register_stats('misc', lambda: dict('a': 5))
-        else inner(func, name=name) if callable(func)
-        # @register_stats('misc')
-        else inner)
+def register_stats(func):
+    STATS_FUNCTIONS[func.__name__] = func
+    return func
 
 
 # strip suffix from string if present
 stripsfx = lambda x, sfx: x[:-len(sfx)] if x.endswith(sfx) else x
 # find regex pattern in shell output
 shfind = lambda pat, cmd: re.findall(pat, reip.util.shell.run(cmd)[0])
+
+
+class Status(reip.Block):
+    def __init__(self, **kw):
+        super().__init__(**kw)
+
+    def process(self, meta):
+        data = {}
+        for key, func in STATS_FUNCTIONS.items():
+            try:
+                data.update(func())
+            except Exception:
+                self.log.exception()
+        return [data], {}
 
 
 
@@ -63,16 +68,16 @@ def memory():
 
 
 @register_stats
-def wifi_quality():
-    iwc = ixconfig.Iwc(cfgnet.wlan_name)
+def wifi_quality(wlan_name):
+    iwc = ixconfig.Iwc(wlan_name)
     return ({"sig_qual": float(iwc.quality), "sig_stre": float(iwc.strength)}
             if iwc.params else {})
 
 
 @register_stats
-def cellular():
-    if os.path.exists('/sys/class/net/%s' % cfgnet.cell_name):
-        return {"cell_sig_stre": cell.signal_strength(cfgnet.cell_tty_commands)}
+def cellular(cell_name='ppp0', cell_tty_commands=''):
+    if os.path.exists('/sys/class/net/%s' % cell_name):
+        return {"cell_sig_stre": cell.signal_strength(cell_tty_commands)}
     return {}
 
 
@@ -97,5 +102,4 @@ def statusInfo():
     return {
         'time': datetime.utcnow().isoformat(),
         'fqdn': socket.getfqdn(),
-        'deployment_id': node_state.deployment_id,
     }

@@ -16,11 +16,13 @@ class TwoStageEncrypt(reip.Block):
     PADDING = b'{'
     BLOCK_SIZE = 32
 
-    def __init__(self, filename, rsa_key, **kw):
+    def __init__(self, filename, rsa_key, create=True, **kw):
         super().__init__(**kw)
         self.filename = str(filename)
         self.public_key = rsa_key
         if not os.path.isfile(self.public_key):
+            if not create:
+                raise OSError('Public key "{}" not found.'.format(self.public_key))
             create_rsa(self.public_key)
 
     def process(self, file, meta):
@@ -99,22 +101,22 @@ class TwoStageDecrypt(reip.Block):
 
 
 def get_private_key(public_fname):
-    private_fname = public2private(public_fname)
+    private_fname = _public2private(public_fname)
     return private_fname if os.path.isfile(private_fname) else public_fname
 
 
-def public2private(public_fname):
+def _public2private(public_fname):
     return '{}_private{}'.format(*os.path.splitext(public_fname))
 
 def load_rsa(rsa_key):
     with open(rsa_key, 'rb') as f:
         return RSA.importKey(f.read())
 
-def create_rsa(public_fname, bits=2048):
+def create_rsa(public_fname, private_fname=False, bits=2048):
     private_key = RSA.generate(bits, e=65537)
     public_key = private_key.publickey()
 
-    private_fname = public2private(public_fname)
+    private_fname = private_fname or _public2private(public_fname)
     print('Creating RSA Key Pair:')
     print('\tprivate:', private_fname)
     print('\tpublic:', public_fname)

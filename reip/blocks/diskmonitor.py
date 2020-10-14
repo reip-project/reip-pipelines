@@ -17,6 +17,7 @@ DiskMonitor('/data', [
 
 '''
 import os
+import random
 import glob
 import reip
 
@@ -31,21 +32,25 @@ class DiskMonitor(reip.Block):
         super().__init__(max_rate=1./interval, **kw)
 
     def process(self, *files, meta):
+        # initial usage check
         start_usage = self.get_usage()
         if start_usage < self.threshold:
             return
 
+        # ok so we've exceeded, delete some files
         self._files.clear()
         self.log.warning('Disk usage exceeded ({:.1%} > {:.1%}).'.format(start_usage, self.threshold))
         self._deleter(self, **self.extra_kw)
-        if not self._files:
+        if not self._files:  # none we're deleted ?
             return
 
+        # send deleted files with change in usage
         usage = self.get_usage()
         self.log.info('Removed {} files. Usage at {:.1%}.'.format(len(self._files), usage))
         return [self._files], {
             'start_usage': start_usage,
-            'end_usage': usage}
+            'end_usage': usage,
+            'usage_delta': start_usage - usage}
 
     def get_usage(self):
         return reip.util.status.disk_usage()
@@ -58,8 +63,10 @@ class DiskMonitor(reip.Block):
             os.remove(f)
         self._files.extend(fs)
 
-    def delete_while_full(self, fs, chunksize=1):
+    def delete_while_full(self, fs, chunksize=1, randomize=True):
         chunksize = chunksize or len(fs)
+        if randomize:
+            random.shuffle(fs)
         for usage, i in zip(self.while_full(), range(0, len(fs), chunksize)):
             self.delete(fs[i:i+chunksize])
         return i + chunksize < len(fs)
