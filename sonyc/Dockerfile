@@ -67,11 +67,11 @@ ENV PYARROW_BUNDLE_ARROW_CPP=1
 WORKDIR /build/arrow/python
 RUN python3 setup.py build_ext bdist_wheel
 
+FROM balenalib/raspberrypi3-debian:buster
+COPY --from=builder /build/arrow/python/dist/pyarrow-*.whl /dist/
 
-# SONYC
-# apt-get -q update && \
-#     apt-get install -y
-RUN install_packages portaudio19-dev alsa-utils \
+RUN apt-get -q update && \
+    apt-get install -y portaudio19-dev alsa-utils \
     && rm -rf /var/lib/apt/lists/*
 
 # RUN pip install reip
