@@ -67,17 +67,39 @@ ENV PYARROW_BUNDLE_ARROW_CPP=1
 WORKDIR /build/arrow/python
 RUN python3 setup.py build_ext bdist_wheel
 
-FROM balenalib/raspberrypi3-debian:buster
+#FROM balenalib/raspberrypi3-debian:buster
+FROM balenalib/raspberrypi3-debian-python:3.7.4
 COPY --from=builder /build/arrow/python/dist/pyarrow-*.whl /dist/
 
 RUN apt-get -q update && \
     apt-get install -y portaudio19-dev alsa-utils \
     && rm -rf /var/lib/apt/lists/*
+RUN apt-get -q update && \
+    apt-get install -y llvm-9-dev \
+    && rm -rf /var/lib/apt/lists/*
+ENV LLVM_CONFIG /usr/bin/llvm-config-9
+RUN apt-get -q update && \
+    apt-get install -y libffi-dev libatlas-base-dev libsndfile1 \
+    && rm -rf /var/lib/apt/lists/*
+#RUN apt-get -q update && \
+#    apt-get install -y make \
+#    && rm -rf /var/lib/apt/lists/*
 
 # RUN pip install reip
 
 COPY requirements.txt .
-RUN pip install -r ./requirements.txt --no-cache-dir --extra-index-url https://www.piwheels.org/simple
+RUN apt-get -q update && apt-get install -qy build-essential && \
+    pip install -r ./requirements.txt --no-cache-dir --extra-index-url https://www.piwheels.org/simple \
+    && apt-get remove -y build-essential && rm -rf /var/lib/apt/lists/*
 
-COPY ../ /reip
-RUN pip install -e /reip --no-deps
+COPY *.py .
+
+#RUN apt-get -q update && \
+#    apt-get install -y libatlas-base-dev libsndfile1 \
+#    && rm -rf /var/lib/apt/lists/*
+
+#COPY ../ /reip
+#RUN pip install -e /reip --no-deps
+
+CMD python node.py --sdfasdfasdfasdf 10
+ENTRYPOINT ls / && pip install /reip --no-deps && /bin/bash

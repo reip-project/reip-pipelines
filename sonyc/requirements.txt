@@ -5,5 +5,9 @@ colorlog
 tflit
 pyaudio
 librosa
+numba==0.50.0
+#llvmlite==0.33.0
 matplotlib
 netswitch
+pycrypto
+watchdog
