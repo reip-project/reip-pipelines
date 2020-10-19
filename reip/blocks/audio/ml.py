@@ -20,15 +20,14 @@ from reip.util.iters import npgenarray
 #
 #
 
-def ml_stft_inputs(data, meta, duration=1, hop_size=0.1, sr=8000, **kw):
+def ml_stft_inputs(data, meta, hop_size=0.1, duration=1, sr=8000, **kw):
     # load audio
     file, y = (data, None) if isinstance(data, str) else (None, data)
     y, sr = load_resample(file, y, meta.get('sr'), sr)
     # frame and extract stft
     frames = padframe(y, int(sr * duration), int(sr * hop_size)).T
-
     X = npgenarray(
-        (melstft(frame, sr) for frame in frames),
+        (melstft(frame, sr, **kw) for frame in frames),
         len(frames))[..., None]
     return X
 
@@ -56,12 +55,15 @@ Utils
 def load_resample(fname=None, y=None, sr=None, target_sr=None):
     '''Get the audio data at a specified target sample rate.'''
     if y is None:
-        y, sr = librosa.load(fname, sr=target_sr)
+        y, target_sr = librosa.load(fname, mono=False, sr=target_sr)
     else:
-        y = y.reshape(-1, y.shape[1])[:,0]
+        y = y.T
+        y = np.atleast_2d(y)[0]
+        if len(y) == 1:
+            y = y[0]
         if sr and target_sr and sr != target_sr:
-            y, sr = librosa.resample(y, sr, target_sr), target_sr
-    return y, sr
+            y = librosa.resample(y, sr, target_sr)
+    return y, target_sr or sr
 
 
 def framepadlen(xlen, flen, hlen):
