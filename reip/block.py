@@ -220,7 +220,7 @@ class Block:
                 time.sleep(self._delay)
                 with self._sw():
                     # create a stream from sources with a custom control loop
-                    self._stream = reip.Stream.from_block_sources(self, name=self.name)
+                    self._stream = reip.Stream.from_block_sources(self, name=self.name, _sw=self._sw)
                     with self._stream:
                         # block initialization
                         with self._sw('init'), self._except('init'):
