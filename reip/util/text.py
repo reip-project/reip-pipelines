@@ -24,6 +24,9 @@ underline = _text_wrapper(C.UNDERLINE)
 t4 = ' '*4
 t2 = ' '*2
 
+def printasone(*txt, end='\n', **kw):
+    print(' '.join(map(str, txt)) + end, end='', **kw)
+
 # block text helpers
 
 def indent(x, n=1, w=4, ch=' '):
