@@ -8,6 +8,7 @@
 import time
 from contextlib import contextmanager
 import weakref
+import multiprocessing as mp
 
 import reip
 from reip.util import text, iters
@@ -36,6 +37,7 @@ class BaseContext:  # (metaclass=_MetaContext)
     parent_id, task_id = None, None
 
     def __init__(self, *blocks, name=None, graph=None):
+        self.blocks = list(blocks)
         self.name = name or f'{self.__class__.__name__}_{id(self)}'
         self.parent_id, self.task_id = BaseContext.register_instance(self, graph)
 
@@ -50,6 +52,16 @@ class BaseContext:  # (metaclass=_MetaContext)
         '''If `instance` is `None`, the default instance will be returned.
         Otherwise `instance` is returned.'''
         return _ContextScope.default if instance is None else instance
+
+    def add(self, block):
+        '''Add block to graph.'''
+        self.blocks.append(block)
+
+    def remove(self, block):
+        self.blocks.remove(block)
+
+    def clear(self):
+        self.blocks.clear()
 
     @classmethod
     def register_instance(cls, child=None, parent=None):
@@ -170,26 +182,16 @@ class BaseContext:  # (metaclass=_MetaContext)
 class Graph(BaseContext):
     _delay = 1e-6
     _main_delay = 0.1
+    controlling = None
 
     def __init__(self, *blocks, **kw):
-        super().__init__(**kw)
-        self.blocks = list(blocks)
+        super().__init__(*blocks, **kw)
         self.log = reip.util.logging.getLogger(self)
 
     def __repr__(self):
         return '[~{}({}) ({} children) {}~]'.format(
             self.__class__.__name__, self.name, len(self.blocks),
             ''.join('\n' + text.indent(b) for b in self.blocks))
-
-    def add(self, block):
-        '''Add block to graph.'''
-        self.blocks.append(block)
-
-    def remove(self, block):
-        self.blocks.remove(block)
-
-    def clear(self):
-        self.blocks.clear()
 
     # run graph
 
@@ -242,29 +244,31 @@ class Graph(BaseContext):
 
     # Block control
 
-    # def _reset_state(self):
-    #     for block in self.blocks:
-    #         block._reset_state()
-
-    def spawn(self, wait=True):
+    def spawn(self, wait=True, _ready_flag=None, **kw):
+        self.controlling = _ready_flag is None
+        if self.controlling:
+            _ready_flag = mp.Event()
         for block in self.blocks:
-            block.spawn(wait=False)
+            block.spawn(wait=False, _ready_flag=_ready_flag, **kw)
         if wait:
             self.wait_until_ready()
+        if self.controlling:
+            _ready_flag.set()
 
     def wait_until_ready(self):
         while not self.ready and not self.error and not self.done:
             time.sleep(self._delay)
 
-    def join(self, close=True, terminate=False, raise_exc=True, **kw):
+    def join(self, close=True, terminate=False, raise_exc=None, **kw):
         if close:
             self.close()
         if terminate:
             self.terminate()
         for block in self.blocks:
             block.join(terminate=False, raise_exc=False, **kw)
-        if raise_exc:
+        if (self.controlling if raise_exc is None else raise_exc):
             self.raise_exception()
+        self.controlling = None
 
     def pause(self):
         for block in self.blocks:
@@ -285,6 +289,12 @@ class Graph(BaseContext):
     def raise_exception(self):
         for block in self.blocks:
             block.raise_exception()
+
+    def stats(self):
+        return {
+            'name': self.name,
+            'blocks': {b.name: b.stats() for b in self.blocks}
+        }
 
     def summary(self):
         return '\n'.join(s for s in (b.summary() for b in self.blocks) if s)

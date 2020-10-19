@@ -23,11 +23,12 @@ def np2pafmt(fmt):
 
 
 class Mic(reip.Block):
-    def __init__(self, device=None, sr=None, block_duration=1, channels=None, fmt='int16', **kw):
+    def __init__(self, device=None, sr=None, block_duration=1, channels=None, mono=False, fmt='int16', **kw):
         self.device = device
         self.sr = sr
         self.block_duration = block_duration
         self.channels = channels
+        self.mono = (0 if mono is True else mono if mono is not False else None)
         self.fmt = np.dtype(fmt)
         self._is_float = self.fmt == np.float32
         self.kw = kw
@@ -77,7 +78,7 @@ class Mic(reip.Block):
         '''Append frames to the queue - blocking API is suuuuuper slow.'''
         if status_flags:
             self.log.error('Input overflow status: {}'.format(status_flags))
-        t0 = time_info['input_buffer_adc_time'] or time.time()
+        t0 = time.time()  # time_info['input_buffer_adc_time'] or 
         self._q.put((buf, t0))
         return None, pyaudio.paContinue
 
@@ -89,6 +90,8 @@ class Mic(reip.Block):
         if not self._is_float:
             pcm = pcm / float(np.iinfo(pcm.dtype).max)
         pcm = pcm.reshape(-1, self.channels or 1)
+        if self.mono is not None:
+            pcm = pcm[:,self.mono]
         return [pcm], {
             'input_latency': self._pastream.get_input_latency(),
             'output_latency': self._pastream.get_output_latency(),

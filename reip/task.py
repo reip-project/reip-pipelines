@@ -43,13 +43,13 @@ class Task(reip.Graph):
             if self.done or self.error:
                 return True
 
-    def _run(self, duration=None):
+    def _run(self, duration=None, _ready_flag=None):
         self.log.info(text.green('Starting'))
         with self._catch(raises=False):
             with self.remote.listen_():
                 try:
                     # initialize
-                    super().spawn()
+                    super().spawn(_ready_flag=_ready_flag)
                     self.log.info(text.green('Ready'))
 
                     # main loop
@@ -75,12 +75,12 @@ class Task(reip.Graph):
 
     # process management
 
-    def spawn(self, wait=True):
+    def spawn(self, wait=True, _ready_flag=None):
         if self._process is not None:  # only start once
             return
         self.done = False
         self._catch.clear()
-        self._process = mp.Process(target=self._run, daemon=True)
+        self._process = mp.Process(target=self._run, kwargs={'_ready_flag': _ready_flag}, daemon=True)
         self._process.start()
         if wait:
             self.wait_until_ready()
@@ -154,12 +154,15 @@ class Task(reip.Graph):
 
     def terminate(self):
         self.terminated = True
-        return self.remote.super.terminate(default=None)
+        return self.remote.super.terminate(_default=None)
 
     # def _reset_state(self):
     #     return self.remote.super._reset_state()
 
     # debug
+
+    def stats(self):
+        return self.remote.super.stats()
 
     def summary(self):
         return self.remote.super.summary()
