@@ -1,5 +1,4 @@
 import os
-import glob
 import json
 import librosa
 import numpy as np
@@ -8,7 +7,7 @@ import scipy.io.wavfile as wav
 from scipy.signal import find_peaks
 
 
-def load_data(base_path, max_files=6, plot=True, save=False, plot_channel=0):
+def load_data(base_path, max_files=6, plot=True, save_plot=False, plot_channel=0):
     print("\nLoading:", base_path)
     data, filenames = [None] * max_files, [None] * max_files
 
@@ -32,7 +31,7 @@ def load_data(base_path, max_files=6, plot=True, save=False, plot_channel=0):
         plt.xlim([0, lim / stride])
         plt.legend(loc="upper right")
         plt.tight_layout()
-        if save:
+        if save_plot:
             plt.savefig(base_path[:-7] + ".png", dpi=200)
 
     return data, filenames
@@ -73,9 +72,14 @@ def detect_edges(mono_data, title=None, w=512, plot=True, plot_all=False, save=T
 
         # compute the actual threshold for edge search (empirical)
         thr = min(m / 4, max(5 * np.max(b), m / 50) if np.max(b) > 0.5 else m / 10)
+        idx = np.nonzero(ad[3*w//4:13*w//4] > thr)[0]
 
-        idx = np.min(np.nonzero(ad[3*w//4:13*w//4] > thr)[0])  # find edge
-        pos = x[p] + idx - s + 3 * w // 4 + 1  # map to the absolute position
+        if idx.shape[0] == 0:
+            print("\n\tEmpty idx!\n")
+            continue
+        else:
+            idx = np.min(idx)  # find edge
+            pos = x[p] + idx - s + 3 * w // 4 + 1  # map to the absolute position
 
         if good:
             edges.append(pos)
@@ -128,13 +132,15 @@ def detect_edges(mono_data, title=None, w=512, plot=True, plot_all=False, save=T
 
 if __name__ == '__main__':
     data_path = "/home/yurii/data"
+    filegroup = "/aligned/car_buzzer_and_hummer_grid_%d.wav"
+    # filegroup = "/aligned/sync_line_56_and_13_%d.wav"
+    channel = 0
 
-    data, filenames = load_data(data_path + "/aligned/car_buzzer_and_hummer_grid_%d.wav", plot=True, save=True)
-    # data, filenames = load_data(data_path + "/aligned/sync_line_56_and_13_%d.wav", plot=True, save=True)
+    data, filenames = load_data(data_path + filegroup, plot=True, save_plot=True, plot_channel=channel)
 
     # detect_edges(data[0][:, 0], plot=True, plot_all=True, save=False)
 
-    edges = [detect_edges(data[i][:, 0], plot=True, save=True, title=filenames[i][:-4]) for i in range(6)]
+    edges = [detect_edges(data[i][:, channel], plot=True, save=True, title=filenames[i][:-4]) for i in range(6)]
     # print(edges)
 
     plt.show()
