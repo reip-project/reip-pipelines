@@ -13,7 +13,7 @@ Inside each Producer, we have what we call Data Stores. They represent different
 For Stores we have:
  - Store: a standard store that keeps items in a list. This is ideal for inter-thread communication because it doesn't have any serialization overhead.
  - PlasmaStore: uses a Plasma Object Store which was written by Apache for distributed Machine Learning applications. It is ideal for serializing and passing large numpy arrays between processes. It has a small/moderate overhead for serialization, but has fast deserialization because it can read the arrays directly from the memory store. (not sure if I explained this right.)
- - ClientStore: ...
+ - QueueStore: ...
     - pyarrow: for medium-size buffers
     - pickle: for small buffers
 

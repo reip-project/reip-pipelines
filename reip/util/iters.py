@@ -9,7 +9,9 @@ def loop():
         yield
 
 def sleep_loop(delay=1e-6):
-    return thread_sleep(loop(), delay=delay)
+    while True:
+        yield delay
+        time.sleep(delay)
 
 def timed(it, duration=None, error=False):
     '''Run a loop for a predetermined amount of time.'''

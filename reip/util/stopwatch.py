@@ -46,25 +46,30 @@ class Stopwatch:
             self._counts[name] = 0
         self._ticks[name] = time.time()
 
-    def tock(self, name=''):
+    def tock(self, name='', samples=True):
         # Correct for time.time() execution time (dt) and Lap class overhead (approx 1 us)
         t = (self._ticks[name], time.time() - self._dt - 1e-6)
         self._sums[name] += max(0, t[1] - t[0])
         self._counts[name] += 1
-        s = self._samples[name]
-        s.append(t)
-        if len(s) > self._max_samples:
-            self._samples[name] = s[len(s)//2:]
+        if samples:
+            s = self._samples[name]
+            s.append(t)
+            if len(s) > self._max_samples:
+                self._samples[name] = s[len(s)//2:]
 
     def notock(self, name=''):
         self._ticks.pop(name, None)
 
-    def iter(self, iterable, name=''):
-        self.tick(name)
+    def ticktock(self, delta, name=''):
+        self._sums[name] += max(0, delta)
+        self._counts[name] += 1
+
+    def iter(self, iterable, name='', samples=True):
+        self.tick(name, samples=samples)
         for item in iterable:
             self.tock(name)
             yield item
-            self.tick(name)
+            self.tick(name, samples=samples)
         self.notock(name)
 
     def elapsed(self, name=''):
@@ -83,7 +88,7 @@ class Stopwatch:
     def sleep(self, delay=1e-6, name="sleep"):
         self.tick(name)
         time.sleep(delay)
-        self.tock(name)
+        self.tock(name, samples=False)
 
     def __call__(self, name=""):
         return self.lap(self, name)

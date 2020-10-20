@@ -25,7 +25,7 @@ class Stream:
     terminated = False
     signal = None
     def __init__(self, sources, get_loop=None, auto_next=True, should_wait=True,
-                 timeout=None, squeeze=False, name='', slice_key=None, **kw):
+                 timeout=None, squeeze=False, name='', slice_key=None, _sw=None, **kw):
         self.name = name or ''
         self.sources = sources
         self._loop_kw = kw
@@ -35,6 +35,8 @@ class Stream:
         self.timeout = timeout
         self._squeeze = squeeze
         self._slice_key = slice_key
+        self._sw = _sw or reip.util.Stopwatch(str(self))
+
 
     def __str__(self):
         state = (
@@ -54,10 +56,9 @@ class Stream:
     @classmethod
     def default_loop(cls, duration=None, max_rate=None, delay=None):
         '''A master loop function that will contain'''
-        delay = delay or cls._delay
         return iters.throttled(
-            iters.timed(iters.sleep_loop(delay), duration),
-            max_rate, delay)
+            iters.timed(iters.loop(), duration),
+            max_rate, delay or cls._delay)
 
     def __iter__(self):
         self._reset()
@@ -82,7 +83,7 @@ class Stream:
     def poll(self, block=True, timeout=None): # FIXME: return value? exception? ?????
         '''Returns whether or not the stream is ready to pull from.'''
         # for streams with no sources, there's nothing to wait for
-        for _ in iters.timed(iters.sleep_loop(), timeout or self.timeout):
+        for t_asleep in self._sw.iter(iters.timed(iters.sleep_loop(), timeout or self.timeout), 'sleep'):
             if self.terminated:
                 return False
             if not self.sources and not self.should_wait:
@@ -96,7 +97,7 @@ class Stream:
     def get(self, block=True, timeout=None):
         # FIXME loop because if we see any signals, _get will be None and we'll have to
         #       try again. But we also
-        for _ in iters.timed(iters.sleep_loop(), timeout or self.timeout):
+        for _ in iters.timed(iters.loop(), timeout or self.timeout):
             ready = self.poll(block=block, timeout=timeout)
             if not ready:  # either block=False or timeout
                 return

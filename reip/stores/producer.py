@@ -1,5 +1,5 @@
 import reip
-from reip.stores import Store, PlasmaStore, ClientStore, Pointer, HAS_PYARROW
+from reip.stores import Store, PlasmaStore, QueueStore, Pointer, HAS_PYARROW
 
 
 class Producer(reip.Sink):
@@ -86,7 +86,7 @@ class Producer(reip.Sink):
                 if HAS_PYARROW and throughput == 'large':
                     store = PlasmaStore(self.size)
                 else:
-                    store = ClientStore(self.size)
+                    store = QueueStore(self.size)
                     if HAS_PYARROW and throughput == 'medium':
                         kw.setdefault('serializer', 'arrow')
 

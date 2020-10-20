@@ -46,10 +46,10 @@ def keyboard_interrupts(func):
 
 @pytest.mark.parametrize("task_id,throughput,CustomerCls,PointerCls,StoreCls", [
     (DEFAULT, None, reip.stores.Customer, reip.stores.Pointer, reip.stores.Store),
-    (OTHER_ID, 'small', reip.stores.QueueCustomer, reip.stores.SharedPointer, reip.stores.ClientStore),
-    (OTHER_ID, 'medium', reip.stores.QueueCustomer, reip.stores.SharedPointer, reip.stores.ClientStore),
+    (OTHER_ID, 'small', reip.stores.QueueCustomer, reip.stores.SharedPointer, reip.stores.QueueStore),
+    (OTHER_ID, 'medium', reip.stores.QueueCustomer, reip.stores.SharedPointer, reip.stores.QueueStore),
     (OTHER_ID, 'large', reip.stores.Customer, reip.stores.SharedPointer, reip.stores.PlasmaStore),
-    (OTHER_ID, None, reip.stores.QueueCustomer, reip.stores.SharedPointer, reip.stores.ClientStore),
+    (OTHER_ID, None, reip.stores.QueueCustomer, reip.stores.SharedPointer, reip.stores.QueueStore),
 ])
 @pytest.mark.parametrize("data_func", [
     (str),

@@ -62,7 +62,7 @@ class QueueCustomer(Customer):
 
 
 
-class ClientStore(Store):
+class QueueStore(Store):
     Pointer = SharedPointer
     Customer = QueueCustomer
 

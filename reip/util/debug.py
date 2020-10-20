@@ -7,7 +7,7 @@ def check_block(block, match='', *a):
     '''Only print out only blocks that match the query text. For debugging specific subclasses.'''
     if (not match or match.lower() in block.__class__.__name__.lower()
             or match.lower() in getattr(block, 'name', '').lower()):
-        print(text.block_text(str(block), text.l_(*a)), flush=True)
+        text.printasone(text.block_text(str(block), text.l_(*a)), flush=True)
 
 
 def block_stack(message=None, fn=None, offset=0):
@@ -24,7 +24,7 @@ def block_stack(message=None, fn=None, offset=0):
     )
 
 def print_stack(message=None, *a, offset=0, **kw):
-    print(block_stack(message, *a, offset=offset + 1, **kw))
+    text.printasone(block_stack(message, *a, offset=offset + 1, **kw), flush=True)
 
 
 def short_stack(match=None, file=False, sep=' << ', n=None):
