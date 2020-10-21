@@ -1,5 +1,6 @@
 import os
 from functools import wraps
+import numpy as np
 
 
 
@@ -81,6 +82,13 @@ def as_list(x):
         x if isinstance(x, list)
         else list(x) if isinstance(x, tuple)
         else [x])
+
+def is_iter(iterable):
+    return hasattr(iterable,'__iter__') and not hasattr(iterable,'__len__')
+
+def as_iterlike(x):
+    return (
+        x if isinstance(x, (list, tuple, np.ndarray)) or is_iter(x) else [x])
 
 def squeeze(x):
     '''If the input is a one-element list or tuple, take the first element.

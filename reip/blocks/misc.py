@@ -49,13 +49,28 @@ class Meta(reip.Block):
         }
 
 
-class Dict(reip.Block):
+# class Dict(reip.Block):
+#     '''Merge block outputs into a dict.'''
+#     def __init__(self, meta, *a, **kw):
+#         super().__init__(*a, **kw)
+#
+#     def process(self, *xs, meta=None):
+#         return [xs], {}
+
+class AsDict(reip.Block):
     '''Merge block outputs into a dict.'''
-    def __init__(self, meta, *a, **kw):
-        super().__init__(*a, **kw)
+    def __init__(self, *columns, **kw):
+        self.columns = columns
+        super().__init__(n_source=len(columns), **kw)
 
     def process(self, *xs, meta=None):
-        return [xs], {}
+        data = {}
+        for c, x in zip(self.columns, xs):
+            if isinstance(c, (list, tuple, np.ndarray)):
+                data.update(zip(c, reip.util.as_iterlike(x)))
+            else:
+                data[c] = x
+        return [data], {}
 
 
 class Sleep(reip.Block):
