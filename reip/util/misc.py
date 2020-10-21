@@ -1,5 +1,5 @@
 import os
-from functools import wraps
+from functools import wraps, partial
 
 
 
@@ -97,11 +97,26 @@ def squeeze(x):
     return x[0] if isinstance(x, (list, tuple)) and len(x) == 1 else x
 
 
-def flatten(X):
+def flatten(X, call=False):
     if isinstance(X, (list, tuple)):
-        yield from (x for xs in X for x in flatten(xs))
+        yield from (x for xs in X for x in flatten(xs, call=call))
+    elif call and callable(X):
+        yield from flatten(X(), call=call)
     else:
         yield X
+
+
+def mergedict(*dicts):
+    if any(callable(d) for d in dicts):
+        return partial(_mergedicts, *dicts)
+    return _mergedicts(*dicts)
+
+def _mergedicts(*dicts):
+    out = {}
+    for d in flatten(dicts, call=True):
+        out.update(d)
+    return out
+
 
 # class MpValueProp:
 #     def __init__(self, name):
