@@ -12,6 +12,7 @@ plt.rc('xtick', labelsize=SMALL_SIZE)      # fontsize of the tick labels
 plt.rc('ytick', labelsize=SMALL_SIZE)      # fontsize of the tick labels
 plt.rc('legend', fontsize=SMALL_SIZE)      # legend fontsize
 plt.rc('figure', titlesize=BIGGER_SIZE)    # fontsize of the figure title
+plt.rc('font', family='serif')
 
 
 if __name__ == '__main__':
@@ -25,7 +26,7 @@ if __name__ == '__main__':
     plt.subplot(2, 1, 1)
     plt.title("Audio Data", pad=10)
     plt.plot([0, duration], [0, 0], "--", color="grey")
-    plt.plot(data[offset:offset+duration+1, 0], "b-", label="Channel 1", linewidth=2)
+    plt.plot(data[offset:offset+duration+1, 0], "-", label="Channel 1", linewidth=2)
     plt.xlim([0, duration])
     plt.gca().get_xaxis().set_visible(False)
     plt.ylim([-550, 550])
@@ -35,7 +36,8 @@ if __name__ == '__main__':
     plt.subplot(2, 1, 2)
     plt.title("Synchronization Signal", pad=10)
     plt.plot([0, duration], [0, 0], "--", color="grey")
-    plt.plot(data[offset:offset+duration+1, -1], "r-", label="Channel 16", linewidth=2)
+    plt.plot(0, 0)  # skip color
+    plt.plot(data[offset:offset+duration+1, -1], "-", label="Channel 16", linewidth=2)
     plt.xlim([0, duration])
     plt.ylim([-2**15 - 2200, 2**15 + 2200])
     plt.xlabel("Samples @ 48 kHz", labelpad=8)

@@ -11,5 +11,5 @@ except ImportError:
 else:
     from .plasma import *
     HAS_PYARROW = True
-from .client_store import *
+from .queue_store import *
 from .producer import *

@@ -1,6 +1,7 @@
 import os
 import json
 import librosa
+import joblib
 import numpy as np
 import matplotlib.pyplot as plt
 import scipy.io.wavfile as wav
@@ -37,7 +38,7 @@ def load_data(base_path, max_files=6, plot=True, save_plot=False, plot_channel=0
     return data, filenames
 
 
-def detect_edges(mono_data, title=None, w=512, plot=True, plot_all=False, save=True):
+def detect_edges(mono_data, title=None, w=512, plot=True, plot_all=False, save=True, verbose=True):
     # Compute spectrogram with stride w
     db = librosa.amplitude_to_db(np.abs(librosa.stft(mono_data.astype(np.float), hop_length=w)))
     db -= np.min(db)  # get rid of offset but typically does nothing because of overrun errors (min = 0)
@@ -83,7 +84,7 @@ def detect_edges(mono_data, title=None, w=512, plot=True, plot_all=False, save=T
 
         if good:
             edges.append(pos)
-        else:
+        elif verbose:
             print("No edge found: peak %d at %d" % (i, p))
 
         # print("\t%.2f \t%.2f \t%.2f \t%.2f \t%.2f \t%.2f" % (mean, std, np.min(b), np.max(b), m, 100 * thr / m))
@@ -130,17 +131,34 @@ def detect_edges(mono_data, title=None, w=512, plot=True, plot_all=False, save=T
     return edges
 
 
+def detect_all_edges(data, filenames):
+    for i in range(len(filenames)):
+        if filenames[i] is None:
+            continue
+
+        jobs = [joblib.delayed(detect_edges, check_pickle=False)
+                (data[i][:, ch], plot=False, save=False, verbose=False) for ch in range(12)]
+
+        results = joblib.Parallel(verbose=15, n_jobs=-1, batch_size=1, pre_dispatch="all")(jobs)
+        edges = [result.tolist() for result in results]
+
+        with open(filenames[i][:-4] + ".json", "w") as f:
+            json.dump({"edge_locations": edges}, f, indent=4)
+
+
 if __name__ == '__main__':
     data_path = "/home/yurii/data"
-    filegroup = "/aligned/car_buzzer_and_hummer_grid_%d.wav"
-    # filegroup = "/aligned/sync_line_56_and_13_%d.wav"
+    # filegroup = "/aligned/car_buzzer_and_hummer_grid_%d.wav"
+    filegroup = "/aligned/sync_line_56_and_13_%d.wav"
     channel = 0
 
     data, filenames = load_data(data_path + filegroup, plot=True, save_plot=True, plot_channel=channel)
 
     # detect_edges(data[0][:, 0], plot=True, plot_all=True, save=False)
 
-    edges = [detect_edges(data[i][:, channel], plot=True, save=True, title=filenames[i][:-4]) for i in range(6)]
+    detect_all_edges(data, filenames)
+
+    # edges = [detect_edges(data[i][:, channel], plot=True, save=True, title=filenames[i][:-4]) for i in range(6)]
     # print(edges)
 
     plt.show()

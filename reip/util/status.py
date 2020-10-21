@@ -1,10 +1,26 @@
+'''
+
+
+reip.blocks.Lambda(
+    reip.util.mergedict(lambda: (
+        reip.status.meta,
+        reip.status.cpu,
+        reip.status.memory,
+        reip.status.network,
+        reip.status.wifi,
+    ))
+)
+
+
+'''
 import os
 import re
 import socket
 from datetime import datetime
-import netswitch
 import psutil
 import ifcfg
+import ixconfig
+import netswitch
 import reip
 
 
@@ -68,16 +84,20 @@ def memory():
 
 
 @register_stats
-def wifi_quality(wlan_name):
-    iwc = ixconfig.Iwc(wlan_name)
-    return ({"sig_qual": float(iwc.quality), "sig_stre": float(iwc.strength)}
-            if iwc.params else {})
+def wifi(wlan='wlan*'):
+    iwc = ixconfig.Iwc().ifaces(wlan)
+    wlan = next(iwc, None)
+    return ({
+        'wifi_quality': float(iwc[wlan].quality_ratio),
+        'wifi_strength': float(iwc[wlan].strength),
+        'AP': netswitch.Wpa().ssid
+    } if wlan else {})
 
 
 @register_stats
 def cellular(cell_name='ppp0', cell_tty_commands=''):
     if os.path.exists('/sys/class/net/%s' % cell_name):
-        return {"cell_sig_stre": cell.signal_strength(cell_tty_commands)}
+        return {"cell_sig_stre": netswitch.cell.signal_strength(cell_tty_commands)}
     return {}
 
 
@@ -85,9 +105,7 @@ def cellular(cell_name='ppp0', cell_tty_commands=''):
 def network():
     ifaces = ifcfg.interfaces()
     wlan, tun, eth = (ifaces.get(i, {}) for i in ('wlan0', 'tun0', 'eth0'))
-
     return {
-        'AP': netswitch.Wpa().ssid,
         'RX_packets': int(str(psutil.net_io_counters().bytes_recv).replace('L', '')),
         'TX_packets': int(str(psutil.net_io_counters().bytes_sent).replace('L', '')),
         'wlan0_ip': wlan.get('inet'),
@@ -98,8 +116,11 @@ def network():
     }
 
 
-def statusInfo():
+def meta():
     return {
         'time': datetime.utcnow().isoformat(),
-        'fqdn': socket.getfqdn(),
+        'hostname': socket.getfqdn(),
     }
+
+def full():
+    return reip.util.mergedict(meta, cpu, memory, network, wifi)
