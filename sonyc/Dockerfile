@@ -92,6 +92,9 @@ RUN apt-get -q update && apt-get install -qy build-essential && \
     pip install -r ./requirements.txt --no-cache-dir --extra-index-url https://www.piwheels.org/simple \
     && apt-get remove -y build-essential && rm -rf /var/lib/apt/lists/*
 
+RUN pip install psutil ixconfig remoteobj==0.2.6  --upgrade
+
+WORKDIR /app
 COPY *.py .
 
 #RUN apt-get -q update && \
@@ -100,6 +103,6 @@ COPY *.py .
 
 #COPY ../ /reip
 #RUN pip install -e /reip --no-deps
-
-CMD python node.py --sdfasdfasdfasdf 10
-ENTRYPOINT ls / && pip install /reip --no-deps && /bin/bash
+RUN python -m tflit.tflite_install
+ENTRYPOINT pip install /reip --no-deps && python node.py
+#CMD python node.py

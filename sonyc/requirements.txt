@@ -1,6 +1,6 @@
 # reip
 fire
-remoteobj
+remoteobj>=0.2.6
 colorlog
 tflit
 pyaudio
@@ -11,3 +11,5 @@ matplotlib
 netswitch
 pycrypto
 watchdog
+ixconfig>=0.1.0
+psutil
