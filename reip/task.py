@@ -61,46 +61,45 @@ class Task(reip.Graph):
 
     def _run(self, duration=None, _ready_flag=None):
         self.log.debug(text.blue('Starting'))
-        with self._except(raises=False):
-            try:
-                with self.remote.listen_():
-                    try:
-                        # initialize
-                        super().spawn(wait=False, _ready_flag=_ready_flag)
-                        while not super().error and not super().done:
-                            if super().ready:
-                                self.log.info(text.green('Ready'))
-                                break
-                            self.remote.process_requests()
-                            time.sleep(self._delay)
+        try:
+            with self.remote.listen_():
+                try:
+                    # initialize
+                    super().spawn(wait=False, _ready_flag=_ready_flag)
+                    while not super().error and not super().done:
+                        if super().ready:
+                            self.log.info(text.green('Ready'))
+                            break
+                        self.remote.process_requests()
+                        time.sleep(self._delay)
 
-                        # main loop
-                        for _ in iters.timed(iters.sleep_loop(self._delay), duration):
-                            if super().done or super().error:
-                                break
-                            self.remote.process_requests()
+                    # main loop
+                    for _ in iters.timed(iters.sleep_loop(self._delay), duration):
+                        if super().done or super().error:
+                            break
+                        self.remote.process_requests()
 
-                    except KeyboardInterrupt as e:
-                        self.log.info(text.yellow('Interrupting'))
-                    finally:
-                        self.log.info(text.yellow('Joining'))
-                        super().join(raise_exc=False)
-                        self.log.info(text.green('Done'))
+                except KeyboardInterrupt as e:
+                    self.log.info(text.yellow('Interrupting'))
+                finally:
+                    self.log.info(text.yellow('Joining'))
+                    super().join(raise_exc=False)
+                    self.log.info(text.green('Done'))
 
-                        # # transfer exceptions
-                        # for b in self.blocks:
-                        #     for exc in b.all_exceptions:
-                        #         self._except.set(exc, b.name)
+                    # transfer exceptions
+                    for b in self.blocks:
+                        for exc in b.all_exceptions:
+                            self._except.set(exc, b.name)
 
-                        if _ready_flag is None:
-                            print(self.stats_summary())
-            # except BaseException as e:
-            #     self.log.exception(e)
-            finally:
-                _ = super().__export_state__()
-                self._except.set_result(_)
-                # self.log.info('state remote {}'.format(_))
-                return _
+                    if _ready_flag is None:
+                        print(self.stats_summary())
+        # except BaseException as e:
+        #     self.log.exception(e)
+        finally:
+            _ = super().__export_state__()
+            # self._except.set_result('asdf')
+            # self.log.info('state remote {}'.format(_))
+            return _
 
 
 
@@ -113,9 +112,9 @@ class Task(reip.Graph):
 
         self._reset_state()
         # self._except = remoteobj.Except()
-        self._process = mp.Process(target=self._run, kwargs=dict(_ready_flag=_ready_flag), daemon=True)
-        # self._process = remoteobj.util.process(self._run, _ready_flag=_ready_flag)
-        # self._except = self._process.exc
+        # self._process = mp.Process(target=self._run, kwargs=dict(_ready_flag=_ready_flag), daemon=True)
+        self._process = remoteobj.util.process(self._run, _ready_flag=_ready_flag)
+        self._except = self._process.exc
         self._process.start()
 
         if wait:
@@ -126,12 +125,18 @@ class Task(reip.Graph):
         if self._process is None:
             return
 
-        self.remote.super.join(*a, raise_exc=False, _default=None, **kw)  # join children
-        self._process.join(timeout=timeout)  # join process
-        # self._process.join(timeout=timeout, raises=False)
-        self.__import_state__(self._except.get_result())
-        self._process = None
+        def sett(*a, **kw):
+            print('set', a, kw)
+            return oldset(*a, **kw)
+        oldset, self._except.set = self._except.set, sett
 
+        self.remote.super.join(*a, raise_exc=False, _default=None, **kw)  # join children
+        # self._process.join(timeout=timeout)  # join process
+        self._process.join(timeout=timeout, raises=False)
+        # self.log.info('process q len: {} {}'.format(self._process.exc._local.poll(), self._process.exc._remote.poll()))
+        # self.log.info('process result: {}'.format(self._process.result))
+        self.__import_state__(self._process.result)
+        self._process = None
         self.all_exceptions = self._except.all()
         if raise_exc:
             self.raise_exception()

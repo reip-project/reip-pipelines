@@ -18,7 +18,7 @@ setuptools.setup(
         'numpy',
         # 'pyarrow',
         'tflit>=0.0.13',
-        'remoteobj>=0.2.2'
+        'remoteobj>=0.2.6',
         # utils
         'pycrypto',
         # general
@@ -27,6 +27,7 @@ setuptools.setup(
         # 'netswitch',
     ],
     extras_require={
+        'status': ['psutil', 'ixconfig', 'netswitch'],
         'audio': ['pyaudio'], # 'librosa',
         'video': ['opencv-python'],  # already installed on Jetson by default
         'vis': ['matplotlib'],

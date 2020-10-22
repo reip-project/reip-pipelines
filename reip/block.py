@@ -211,11 +211,11 @@ class Block:
             if self.done or self.error:
                 return True
 
-    def _main(self, _ready_flag=None, **kw):
+    def _main(self, _ready_flag=None, duration=None):
         '''The main thread target function. Handles uncaught exceptions and
         generic Block context management.'''
         try:
-            with self._sw(), self._except:
+            with self._sw():
                 try:
                     # profiler = pyinstrument.Profiler()
                     # profiler.start()
@@ -231,9 +231,13 @@ class Block:
                         self.ready = True
                         self.log.info(text.green('Ready.'))
                         if _ready_flag is not None:
-                            _ready_flag.wait()
+                            with self._sw('sleep'):
+                                _ready_flag.wait()
 
-                        for _ in self._sw.iter(self._stream.get_loop(**kw), 'sleep'):
+                        loop = reip.util.iters.throttled(
+                            reip.util.iters.timed(reip.util.iters.loop(), duration),
+                            self.max_rate, delay=self._delay)
+                        for _ in self._sw.iter(loop, 'sleep'):
                             inputs = self._stream.get()
                             if inputs is None:
                                 break
@@ -495,8 +499,7 @@ class Block:
             if self._exception else None,
             # basic stats
             'Processed {processed} buffers in {total_time:.2f} sec. ({speed:.2f} x/s)',
-            'Dropped: {dropped}  Skipped: {skipped}',
-            'Left in Queue: sources={n_in_sources} sinks={n_in_sinks}',
+            'Dropped: {dropped}  Skipped: {skipped}  Left in Queue: in={n_in_sources} out={n_in_sinks}',
             # timing info
             self._sw, ch=text.blue('*')).format(
                 summary_banner=text.red(self) if self.error else text.green(self),
