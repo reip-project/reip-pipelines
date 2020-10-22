@@ -3,7 +3,7 @@
 
 reip.blocks.Lambda(
     reip.util.mergedict(lambda: (
-        reip.status.meta,
+        reip.status.base,
         reip.status.cpu,
         reip.status.memory,
         reip.status.network,
@@ -36,23 +36,23 @@ stripsfx = lambda x, sfx: x[:-len(sfx)] if x.endswith(sfx) else x
 shfind = lambda pat, cmd: re.findall(pat, reip.util.shell.run(cmd)[0])
 
 
-class Status(reip.Block):
-    def __init__(self, **kw):
-        super().__init__(**kw)
-
-    def process(self, meta):
-        data = {}
-        for key, func in STATS_FUNCTIONS.items():
-            try:
-                data.update(func())
-            except Exception:
-                self.log.exception()
-        return [data], {}
-
+# class Status(reip.Block):
+#     def __init__(self, **kw):
+#         super().__init__(**kw)
+#
+#     def process(self, meta):
+#         data = {}
+#         for key, func in STATS_FUNCTIONS.items():
+#             try:
+#                 data.update(func())
+#             except Exception:
+#                 self.log.exception()
+#         return [data], {}
+#
 
 
 @register_stats
-def cpu():
+def cpu(meta=None):
     cpu_cur_freq = shfind(r'\b[\d]+', 'vcgencmd measure_clock arm')[-1].split()[0]
     cpu_temp = shfind(r'\b[\d?(.\d)]+\b', 'vcgencmd measure_temp')[0].split()[0]
     cpu_load = shfind(r'[\d(?/?.\d)]+', 'cat /proc/loadavg')
@@ -70,7 +70,7 @@ def cpu():
 
 
 @register_stats
-def memory():
+def memory(meta=None):
     mem = psutil.virtual_memory()
     return {
         'mem_available': float(str(mem.available).replace('L', '')),
@@ -84,7 +84,7 @@ def memory():
 
 
 @register_stats
-def wifi(wlan='wlan*'):
+def wifi(wlan='wlan*', meta=None):
     iwc = ixconfig.Iwc().ifaces(wlan)
     wlan = next(iwc, None)
     return ({
@@ -95,14 +95,14 @@ def wifi(wlan='wlan*'):
 
 
 @register_stats
-def cellular(cell_name='ppp0', cell_tty_commands=''):
+def cellular(cell_name='ppp0', cell_tty_commands='', meta=None):
     if os.path.exists('/sys/class/net/%s' % cell_name):
         return {"cell_sig_stre": netswitch.cell.signal_strength(cell_tty_commands)}
     return {}
 
 
 @register_stats
-def network():
+def network(meta=None):
     ifaces = ifcfg.interfaces()
     wlan, tun, eth = (ifaces.get(i, {}) for i in ('wlan0', 'tun0', 'eth0'))
     return {
@@ -116,11 +116,15 @@ def network():
     }
 
 
-def meta():
+def base(meta=None):
     return {
         'time': datetime.utcnow().isoformat(),
         'hostname': socket.getfqdn(),
     }
 
-def full():
-    return reip.util.mergedict(meta, cpu, memory, network, wifi)
+def meta(meta=None):
+    return meta
+meta_ = meta
+
+def full(meta=None, include_meta=True):
+    return reip.util.mergedict(base, cpu, memory, network, wifi, meta if include_meta else {})

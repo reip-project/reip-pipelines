@@ -1,6 +1,30 @@
 import multiprocessing as mp
 
 
+class Counter:
+    def __init__(self, initial=0):
+        self.value = initial
+
+    def as_basic(self):
+        return Counter(self.value)
+
+    def as_shared(self):
+        return SharedCounter(self.value)
+
+class SharedCounter:
+    def __init__(self, initial=0):
+        self._value = mp.Value('i', initial, lock=False)
+        super().__init__(initial)
+
+    @property
+    def value(self):
+        return self._value.value
+
+    @value.setter
+    def value(self, new_value):
+        self._value.value = new_value
+
+
 class Pointer:
     def __init__(self, size, counter=0):
         self.counter = counter

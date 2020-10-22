@@ -1,5 +1,6 @@
 import reip
-from reip.stores import Store, PlasmaStore, QueueStore, Pointer, HAS_PYARROW
+import multiprocessing as mp
+from reip.stores import Store, PlasmaStore, QueueStore, Pointer, Counter, HAS_PYARROW
 
 
 class Producer(reip.Sink):
@@ -10,6 +11,7 @@ class Producer(reip.Sink):
         self.stores = {}
         self.head = Pointer(self.size)
         self.tail = Pointer(self.size)
+        # self._dropped = Counter()
         self.readers = []
         super().__init__(**kw)
 
@@ -37,6 +39,14 @@ class Producer(reip.Sink):
     def full(self):
         self._trim()
         return (self.head.counter - self.tail.counter) >= (self.size - 1)
+
+    # @property
+    # def dropped(self):
+    #     return self._dropped.value
+    #
+    # @dropped.setter
+    # def dropped(self, value):
+    #     self._dropped.value = value
 
     def _trim(self):
         '''Delete any stale items from the queue.'''
@@ -93,6 +103,7 @@ class Producer(reip.Sink):
                 # convert pointers to shared pointers
                 self.head = self.head.as_shared()
                 self.tail = self.tail.as_shared()
+                # self._dropped = self._dropped.as_shared()
             self.stores[store_id] = store
 
         # create a customer and a pointer.

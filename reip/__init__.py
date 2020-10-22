@@ -2,6 +2,7 @@ import time
 from .constants import *
 from . import exceptions
 from . import util
+from .util import status
 
 from .interface import *
 from . import stores

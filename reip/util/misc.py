@@ -1,5 +1,5 @@
 import os
-from functools import wraps, partial
+from functools import wraps
 import numpy as np
 
 
@@ -45,6 +45,13 @@ def decorator(__func__=None, **kw):
             return func(*a, **dict(kw, **kwi))
         return inner
     return decorated(__func__) if callable(__func__) else decorated
+
+
+def partial(func, *a, **kw):
+    @wraps(func)
+    def inner(*ai, **kwi):
+        return func(*a, *ai, **kw, **kwi)
+    return inner
 
 
 def resolve_call(func, *a, **kw):
@@ -105,25 +112,62 @@ def squeeze(x):
     return x[0] if isinstance(x, (list, tuple)) and len(x) == 1 else x
 
 
-def flatten(X, call=False):
+def flatten(X, args=(), call=False, **kw):
     if isinstance(X, (list, tuple)):
-        yield from (x for xs in X for x in flatten(xs, call=call))
+        yield from (x for xs in X for x in flatten(xs, call=call, args=args, **kw))
     elif call and callable(X):
-        yield from flatten(X(), call=call)
+        yield from flatten(X(*args, **kw), call=call, args=args, **kw)
     else:
         yield X
 
 
-def mergedict(*dicts):
-    if any(callable(d) for d in dicts):
-        return partial(_mergedicts, *dicts)
-    return _mergedicts(*dicts)
-
-def _mergedicts(*dicts):
+def mergedict(*dicts, args=(), call=True, **kw):
+    # if any(callable(d) for d in dicts):
+    #     return partial(_mergedicts, *dicts)
+    # return _mergedicts(*dicts)
     out = {}
-    for d in flatten(dicts, call=True):
+    for d in flatten(*dicts, *args, call=call, **kw):
         out.update(d)
     return out
+
+# @wraps(mergedict)
+# def _mergedicts(dicts, *a, **kw):
+#     out = {}
+#     for d in flatten(dicts, *a, call=True, **kw):
+#         out.update(d)
+#     return out
+
+
+# >     1d:  1d02h05m
+# >    1hr:  1h03m04s
+# > 10mins:  11m05s
+# >  2mins:   2m05s
+#         : 90.065s
+#         :  2.065s
+
+_TIME_BREAKS = [
+    (60 * 60 * 24 * 7, '{w:.0f}w:{d:.0f}d:{h:.0f}h'.format),
+    (60 * 60 * 24,     '{d:.0f}d:{h:.0f}h:{m:.0f}m'.format),
+    (60 * 60,          '{h:.0f}h:{m:.0f}m:{s:.0f}s'.format),
+    (60 * 10,          '{m:.0f}m:{s:.0f}s'.format),
+    (60 * 1,           '{m:.0f}m:{s:.1f}s'.format),
+    (0,                '{s:.3f}s'.format),
+]
+
+def _factor_time(t):
+    wks, days = divmod(t, 60*60*24*7)
+    days, hrs = divmod(t, 60*60*24)
+    hrs, mins = divmod(hrs, 60*60)
+    mins, secs = divmod(mins, 60)
+    return {'w': wks, 'd': days, 'h': hrs, 'm': mins, 's': secs}
+
+def human_time(secs):
+    suffix = ' ago' if secs < 0 else ''
+    secs = abs(secs)
+    return '({}{})'.format(next((
+        fmt(**_factor_time(secs))
+        for t, fmt in _TIME_BREAKS if secs >= t
+    )), suffix)
 
 
 # class MpValueProp:

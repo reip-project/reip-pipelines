@@ -1,10 +1,63 @@
 import time
+import collections
 import numpy as np
+import reip
 
+
+class OnlineStats:
+    def __init__(self, history=0):
+        self.count = 0
+        self.mean = 0
+        self._var = 0
+        self.last = 0
+        self.samples = collections.deque(maxlen=history) if history else None
+
+    def __getstate__(self):
+        return dict(self.__dict__, samples=None)
+
+    def __str__(self):
+        return '(total = {total:.4f} avg = {mean:.6f} ± {std:.6f}, n = {count:8,})\n'.format(
+            total=self.mean * self.count, mean=self.mean, std=self.std,
+            count=self.count)
+
+    def __len__(self):
+        return self.count
+
+    def append(self, x):
+        self.last = x
+        # online mean
+        last_mean = self.mean
+        self.mean = (self.mean * self.count + x) / (self.count + 1)
+        # online std deviation
+        if self.count:
+            self._var = self._var + (x - last_mean)*(x - self.mean)
+        #
+        self.count += 1
+        if self.samples is not None:
+            self.samples.append(x)
+
+    def extend(self, xs):
+        for x in xs:
+            self.append(x)
+
+    @property
+    def sum(self):
+        return self.mean * self.count
+
+    @property
+    def std(self):
+        return np.sqrt(self.var)
+
+    @property
+    def var(self):
+        return self._var / (self.count - 1) if self.count > 1 else 0
+
+
+_BLANK = ''
 
 class Stopwatch:
     class lap:
-        def __init__(self, sw, name=''):
+        def __init__(self, sw, name=_BLANK):
             self.sw = sw
             self.name = name
 
@@ -14,20 +67,25 @@ class Stopwatch:
         def __exit__(self, exc_type, exc_val, exc_tb):
             self.sw.tock(self.name)
 
-    def __init__(self, title='', max_samples=1e+6):
+    def __init__(self, title='', max_samples=500):
         self._max_samples = max_samples
         self._title = title
         self._dt = self._estimate_dt()[0]
         self.reset()
 
+    # def __getstate__(self):
+    #     return dict(self.__dict__, _samples={})
+
     def reset(self):
-        self._samples = {}
+        # self._samples = {}
         self._ticks = {}
-        self._sums = {}
-        self._counts = {}
+        self._stats = {}
+        # self._sums = {}
+        # self._counts = {}
+        # self._stds = {}
 
     def __contains__(self, key):
-        return key in self._samples
+        return key in self._stats
 
     def _estimate_dt(self, n=100):
         dts = []
@@ -39,102 +97,100 @@ class Stopwatch:
         dt = np.min(dts[dts > np.mean(dts) / 2])
         return dt, dts
 
-    def tick(self, name=''):
-        if name not in self._samples:
-            self._samples[name] = []
-            self._sums[name] = 0
-            self._counts[name] = 0
+    def tick(self, name=_BLANK):
+        if name not in self._stats:
+            self._stats[name] = OnlineStats(self._max_samples)
         self._ticks[name] = time.time()
 
-    def tock(self, name='', samples=True):
+    def tock(self, name=_BLANK, samples=True):
         # Correct for time.time() execution time (dt) and Lap class overhead (approx 1 us)
         t = (self._ticks[name], time.time() - self._dt - 1e-6)
-        self._sums[name] += max(0, t[1] - t[0])
-        self._counts[name] += 1
-        if samples:
-            s = self._samples[name]
-            s.append(t)
-            if len(s) > self._max_samples:
-                self._samples[name] = s[len(s)//2:]
+        self._stats[name].append(max(0, t[1] - t[0]))
+        # self._sums[name] += max(0, t[1] - t[0])
+        # self._counts[name] += 1
+        # if samples:
+        #     s = self._samples[name]
+        #     s.append(t)
+        #     if len(s) > self._max_samples:
+        #         self._samples[name] = s[len(s)//2:]
 
-    def notock(self, name=''):
+    def notock(self, name=_BLANK):
         self._ticks.pop(name, None)
 
-    def ticktock(self, delta, name=''):
-        self._sums[name] += max(0, delta)
-        self._counts[name] += 1
+    def ticktock(self, delta, name=_BLANK):
+        self._stats[name].append(delta)
+        # self._sums[name] += max(0, delta)
+        # self._counts[name] += 1
 
-    def iter(self, iterable, name='', samples=True):
-        self.tick(name, samples=samples)
+    def iter(self, iterable, name=_BLANK, samples=True):
+        self.tick(name)
         for item in iterable:
-            self.tock(name)
+            self.tock(name, samples=samples)
             yield item
-            self.tick(name, samples=samples)
+            self.tick(name)
         self.notock(name)
 
-    def elapsed(self, name=''):
+    def elapsed(self, name=_BLANK):
         return time.time() - self._ticks[name]
 
-    def last(self, name=''):
-        ts = self._samples.get(name)
+    def last(self, name=_BLANK):
+        ts = self._stats[name]
         return ts[-1][1] - ts[-1][0] if ts else None
 
-    def avg(self, name=''):
-        return self._sums[name] / self._counts[name]
+    def avg(self, name=_BLANK):
+        return self._stats[name].mean
 
-    def total(self, name=''):
-        return self._sums[name]
+    def total(self, name=_BLANK):
+        return self._stats[name].sum
 
     def sleep(self, delay=1e-6, name="sleep"):
         self.tick(name)
         time.sleep(delay)
         self.tock(name, samples=False)
 
-    def __call__(self, name=""):
+    def __call__(self, name=_BLANK):
         return self.lap(self, name)
 
     def __enter__(self):
         return self.lap(self).__enter__()
 
-    def stats(self, name=""):
-        if name not in self._samples:
+    def stats(self, name=_BLANK):
+        if name not in self._stats:
             raise ValueError(f'Measurement unavailable for lap {name!r}')
-        samples = np.array(self._samples[name]).reshape(-1, 2) # reshape for len(0)
-        intervals = samples[:, 1] - samples[:, 0]
-        total = self._sums[name]
-        count = self._counts.get(name, len(samples))
-        return total, total/count if count else 0, np.std(intervals), count
+        return self._stats[name]
 
     def __getitem__(self, key):
         return self.total(key)
 
     def __str__(self):
-        total = self._sums.get('')
+        total = self._stats[_BLANK].sum if _BLANK in self else 0
 
-        if total and 'service' not in self._samples:
-            added = sum(self._sums[k] for k in self._samples if k)
-            self._samples["service"] = [(0, total - added)]
-            self._sums["service"] = total - added
+        if total and 'service' not in self._stats:
+            added = sum(self._stats[k].sum for k in self._stats if k)
+            service = self._stats['service'] = OnlineStats()
+            service.append(total - added)
 
-        name_width = max((len(k) for k in self._samples), default=0) + 2
-        stats = (
-            (k, self.stats(k), 100 * self._sums[k] / total if total else 0)
-            for k in self._samples if k)
-        return (f'Total {total:.4f} sec in {self._title}:\n' if total else '') + (
+        name_width = max((len(k) for k in self._stats), default=0) + 2
+        return ('Total {:.4f} sec in {}:\n'.format(total, self._title) if total else '') + (
             ''.join(
-            f'    {0:.4f} ({percent:5.2f}%) - {name:<{name_width}} '
-            f'(avg = {avg:.6f} ± {std:.6f}, n = {count:8,})\n'
-            for (name, (total, avg, std, count), percent) in stats
+            ('    ({percent:5.2f}%) - {name:<{name_width}} '
+             '(avg = {mean:.6f} ± {std:.6f}, n = {count:8,}) {total}\n').format(
+                name=name, name_width=name_width,
+                total=reip.util.human_time(stats.sum),
+                percent=100. * stats.sum / total if total else 0,
+                mean=stats.mean, std=stats.std, count=stats.count,
+             )
+            for name, stats in self._stats.items() if name
         ) or '-- no stats available --')
 
     def plot(self, cols=2, figsize=(16, 9)):
         import matplotlib.pyplot as plt
         print(self)
         plt.figure(figsize=figsize)
-        for i, k in enumerate(self._samples, 1):
-            plt.subplot(cols, int(np.ceil(len(self._samples) / cols)), i)
+        for i, k in enumerate(self._stats, 1):
+            plt.subplot(cols, int(np.ceil(len(self._stats[k].samples) / cols)), i)
             # plot distribution
-            samples = np.array(self._samples[k])
+            samples = np.array(self._stats[k].samples[k])
             plt.hist(samples[:, 1] - samples[:, 0], bins=100)
             # set title with stats
             total, avg, std, count = self.stats(k)

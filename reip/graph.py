@@ -200,11 +200,13 @@ class Graph(BaseContext):
             self.wait(duration)
 
     @contextmanager
-    def run_scope(self, raise_exc=True):
-        self.log.info(text.green('Starting'))
+    def run_scope(self, wait=True, raise_exc=True):
+        self.log.debug(text.green('Starting'))
+        controlling = False
         try:
-            self.spawn()
-            self.log.info(text.green('Ready'))
+            self.spawn(wait=wait)
+            controlling = self.controlling
+            self.log.debug(text.green('Ready'))
             yield self
         except KeyboardInterrupt:
             self.log.info(text.yellow('Interrupting'))
@@ -213,7 +215,9 @@ class Graph(BaseContext):
             try:
                 self.join(raise_exc=raise_exc)
             finally:
-                self.log.info(text.green('Done'))
+                self.log.debug(text.green('Done'))
+                if controlling:
+                    print(self.stats_summary())
 
     def wait(self, duration=None):
         for _ in iters.timed(iters.sleep_loop(self._delay), duration):
@@ -248,8 +252,10 @@ class Graph(BaseContext):
         self.controlling = _ready_flag is None
         if self.controlling:
             _ready_flag = mp.Event()
+
         for block in self.blocks:
             block.spawn(wait=False, _ready_flag=_ready_flag, **kw)
+
         if wait:
             self.wait_until_ready()
         if self.controlling:
@@ -257,7 +263,7 @@ class Graph(BaseContext):
 
     def wait_until_ready(self):
         while not self.ready and not self.error and not self.done:
-            time.sleep(self._delay)
+            time.sleep(0.1)#self._delay
 
     def join(self, close=True, terminate=False, raise_exc=None, **kw):
         if close:
@@ -290,6 +296,16 @@ class Graph(BaseContext):
         for block in self.blocks:
             block.raise_exception()
 
+    def __export_state__(self):
+        return {
+            'blocks': [b.__export_state__() for b in self.blocks]
+        }
+
+    def __import_state__(self, state):
+        if state:
+            for b, update in zip(self.blocks, state.pop('blocks', ())):
+                b.__import_state__(update)
+
     def stats(self):
         return {
             'name': self.name,
@@ -306,9 +322,11 @@ class Graph(BaseContext):
                 s for s in (b.status() for b in self.blocks) if s))
         )
 
-    def print_stats(self):
-        for block in self.blocks:
-            block.print_stats()
+    def stats_summary(self):
+        return text.block_text(
+            f'[{self.name}]',
+            *(s for s in (b.stats_summary() for b in self.blocks) if s)
+        )
 
 
 # create an initial default graph
