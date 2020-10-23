@@ -40,7 +40,7 @@ MODEL_DIR = './models'
 #     def run(self):
 #         self.graph.run()
 
-def sonyc(test=True, status_period=5):
+def sonyc(test=True, status_period=20):
 
     #######################################################
     # Graph Definition - Nothing is actually executed here.
@@ -54,30 +54,29 @@ def sonyc(test=True, status_period=5):
     #######################################################
 
     # audio source, 1 second and 10 second chunks
-    audio1s = B.audio.Mic(block_duration=1, channels=1)#.to(B.Debug('audio pcm'))
-    audio10s = audio1s.to(B.GatedRebuffer(
-        functools.partial(B.temporal_coverage, 10),
-        duration=10))
+    audio1s = B.audio.Mic(block_duration=1, channels=1, device="hw:2,0")#.to(B.Debug('audio pcm'))
+    audio10s = audio1s.to(B.GatedRebuffer(functools.partial(B.temporal_coverage, 10), duration=10))
 
     # audio(10s) -> wav file -> encrypted -> tar.gz
-    encrypted = (
-        audio10s
-        .to(B.audio.AudioFile('audio/{time}.wav'))
-        .to(B.encrypt.TwoStageEncrypt(
-            os.path.join(DATA_DIR, 'encrypted/{time}.tar.gz'),
-            rsa_key='test_key.pem')))
+    # encrypted = (
+    #     audio10s
+    #     .to(B.audio.AudioFile('audio/{time}.wav'))
+    #     .to(B.encrypt.TwoStageEncrypt(
+    #         os.path.join(DATA_DIR, 'encrypted/{time}.tar.gz'),
+    #         rsa_key='test_key.pem'))
+    # )
 
-    encrypted.to(B.TarGz('audio.gz/{time}.tar.gz'))
-    encrypted.to(B.encrypt.TwoStageDecrypt(
-        os.path.join(DATA_DIR, 'audio.decrypt/{time}.wav'),
-        rsa_key='test_key_private.pem'))
+    # encrypted.to(B.TarGz('audio.gz/{time}.tar.gz'))
+    # encrypted.to(B.encrypt.TwoStageDecrypt(
+    #     os.path.join(DATA_DIR, 'audio.decrypt/{time}.wav'),
+    #     rsa_key='test_key_private.pem'))
 
     (audio10s
      .to(B.audio.AudioFile(os.path.join(DATA_DIR, 'audio/{time}.wav')))
      .to(B.TarGz(os.path.join(DATA_DIR, 'audio.gz/{time}.tar.gz'))))
 
     # to spectrogram png
-    #(audio10s
+    # (audio10s
     # .to(B.audio.Stft())
     # .to(B.Debug('Spec'))
     # .to(B.audio.Specshow('data/plots/{time}.png')))
@@ -87,7 +86,7 @@ def sonyc(test=True, status_period=5):
     spl = (
         audio1s
         .to(B.audio.SPL(calibration=72.54, weighting=weightings))
-        .to(B.Debug('SPL', period=4)))
+        .to(B.Debug('SPL', period=status_period)))
     # write to file
     spl_headers = [f'l{w}eq' for w in weightings.lower()]
     (spl
@@ -117,7 +116,7 @@ def sonyc(test=True, status_period=5):
                     n_mels=64, hop_length=160,
                 ), name='embedding-model'
             ))
-            .to(B.Debug('Embedding', period=4))
+            .to(B.Debug('Embedding', period=status_period))
         )
         # write to file
         (emb
@@ -152,21 +151,21 @@ def sonyc(test=True, status_period=5):
     # watch for created files
     # B.os_watch.Created('./*.gz').to(B.Debug('File Event!!'))
 
-    fqdn = socket.getfqdn()
-    get_upload_file_meta = lambda f, meta: {
-        'fqdn': fqdn,
-        'data_dir': os.path.basename(os.path.dirname(f)),
-        'test': int(test),
-    }
-    get_upload_status_meta = lambda d, meta: {
-        'fqdn': fqdn,
-        'test': int(test),
-    }
-
-    state = B.AsDict(
-        spl_headers, class_names, max_rate=1. / 2,
-        prepare=lambda c, x: (c, np.squeeze(np.moveaxis(x, 1, 0) if isinstance(c, (list, tuple)) else x))
-    )(spl, clsf, strategy='latest').to(B.Debug('audio analysis'))  # size=1, block=True
+    # fqdn = socket.getfqdn()
+    # get_upload_file_meta = lambda f, meta: {
+    #     'fqdn': fqdn,
+    #     'data_dir': os.path.basename(os.path.dirname(f)),
+    #     'test': int(test),
+    # }
+    # get_upload_status_meta = lambda d, meta: {
+    #     'fqdn': fqdn,
+    #     'test': int(test),
+    # }
+    #
+    # state = B.AsDict(
+    #     spl_headers, class_names, max_rate=1. / 2,
+    #     prepare=lambda c, x: (c, np.squeeze(np.moveaxis(x, 1, 0) if isinstance(c, (list, tuple)) else x))
+    # )(spl, clsf, strategy='latest').to(B.Debug('audio analysis'))  # size=1, block=True
     # , 'embedding', emb
     # status = B.Lambda(
     #     reip.util.partial(reip.util.mergedict, lambda meta: (
