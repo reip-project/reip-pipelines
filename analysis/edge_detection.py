@@ -149,16 +149,17 @@ def detect_all_edges(data, filenames):
 if __name__ == '__main__':
     data_path = "/home/yurii/data"
     # filegroup = "/aligned/car_buzzer_and_hummer_grid_%d.wav"
-    filegroup = "/aligned/sync_line_56_and_13_%d.wav"
+    # filegroup = "/aligned/sync_line_56_and_13_%d.wav"
+    filegroup = "/aligned/sine_buzzer_redo_%d.wav"
     channel = 0
 
     data, filenames = load_data(data_path + filegroup, plot=True, save_plot=True, plot_channel=channel)
 
     # detect_edges(data[0][:, 0], plot=True, plot_all=True, save=False)
 
-    detect_all_edges(data, filenames)
+    # detect_all_edges(data, filenames)
 
-    # edges = [detect_edges(data[i][:, channel], plot=True, save=True, title=filenames[i][:-4]) for i in range(6)]
+    edges = [detect_edges(data[i][:, channel], plot=True, save=True, title=filenames[i][:-4]) for i in range(6)]
     # print(edges)
 
     plt.show()

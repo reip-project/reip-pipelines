@@ -110,7 +110,7 @@ def _plot_lines(results, mbps=False):
 def _plot_results(results, id=DEFAULT_ID):
     plt.figure(figsize=(8, 6))
 
-    ax = plt.subplot(2, 1, 1, title="Buffers Throughput")
+    ax = plt.subplot(2, 1, 1, title="Buffer Throughput")
     _plot_lines(results, mbps=False)
     plt.legend()
     plt.gca().xaxis.set_visible(False)

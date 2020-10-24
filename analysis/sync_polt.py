@@ -37,6 +37,7 @@ if __name__ == '__main__':
     plt.title("Synchronization Signal", pad=10)
     plt.plot([0, duration], [0, 0], "--", color="grey")
     plt.plot(0, 0)  # skip color
+    plt.plot(0, 0)  # skip color
     plt.plot(data[offset:offset+duration+1, -1], "-", label="Channel 16", linewidth=2)
     plt.xlim([0, duration])
     plt.ylim([-2**15 - 2200, 2**15 + 2200])
