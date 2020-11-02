@@ -18,16 +18,19 @@ setuptools.setup(
         'numpy',
         # 'pyarrow',
         'tflit>=0.0.13',
-        'remoteobj>=0.2.2'
+        'remoteobj>=0.2.6',
         # utils
         'pycrypto',
         # general
-        'fire',
-        'colorlog',
+        'fire', 'colorlog',
         # 'netswitch',
+        'watchdog',
+
+        # status messages
+        'ifcfg', 'ixconfig>=0.1.0',
     ],
     extras_require={
-        'audio': ['pyaudio'], # 'librosa',
+        'audio': ['pyaudio', 'librosa'],
         'video': ['opencv-python'],  # already installed on Jetson by default
         'vis': ['matplotlib'],
         'docs': ['sphinx!=1.3.1', 'sphinx_theme', 'sphinx-gallery'],
