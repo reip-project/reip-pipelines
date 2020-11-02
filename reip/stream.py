@@ -25,7 +25,8 @@ class Stream:
     terminated = False
     signal = None
     def __init__(self, sources, get_loop=None, auto_next=True, should_wait=True,
-                 timeout=None, squeeze=False, name='', slice_key=None, _sw=None, **kw):
+                 timeout=None, squeeze=False, name='', slice_key=None,
+                 strategy=all, _sw=None, **kw):
         self.name = name or ''
         self.sources = sources
         self._loop_kw = kw
@@ -36,6 +37,7 @@ class Stream:
         self._squeeze = squeeze
         self._slice_key = slice_key
         self._sw = _sw or reip.util.Stopwatch(str(self))
+        self._strategy = strategy
 
 
     def __str__(self):
@@ -88,7 +90,7 @@ class Stream:
                 return False
             if not self.sources and not self.should_wait:
                 return False
-            if self.running and all(not s.empty() for s in self.sources):
+            if self.running and self._strategy(not s.empty() for s in self.sources):
                 return True
             if not block or not self.should_wait:
                 return False

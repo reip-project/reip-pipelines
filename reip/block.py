@@ -72,7 +72,8 @@ class Block:
     processed = 0
 
     def __init__(self, n_source=1, n_sink=1, queue=1000, blocking=False,
-                 max_rate=None, max_processed=None, graph=None, name=None, **kw):
+                 max_rate=None, max_processed=None, graph=None, name=None,
+                 source_strategy=all, **kw):
         self._except = remoteobj.LocalExcept()
         self.name = name or f'{self.__class__.__name__}_{id(self)}'
         self.parent_id, self.task_id = reip.Graph.register_instance(self, graph)
@@ -89,6 +90,7 @@ class Block:
             Producer(queue, task_id=self.task_id)
             for _ in range(n_sink or 0)
         ]
+        self._source_strategy = source_strategy
 
         self.max_rate = max_rate
         self.max_processed = max_processed
@@ -220,7 +222,9 @@ class Block:
                 time.sleep(self._delay)
                 with self._sw():
                     # create a stream from sources with a custom control loop
-                    self._stream = reip.Stream.from_block_sources(self, name=self.name, _sw=self._sw)
+                    self._stream = reip.Stream.from_block_sources(
+                        self, name=self.name, _sw=self._sw,
+                        strategy=self._source_strategy)
                     with self._stream:
                         # block initialization
                         with self._sw('init'), self._except('init'):
