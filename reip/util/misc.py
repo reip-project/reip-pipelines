@@ -130,6 +130,13 @@ def mergedict(*dicts, args=(), call=True, **kw):
         out.update(d)
     return out
 
+
+def matchmany(text, *patterns):
+    return {
+        k: v for m in (re.search(p, text) for p in patterns) if m
+        for k, v in m.groupdict().items()}
+
+
 # @wraps(mergedict)
 # def _mergedicts(dicts, *a, **kw):
 #     out = {}

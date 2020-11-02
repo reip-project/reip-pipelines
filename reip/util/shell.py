@@ -1,6 +1,7 @@
 import subprocess
 import shlex
 import collections
+import reip
 
 ShellResult = collections.namedtuple('ShellResult', 'out err cmd')
 
@@ -69,7 +70,9 @@ class ShellArg:
                     '--' if len(k) > 1 else '-', k,
                     '' if v is True else shlex.quote(str(v)) if quote else v
                 ).strip()
-                for k, v in self.value.items() if v is not None and v is not False)
+                for k, v in self.value.items()
+                if v is not None and v is not False
+            )
         return shlex.quote(str(self.value)) if quote else str(self.value)
 
     def __repr__(self):
@@ -77,3 +80,25 @@ class ShellArg:
 
     def __str__(self):
         return self._format(quote=True)
+
+
+# Misc Commands
+
+def git(*cmd, root=None):
+    '''Run a git command in the sonycnode repository.'''
+    return run('git', dict(C=root), *cmd).out.strip()
+
+LSUSB_FMT = (
+    r'Bus\s+(?P<bus>\d+)\s+Device\s+(?P<device>\d+).+ID\s(?P<id>\w+:\w+)\s(?P<name>.+)\s*$')
+def lsusb():
+    res = run('lsusb')
+    return [] if res.err else [
+        dict(d, dev='/dev/bus/usb/{}/{}'.format(d['bus'], d['device']))
+        for d in (reip.util.matchmany(l, LSUSB_FMT) for l in res.out.splitlines())
+    ]
+
+
+def default_routes(first=True):
+    res = run('route')
+    routes = [x.split()[-1] for x in res.out.splitlines() if x.startswith('default')]
+    return routes and routes[0] or None if first else routes

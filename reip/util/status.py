@@ -95,7 +95,7 @@ def wifi(wlan='wlan*', meta=None):
 
 
 @register_stats
-def cellular(cell_name='ppp0', cell_tty_commands='', meta=None):
+def cellular(cell_name='ppp0', cell_tty_commands='/dev/ttyUSB2', meta=None):
     if os.path.exists('/sys/class/net/%s' % cell_name):
         return {"cell_sig_stre": netswitch.cell.signal_strength(cell_tty_commands)}
     return {}
@@ -114,6 +114,23 @@ def network(meta=None):
         'eth0_mac': eth.get('ether'),
         'eth0_ip': eth.get('inet'),
     }
+
+
+TYPES = {'bool': bool, 'int': int, 'str': str, 'float': float, '': lambda x: x}
+def _search_usb(devices, pattern, cast=None):
+    # find match
+    match = next((
+        d['name'] for d in devices
+        if re.search(pattern, d['name'])), None)
+    # cast to a type?
+    for t in (cast or '').split('|'):
+        match = TYPES[t](match)
+    return match
+
+@register_stats
+def usb(devices):
+    found_devices = reip.util.shell.lsusb()
+    return {k: _search_usb(found_devices, **kw) for k, kw in devices.items()}
 
 
 def base(meta=None):
