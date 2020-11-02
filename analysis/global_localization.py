@@ -105,7 +105,7 @@ if __name__ == '__main__':
 
     in_to_m = 0.0254
     w, h = 804 * in_to_m, 440 * in_to_m
-    ref_pos = np.array([[784, 20], [785, 416], [18, 18], [18, 420], [330, 415], [330, 7]]) * in_to_m
+    ref_pos = np.array([[784, 20], [785, 416], [18, 18], [18, 420], [330, 415], [330, 8]]) * in_to_m
     ref_pos = np.concatenate([ref_pos, 57 * in_to_m * np.ones((6, 1))], axis=1)
     bbox = ((0, w), (0, h), (0, 3))
     print(ref_pos)
@@ -116,14 +116,14 @@ if __name__ == '__main__':
     suc = suc & (np.abs(pos[:, 2] - 1.45) < 0.1)
     print(suc, "\n", pos)
 
-    plt.figure("Rooftop", (12, 7))
+    plt.figure("Rooftop", (10, 6))
     # plt.title(filegroup)
     for i in range(6):
-        plt.plot(ref_pos[i, 0], ref_pos[i, 1], "o", label="Sensor "+str(i+1))
+        plt.plot(ref_pos[i, 0], ref_pos[i, 1], "o", label="Sensor "+str(i+1), markersize=9)
     plt.plot([0, w, w, 0, 0], [0, 0, h, h, 0], "k", label="Rooftop")
     # plt.plot(w+1, 0)  # make space for legend
 
-    plt.plot(pos[:, 0], pos[:, 1], "gx", label="Sources")
+    plt.plot(pos[:, 0], pos[:, 1], "g*", label="Sources", markersize=8)
     # plt.plot(pos[suc, 0], pos[suc, 1], "gx", label="Good Fit")
     # plt.plot(pos[~suc, 0], pos[~suc, 1], "rx", label="Bad Fit")
 
@@ -132,7 +132,7 @@ if __name__ == '__main__':
     eps = 0.02
     plt.xlim([-eps, w+eps])
     plt.ylim([h+eps, -eps])
-    plt.legend(loc="lower right", bbox_to_anchor=(0.89, 0.035))
+    plt.legend(loc="lower right", bbox_to_anchor=(0.91, 0.013))
     # plt.axis("equal")
     plt.tight_layout()
     plt.savefig("global_localization.png", dpi=300)

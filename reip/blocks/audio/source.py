@@ -32,7 +32,10 @@ class Mic(reip.Block):
         self.fmt = np.dtype(fmt)
         self._is_float = self.fmt == np.float32
         self.kw = kw
-        super().__init__(n_source=0)
+        super().__init__()
+
+        self._q = reip.stores.Producer()
+        self.sources[0] = self._q.gen_source()
 
     def search_devices(self, query, min_input=1, min_output=0):
         '''Search for an audio device by name.'''
@@ -64,7 +67,6 @@ class Mic(reip.Block):
             self.sr, self.channels, self.blocksize))
 
         # start audio streamer
-        self._q = queue.Queue()
         self._pastream = self._pa.open(
             input_device_index=device['index'],
             frames_per_buffer=self.blocksize,
@@ -78,13 +80,12 @@ class Mic(reip.Block):
         '''Append frames to the queue - blocking API is suuuuuper slow.'''
         if status_flags:
             self.log.error('Input overflow status: {}'.format(status_flags))
-        t0 = time.time()  # time_info['input_buffer_adc_time'] or 
-        self._q.put((buf, t0))
+        t0 = time.time()  # time_info['input_buffer_adc_time'] or
+        self._q.put((buf, {'time': t0}))
         return None, pyaudio.paContinue
 
-    def process(self, meta=None):
+    def process(self, pcm, meta):
         # buff = self._pastream.read(self.blocksize, exception_on_overflow=False)
-        pcm, t0 = self._q.get()
         pcm = np.frombuffer(pcm, dtype=self.fmt)
 
         if not self._is_float:
@@ -93,9 +94,8 @@ class Mic(reip.Block):
         if self.mono is not None:
             pcm = pcm[:,self.mono]
         return [pcm], {
-            'input_latency': self._pastream.get_input_latency(),
-            'output_latency': self._pastream.get_output_latency(),
-            'time': t0,
+            # 'input_latency': self._pastream.get_input_latency(),
+            # 'output_latency': self._pastream.get_output_latency(),
             'sr': self.sr,
         }
 

@@ -3,7 +3,7 @@ import numpy as np
 import reip
 
 
-class SomeArray(reip.Block):
+class Array(reip.Block):
     exec_mode = 'process'
     def __init__(self, shape, **kw):
         self.shape = shape
@@ -14,20 +14,21 @@ class SomeArray(reip.Block):
         self.array = np.ones(self.shape, dtype=np.uint8)
 
     def process(self, meta):
-        return [self.array], {'shape': self.shape}
+        return [self.array], {'shape': self.shape, 'i': self.processed}
 
     def finish(self):
         self.array = None
+SomeArray = Array
 
 
-class SomeTransform(reip.Block):
+class Op(reip.Block):
     def __init__(self, offset=0, **kw):
         self.offset = offset
         super().__init__(n_source=None, **kw)
 
     def process(self, *data, meta=None):
         return data, {'offset': self.offset}
-
+SomeTransform = Op
 
 class TimeBomb(reip.Block):
     clock = None

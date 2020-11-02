@@ -13,10 +13,12 @@ def sleep_loop(delay=1e-6):
         yield delay
         time.sleep(delay)
 
-def timed(it, duration=None, error=False):
+def timed(it=None, duration=None, error=False):
     '''Run a loop for a predetermined amount of time.'''
     if isinstance(it, (float, int)):
         duration, it = it, loop()
+    if it is None:
+        it = loop()
     if not duration:
         yield from it
         return
@@ -30,8 +32,11 @@ def timed(it, duration=None, error=False):
         yield x
 
 
-def throttled(it, rate=None, delay=1e-6):
+def throttled(it=None, rate=None, interval=None, delay=1e-6):
     '''Throttle a loop to take '''
+    if it is None:
+        it = loop()
+    rate = 1. / interval if interval else rate
     if not rate:
         yield from it
         return

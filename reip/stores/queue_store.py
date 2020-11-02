@@ -9,6 +9,7 @@ import time
 import threading
 import multiprocessing as mp
 from ctypes import c_bool
+import remoteobj
 from . import SharedPointer, Store, Customer, Queue
 
 
@@ -26,22 +27,28 @@ class QueueCustomer(Customer):
         self.data_queue = Queue(serializer)
         self.store.customers.append(self)  # circular reference - garbage collection issue?
 
+    def empty(self):
+        return self.store.quit.value or super().empty()
+
     def next(self):
         self.cache = None
         super().next()
 
     def _get(self):
         if self.cache is None:
-            if self.store.quit.value:
-                raise RuntimeError('Store is not running.')
-            self.requested.value = True
-            v = self.data_queue.get()
+            if not self.store.error.value:
+                if self.store.quit.value:
+                    raise RuntimeError('Store is not running.')
+                self.requested.value = True
+                v = self.data_queue.get()
             if self.store.error.value:
                 exc = RuntimeError('Exception {} in {}'.format(v[0], self.store.__class__.__name__))
                 exc.__cause__ = _RemoteTraceback(v[1])
                 raise exc
             self.cache = v
         return self.cache
+
+
 
 
 # class QueuePointer(SharedPointer):

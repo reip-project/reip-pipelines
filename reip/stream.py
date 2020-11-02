@@ -60,11 +60,11 @@ class Stream:
         '''A master loop function that will contain'''
         return iters.throttled(
             iters.timed(iters.loop(), duration),
-            max_rate, delay or cls._delay)
+            max_rate, delay=delay or cls._delay)
 
     def __iter__(self):
         self._reset()
-        for _ in self.get_loop():
+        for _ in self._sw.iter(self.get_loop(), 'sleep'):
             inputs = self.get()
             if self.terminated or (inputs is None and not self.should_wait):
                 return
@@ -109,20 +109,21 @@ class Stream:
             # otherwise it was a signal, retry
 
     def _get(self):
-        inputs = [s.get_nowait() for s in self.sources]
+        with self._sw('source'):
+            inputs = [s.get_nowait() for s in self.sources]
 
-        if inputs and all(reip.CLOSE.check(x) for x, meta in inputs):
-            self.signal = reip.CLOSE  # block will send to sinks
-            self.next()
-            self.close()
-            return
+            if inputs and all(reip.CLOSE.check(x) for x, meta in inputs):
+                self.signal = reip.CLOSE  # block will send to sinks
+                self.next()
+                self.close()
+                return
 
-        if inputs and any(reip.TERMINATE.check(x) for x, meta in inputs):
-            self.signal = reip.TERMINATE  # block will send to sinks
-            self.next()
-            self.terminate()
-            return
-        return prepare_input(inputs)
+            if inputs and any(reip.TERMINATE.check(x) for x, meta in inputs):
+                self.signal = reip.TERMINATE  # block will send to sinks
+                self.next()
+                self.terminate()
+                return
+            return prepare_input(inputs)
 
     def retry(self):
         self._retry = True

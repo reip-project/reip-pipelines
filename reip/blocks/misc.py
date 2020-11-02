@@ -1,4 +1,5 @@
 import time
+import fnmatch
 import itertools
 import numpy as np
 
@@ -49,13 +50,38 @@ class Meta(reip.Block):
         }
 
 
-class Dict(reip.Block):
+# class Dict(reip.Block):
+#     '''Merge block outputs into a dict.'''
+#     def __init__(self, meta, *a, **kw):
+#         super().__init__(*a, **kw)
+#
+#     def process(self, *xs, meta=None):
+#         return [xs], {}
+
+class AsDict(reip.Block):
     '''Merge block outputs into a dict.'''
-    def __init__(self, meta, *a, **kw):
-        super().__init__(*a, **kw)
+    def __init__(self, *columns, prepare=lambda c, x: (c, x), meta=None, **kw):
+        self.columns = columns
+        self.prepare = prepare
+        self.meta_keys = reip.util.as_list(meta or ())
+        super().__init__(n_source=len(columns), **kw)
 
     def process(self, *xs, meta=None):
-        return [xs], {}
+        data = {}
+        # set data buffer keys
+        for c, x in zip(self.columns, xs):
+            c, x = self.prepare(c, x)
+            if isinstance(c, (list, tuple, np.ndarray)):
+                data.update(zip(c, reip.util.as_iterlike(x)))
+            else:
+                data[c] = x
+        # set meta keys
+        if self.meta_keys:
+            data.update({
+                k: meta[k] for k in meta
+                if any(fnmatch.fnmatch(k, p) for p in self.meta_keys)
+            })
+        return [data], {}
 
 
 class Sleep(reip.Block):
@@ -134,12 +160,12 @@ class Results(reip.Block):
 
 
 class Lambda(reip.Block):
-    def __init__(self, func, name=None, **kw):
+    def __init__(self, func, name=None, n_source=None, **kw):
         self.func = func
         name = name or self.func.__name__
         if name == '<lambda>':
             name = '_lambda_'  # how to get the signature?
-        super().__init__(name=name, **kw)
+        super().__init__(name=name, n_source=n_source, **kw)
 
     def process(self, *xs, meta=None):
         return self.func(*xs, meta=meta)

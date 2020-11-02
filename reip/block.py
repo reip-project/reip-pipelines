@@ -68,13 +68,13 @@ class Block:
     _stream = None
     _delay = 1e-6
     parent_id, task_id = None, None
-    ready = done = False
+    started = ready = done = _terminated = False
     processed = 0
 
     def __init__(self, n_source=1, n_sink=1, queue=1000, blocking=False,
                  max_rate=None, max_processed=None, graph=None, name=None,
                  source_strategy=all, **kw):
-        self._except = remoteobj.LocalExcept()
+        self._except = remoteobj.LocalExcept(raises=True)
         self.name = name or f'{self.__class__.__name__}_{id(self)}'
         self.parent_id, self.task_id = reip.Graph.register_instance(self, graph)
 
@@ -104,8 +104,10 @@ class Block:
 
     def _reset_state(self):
         # state
+        self.started = False
         self.ready = False
         self.done = False
+        self._terminated = False
         # stats
         self.processed = 0
         self._sw.reset()
@@ -117,7 +119,7 @@ class Block:
              if self._exception is not None else 'error') if self.error else
             ('terminated' if self.terminated else 'done') if self.done else
             ('running' if self.running else 'paused') if self.ready else
-            '--'  # ??
+            'started' if self.started else '--'  # ??
         )  # add "uptime 35.4s"
 
         return '[Block({}): ({}/{} in, {} out; {} processed) - {}]'.format(
@@ -211,16 +213,16 @@ class Block:
             if self.done or self.error:
                 return True
 
-    def _main(self, _ready_flag=None, **kw):
+    def _main(self, _ready_flag=None, duration=None):
         '''The main thread target function. Handles uncaught exceptions and
         generic Block context management.'''
-        with self._except:
-            try:
-                # profiler = pyinstrument.Profiler()
-                # profiler.start()
-                self.log.debug(text.blue('Starting...'))
-                time.sleep(self._delay)
-                with self._sw():
+        try:
+            with self._sw():
+                try:
+                    # profiler = pyinstrument.Profiler()
+                    # profiler.start()
+                    self.log.debug(text.blue('Starting...'))
+                    time.sleep(self._delay)
                     # create a stream from sources with a custom control loop
                     self._stream = reip.Stream.from_block_sources(
                         self, name=self.name, _sw=self._sw,
@@ -232,13 +234,16 @@ class Block:
                         self.ready = True
                         self.log.info(text.green('Ready.'))
                         if _ready_flag is not None:
-                            _ready_flag.wait()
+                            with self._sw('sleep'):
+                                _ready_flag.wait()
 
-                        for _ in self._stream.get_loop(**kw):
-                            with self._sw('source'):
-                                inputs = self._stream.get()
-                                if inputs is None:
-                                    break
+                        loop = reip.util.iters.throttled(
+                            reip.util.iters.timed(reip.util.iters.loop(), duration),
+                            self.max_rate, delay=self._delay)
+                        for _ in self._sw.iter(loop, 'sleep'):
+                            inputs = self._stream.get()
+                            if inputs is None:
+                                break
 
                             # process each input batch
                             with self._sw('process'), self._except('process'):
@@ -248,23 +253,26 @@ class Block:
                             with self._sw('sink'):
                                 self._send_to_sinks(outputs, meta)
 
-            except KeyboardInterrupt:
-                self.log.info(text.yellow('Interrupting'))
-            finally:
-                # finish up and shut down block
-                self.log.debug(text.yellow('Finishing...'))
-                # run block finish
-                with self._sw('finish'), self._except('finish', raises=False):
-                    self.finish()
-                # propagate stream signals to sinks e.g. CLOSE
-                if self._stream.signal is not None:
-                    self._send_sink_signal(self._stream.signal)
+                except KeyboardInterrupt:
+                    if _ready_flag is None:
+                        self.log.info(text.yellow('Interrupting'))
+                finally:
+                    # finish up and shut down block
+                    self.log.debug(text.yellow('Finishing...'))
+                    # run block finish
+                    with self._sw('finish'), self._except('finish', raises=False):
+                        self.finish()
+                    # propagate stream signals to sinks e.g. CLOSE
+                    if self._stream.signal is not None:
+                        self._send_sink_signal(self._stream.signal)
+                    # profiler.stop()
+                    # print(profiler.output_text(unicode=True, color=True))
+                    self.done = True
+                    self.log.info(text.green('Done.'))
+        finally:
+            if _ready_flag is None:
+                self.log.info(self.stats_summary())
 
-                self.print_stats()
-                # profiler.stop()
-                # print(profiler.output_text(unicode=True, color=True))
-                self.log.info(text.green('Done.'))
-                self.done = True
 
     def _send_to_sinks(self, outputs, meta_in=None):
         '''Send the outputs to the sink.'''
@@ -377,11 +385,33 @@ class Block:
 
     @property
     def _exception(self):
-        return self._except._last
+        return self._except.last
 
     @property
     def all_exceptions(self):
         return self._except.all()
+
+    def __export_state__(self):
+        return {
+            '_sw': self._sw,
+            'started': self.started, 'ready': self.ready,
+            'done': self.done, #'error': self.error,
+            'terminated': self.terminated,
+            # '_stream.terminated': self._stream.terminated,
+            # '_stream.should_wait': self._stream.should_wait,
+            # '_stream.running': self._stream.running,
+            '_except': self._except,
+        }
+
+    def __import_state__(self, state):
+        for k, v in state.items():
+            try:
+                x, ks = self, k.lstrip('!').split('.')
+                for ki in ks[:-1]:
+                    x = getattr(x, ki)
+                setattr(x, ks[-1], v)
+            except AttributeError:
+                raise AttributeError('Could not set attribute {} = {}'.format(k, v))
 
     # State management
 
@@ -416,12 +446,17 @@ class Block:
 
     @property
     def terminated(self):
-        return self._stream.terminated if self._stream is not None else False
+        return self._terminated or (self._stream.terminated if self._stream is not None else False)
+
+    @terminated.setter
+    def terminated(self, value):
+        self._terminated = value
+
 
     # debug
 
     def stats(self):
-        total_time = self._sw.stats()[0] if '' in self._sw._samples else 0
+        total_time = self._sw.stats().sum if '' in self._sw else 0
         return {
             'name': self.name,
             'total_time': total_time,
@@ -457,26 +492,24 @@ class Block:
         n_snk = [len(s) for s in self.sinks]
         return f'[{self.name} {n:,} buffers, {n / total_time:,.2f}x/s sources={n_src}, sinks={n_snk}]'
 
-    def print_stats(self):
-        total_time = self._sw.stats()[0] if '' in self._sw._samples else 0
-        speed = self.processed / total_time if total_time else 0
-        dropped = [getattr(s, "dropped", None) for s in self.sinks]
-        skipped = [getattr(s, "skipped", None) for s in self.sources]
-        n_src = [len(s) for s in self.sources]
-        n_snk = [len(s) for s in self.sinks]
-        print(text.block_text(
+    def stats_summary(self):
+        stats = self.stats()
+        return text.block_text(
             # block title
-            f'Stats for {text.red(self) if self.error else text.green(self)}',
+            'Stats for {summary_banner}',
             # any exception, if one was raised.
-            text.red(f'({type(self._exception).__name__}) {self._exception}')
+            text.red('({}) {}'.format(type(self._exception).__name__, self._exception))
             if self._exception else None,
             # basic stats
-            f'Processed {self.processed} buffers in {total_time:.2f} sec. '
-            f'({speed:.2f} x/s)',
-            f'Dropped: {dropped}  Skipped: {skipped}',
-            f'Left in Queue: sources={n_src} sinks={n_snk}',
+            'Processed {processed} buffers in {total_time:.2f} sec. ({speed:.2f} x/s)',
+            'Dropped: {dropped}  Skipped: {skipped}  Left in Queue: in={n_in_sources} out={n_in_sinks}',
             # timing info
-            self._sw, ch=text.blue('*')))
+            self._sw, ch=text.blue('*')).format(
+                summary_banner=text.red(self) if self.error else text.green(self),
+                **stats)
+
+    def print_stats(self):
+        print(self.stats_summary())
 
 
 def prepare_output(outputs, input_meta=None, expected_length=None):

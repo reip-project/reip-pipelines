@@ -30,6 +30,7 @@ setuptools.setup(
         'ifcfg', 'ixconfig>=0.1.0',
     ],
     extras_require={
+        'status': ['psutil', 'ixconfig', 'netswitch'],
         'audio': ['pyaudio', 'librosa'],
         'video': ['opencv-python'],  # already installed on Jetson by default
         'vis': ['matplotlib'],
