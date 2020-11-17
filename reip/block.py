@@ -73,7 +73,7 @@ class Block:
 
     def __init__(self, n_source=1, n_sink=1, queue=1000, blocking=False,
                  max_rate=None, max_processed=None, graph=None, name=None,
-                 source_strategy=all, **kw):
+                 source_strategy=all, extra_kw=False, **kw):
         self._except = remoteobj.LocalExcept(raises=True)
         self.name = name or f'{self.__class__.__name__}_{id(self)}'
         self.parent_id, self.task_id = reip.Graph.register_instance(self, graph)
@@ -95,6 +95,9 @@ class Block:
         self.max_rate = max_rate
         self.max_processed = max_processed
         self._put_blocking = blocking
+        if not extra_kw and kw:
+            raise TypeError('{} received {} unexpected keyword arguments: {}.'.format(
+                self, len(kw), set(kw)))
         self.extra_kw = kw
         # block timer
         self._sw = reip.util.Stopwatch(str(self))
@@ -217,7 +220,7 @@ class Block:
         '''The main thread target function. Handles uncaught exceptions and
         generic Block context management.'''
         try:
-            with self._sw():
+            with self._sw(), self._except(raises=False):
                 try:
                     # profiler = pyinstrument.Profiler()
                     # profiler.start()
@@ -232,7 +235,7 @@ class Block:
                         with self._sw('init'), self._except('init'):
                             self.init()
                         self.ready = True
-                        self.log.info(text.green('Ready.'))
+                        self.log.debug(text.green('Ready.'))
                         if _ready_flag is not None:
                             with self._sw('sleep'):
                                 _ready_flag.wait()
@@ -268,10 +271,11 @@ class Block:
                     # profiler.stop()
                     # print(profiler.output_text(unicode=True, color=True))
                     self.done = True
-                    self.log.info(text.green('Done.'))
+                    self.log.debug(text.green('Done.'))
         finally:
-            if _ready_flag is None:
-                self.log.info(self.stats_summary())
+            pass
+            # if _ready_flag is None:
+            #     self.log.info(self.stats_summary())
 
 
     def _send_to_sinks(self, outputs, meta_in=None):
@@ -333,6 +337,8 @@ class Block:
 
         if wait:
             self.wait_until_ready()
+        if self.controlling:
+            self.raise_exception()
 
     def _check_source_connections(self):
         '''Check if there are too many sources for this block.'''
