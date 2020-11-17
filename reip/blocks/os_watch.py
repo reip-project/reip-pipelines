@@ -15,24 +15,24 @@ class _WatchBlockHandler(PatternMatchingEventHandler):
         self.event_types = event_types
         super().__init__(*a, **kw)
 
+    def on_any_event(self, event):
+        try:
+            if not self.event_types or event.event_type in self.event_types:
+                self.q.put(event)
+        except Exception as e:
+            self.q.put(e)
 
 class Watch(reip.Block):
     _q = _event_handler = _watch = None
     event_types = None
-    def __init__(self, *patterns, relative='./', event_types=None, **kw):
+    def __init__(self, *patterns, path='./', event_types=None, recursive=False, **kw):
         self.patterns = list(patterns or ('*',))
-        self.relative = relative
+        self.path = path
         self.event_types = event_types or self.event_types
+        self.recursive = recursive
         super().__init__(n_source=0, **kw)
 
-    class _Handler(_WatchBlockHandler):
-        def on_any_event(self, event):
-            try:
-                if not self.event_types or event.event_type in self.event_types:
-                    self.q.put(event)
-            except Exception as e:
-                print(text.yellow(text.l_(type(e), e)))
-
+    _Handler = _WatchBlockHandler
     _observer = None
     @property
     def observer(self):
@@ -50,11 +50,14 @@ class Watch(reip.Block):
         self._event_handler = self._Handler(
             self._q, self.event_types, patterns=self.patterns)
         self._watch = self.observer.schedule(
-            self._event_handler, self.relative, recursive=True)
+            self._event_handler, self.path, recursive=self.recursive)
 
     def process(self, meta):
         if not self._q.empty():
-            return self._output_event(self._q.get(), meta)
+            e = self._q.get()
+            if isinstance(e, Exception):
+                raise e
+            return self._output_event(e, meta)
 
     def _output_event(self, event, meta):
         return [event.src_path], {'event_type': event.event_type}

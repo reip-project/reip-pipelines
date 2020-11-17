@@ -21,7 +21,7 @@ def test_iterator():
 
 
 def test_interval():
-    ALLOWED_INIT_TIME = 0.2
+    ALLOWED_INIT_TIME = 0.3
     duration = 1
     interval = 0.1
 
@@ -113,45 +113,51 @@ def test_os(tmp_path):
     # delete file - see if emitted
     rel = str(tmp_path)
     with reip.Graph() as g:
-        created = B.os_watch.Created(relative=rel).to(B.Results())
-        modified = B.os_watch.Modified(relative=rel).to(B.Results())
-        moved = B.os_watch.Moved(relative=rel).to(B.Results())
-        deleted = B.os_watch.Deleted(relative=rel).to(B.Results())
+        created = B.os_watch.Created(path=rel).to(B.Results())
+        modified = B.os_watch.Modified(path=rel).to(B.Results())
+        moved = B.os_watch.Moved(path=rel).to(B.Results())
+        deleted = B.os_watch.Deleted(path=rel).to(B.Results())
 
     f_pat = str(tmp_path / 'test_file_{}.txt')
 
 
     fs = [f_pat.format(i) for i in range(5)]
     fs_moved = [f_pat.format(f'moved_{i}') for i in range(len(fs))]
+    # OP_SPACE = 0.01
     EVENT_SPACE = 0.2
     with g.run_scope():
         # create
         for fname in fs:
             with open(fname, 'w') as f:
                 f.write('')
+            # time.sleep(OP_SPACE)
         time.sleep(EVENT_SPACE)
         # modify
         for fname in fs:
             with open(fname, 'w') as f:
                 f.write('modified')
+            # time.sleep(OP_SPACE)
         time.sleep(EVENT_SPACE)
         # move
         for fname, f_mv in zip(fs, fs_moved):
             os.rename(fname, f_mv)
+            # time.sleep(OP_SPACE)
         time.sleep(EVENT_SPACE)
         # delete
         for f_mv in fs_moved:
             os.remove(f_mv)
+            # time.sleep(OP_SPACE)
         time.sleep(EVENT_SPACE)
         # wait
         time.sleep(3)
 
-    # print(created.results)
-    # print(modified.results)
-    # print(moved.results)
-    # print(deleted.results)
-    # print(fs, fs_moved)
-    assert set(created.results) == set(fs)
+    print('created', created.results)
+    print('modified', modified.results)
+    print('moved', moved.results)
+    print('deleted', deleted.results)
+    print('fs', fs)
+    print('fs_moved', fs_moved)
+    assert set(created.results) == set(fs)# | set(fs_moved)
     assert set(modified.results) == set(fs) | {rel}
     assert set(moved.results) == set(fs) #set(list(zip(fs, fs_moved)))
     assert set(deleted.results) == set(fs_moved)
