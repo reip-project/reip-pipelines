@@ -1,8 +1,10 @@
 import os
+import glob
 import shlex
 import hashlib
 import psutil
 import subprocess
+import atexit
 
 
 class BackgroundServer:
@@ -36,6 +38,7 @@ class BackgroundServer:
     '''
     SIGNAL = 15
     _server_pid = None
+    managed = False
     def __init__(self, command, pattern=None):
         self.command = command
         self.pattern = pattern
@@ -44,12 +47,12 @@ class BackgroundServer:
         cmd_id = hashlib.md5(command.encode('utf-8')).hexdigest()[:9]
         self._pid_dir = os.path.join(
             os.getenv('TMPDIR', '/tmp'),
-            f'background_server_proc_{cmd_id}')
+            'background_server_proc_{}'.format(cmd_id))
 
         # this process+instance's file. this means that you can have multiple
         # instances in a certain process and it won't conflict.
         self._pid_file = os.path.join(
-            self._pid_dir, f'{str(id(self))}__{os.getpid()}')
+            self._pid_dir, '{}__{}.pid'.format(str(id(self)), os.getpid()))
 
         # make sure the server pid collection dir exists.
         os.makedirs(self._pid_dir, exist_ok=True)
@@ -67,21 +70,34 @@ class BackgroundServer:
         return os.listdir(self._pid_dir)
 
     def spawn(self):
-        # check if a process already exists
-        # if not, start a process
+        ctl_file = os.path.join(self._pid_dir, 'managed')
+        self.managed = os.path.isfile(ctl_file)
+        # check if a process already exists - if not, start a process
         p = self.search_process()
         if p is None:
-            p = subprocess.Popen(self.command)
+            if self.managed:  # controlled process dead - swap to managed
+                os.remove(ctl_file)
+                self.managed = False
+            p = subprocess.Popen(self.command, shell=True)
+        elif not self.managed and not glob.glob(os.path.join(self._pid_dir, '*.pid')):
+            touch(ctl_file)
+            self.managed = True
         # store the process id
         self._server_pid = p.pid
+        if self.managed:
+            return
         # create the file
-        with open(self._pid_file, 'a'):
-            os.utime(self._pid_file)
+        touch(self._pid_file)
+        atexit.register(self.join, atexit_=True)
 
-    def join(self):
+    def join(self, atexit_=False):
+        if not atexit_:
+            atexit.unregister(self.join)
+        if self.managed:
+            return
         # remove our pid file and see who else is connected
         os.remove(self._pid_file)
-        pids = {f.split('__')[-1] for f in self.clients}
+        pids = {f.split('__')[-1].split('.')[0] for f in self.clients}
 
         # Check if all processes are dead. if yes, kill server
         alive_pids = {p.pid for p in psutil.process_iter()} & pids
@@ -105,3 +121,8 @@ class BackgroundServer:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.join()
+
+
+def touch(fname):
+    with open(fname, 'a') as f:
+        os.utime(f)

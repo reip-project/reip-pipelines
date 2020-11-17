@@ -128,7 +128,7 @@ def _search_usb(devices, pattern, cast=None):
     return match
 
 @register_stats
-def usb(devices):
+def usb(devices, meta=None):
     found_devices = reip.util.shell.lsusb()
     return {k: _search_usb(found_devices, **kw) for k, kw in devices.items()}
 
@@ -140,8 +140,8 @@ def base(meta=None):
     }
 
 def meta(meta=None):
-    return meta
+    return meta or {}
 meta_ = meta
 
-def full(meta=None, include_meta=True):
-    return reip.util.mergedict(base, cpu, memory, network, wifi, meta if include_meta else {})
+def full(include_meta=False):
+    return reip.util.mergedict(base, cpu, memory, network, wifi, usb, meta if include_meta else {})

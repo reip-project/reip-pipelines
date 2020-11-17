@@ -216,7 +216,7 @@ class Stream:
             [sink.gen_source(**kw) for sink in block.sinks],
             max_rate=max_rate or block.max_rate, delay=delay,
             duration=duration, timeout=timeout,
-            name=name or block.name)
+            name=name or block.name)  # FIXME: how to pass kw to Stream as well ...?
 
     # Stream slicing
 
