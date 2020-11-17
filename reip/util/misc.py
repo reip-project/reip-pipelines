@@ -47,11 +47,16 @@ def decorator(__func__=None, **kw):
     return decorated(__func__) if callable(__func__) else decorated
 
 
-def partial(func, *a, **kw):
-    @wraps(func)
+def partial(__partial_func__, *a, __name__=None, **kw):
+    @wraps(__partial_func__)
     def inner(*ai, **kwi):
-        return func(*a, *ai, **kw, **kwi)
+        return __partial_func__(*a, *ai, **kw, **kwi)
+    if __name__ is not None:
+        inner.__name__ = __name__
     return inner
+
+def create_partial(__partial_func__, *a, __name__=None, **kw):
+    return partial(partial, __partial_func__, *a, __name__=__name__ or __partial_func__.__name__, **kw)
 
 
 def resolve_call(func, *a, **kw):
