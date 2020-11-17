@@ -1,3 +1,8 @@
+import logging
+log = logging.getLogger(__name__)
+# log.propagate = True
+log.setLevel(logging.INFO)
+
 import time
 from .constants import *
 from . import exceptions
@@ -12,6 +17,7 @@ from .block import *
 from .graph import *
 from .task import *
 Graph._initialize_default_graph()
+from .helpers import *
 from .blocks import *
 
 def run(*a, **kw):
