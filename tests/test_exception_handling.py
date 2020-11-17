@@ -5,10 +5,18 @@ What these tests should guarantee:
 
 '''
 import time
-from contextlib import contextmanager
 import reip
 import pytest
 
+
+
+class BadInit(reip.Block):
+    def __init__(self, **kw):
+        super().__init__(n_source=None, **kw)
+
+    def init(self):
+        time.sleep(0.01)
+        raise TypeError('youre not my dad !! :p')
 
 
 class BadBlock(reip.Block):
@@ -19,64 +27,81 @@ class BadBlock(reip.Block):
         time.sleep(0.01)
         raise TypeError('youre not my dad !! :p')
 
+
+class BadFinish(reip.Block):
+    def __init__(self, **kw):
+        super().__init__(n_source=None, **kw)
+
+    def process(self, meta):
+        return reip.CLOSE
+
+    def finish(self):
+        time.sleep(0.01)
+        raise TypeError('youre not my dad !! :p')
+
+
 class Task(reip.Task):
     def poke(self):
         raise TypeError('go to your room !! >.<')
 
+def agg_processed(g):
+    return g.processed if isinstance(g, reip.Block) else sum(agg_processed(b) for b in g.blocks)
 
-
-def test_block_error_in_graph():
-    with reip.Graph() as g:
-        b = BadBlock(max_processed=10)
-
+def _test_run_error(g, init=False):
     with pytest.raises(TypeError):
         g.run()
-    assert b.processed == 0
+    assert agg_processed(g) == 0
 
     with pytest.raises(TypeError):
         with g.run_scope():
             time.sleep(0.02)
-    assert b.processed == 0
+    assert agg_processed(g) == 0
 
-    g.spawn()
-    time.sleep(0.02)
+    # if init:
+    #     with pytest.raises(TypeError):
+    #         g.spawn()
+    # else:
+    #     g.spawn()
+    # time.sleep(0.02)
+    # with pytest.raises(TypeError):
+    #     g.join()
+    # assert agg_processed(g) == 0
+
     with pytest.raises(TypeError):
-        g.join()
-    assert b.processed == 0
+        try:
+            g.spawn()
+        finally:
+            time.sleep(0.02)
+            g.join()
+    assert agg_processed(g) == 0
 
 
-def test_block_error_in_task():
+blk_param = lambda: pytest.mark.parametrize("Block,test_func", [
+    (BadBlock, _test_run_error),
+    (BadInit, reip.util.partial(_test_run_error, init=True)),
+    (BadFinish, _test_run_error),
+])
+
+@blk_param()
+def test_block_error_in_graph(Block, test_func):
+    with reip.Graph() as g:
+        Block(max_processed=10)
+    test_func(g)
+
+@blk_param()
+def test_block_error_in_task(Block, test_func):
     with reip.Task() as g:
-        b = BadBlock()
+        Block(max_processed=10)
+    test_func(g)
 
-    with pytest.raises(TypeError):
-        g.run()
-
-    with pytest.raises(TypeError):
-        with g.run_scope():
-            time.sleep(0.02)
-
-    g.spawn()
-    time.sleep(0.02)
-    with pytest.raises(TypeError):
-        g.join()
-
-
-def test_block_error_solo():
+@blk_param()
+def test_block_error_in_task_in_graph(Block, test_func):
     with reip.Graph() as g:
-        b = BadBlock(max_processed=10)
+        with reip.Task():
+            Block(max_processed=10)
+    test_func(g)
 
-    with pytest.raises(TypeError):
-        b.run()
-    assert b.processed == 0
-
-    with pytest.raises(TypeError):
-        with b.run_scope():
-            time.sleep(0.02)
-    assert b.processed == 0
-
-    b.spawn()
-    time.sleep(0.02)
-    with pytest.raises(TypeError):
-        b.join()
-    assert b.processed == 0
+@blk_param()
+def test_block_error_solo(Block, test_func):
+    b = Block(max_processed=10, graph=None)
+    test_func(b)

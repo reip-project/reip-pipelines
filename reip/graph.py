@@ -4,7 +4,6 @@
 
 
 '''
-
 import time
 from contextlib import contextmanager
 import weakref
@@ -180,7 +179,7 @@ class BaseContext:  # (metaclass=_MetaContext)
 # import blessed
 
 class Graph(BaseContext):
-    _delay = 1e-6
+    _delay = 1e-4
     _main_delay = 0.1
     controlling = None
 
@@ -193,6 +192,10 @@ class Graph(BaseContext):
             self.__class__.__name__, self.name, len(self.blocks),
             ''.join('\n' + text.indent(b) for b in self.blocks))
 
+    @classmethod
+    def detached(cls, *blocks, **kw):
+        return cls(*blocks, parent=None, **kw)
+
     # run graph
 
     def run(self, duration=None, **kw):
@@ -202,23 +205,31 @@ class Graph(BaseContext):
     @contextmanager
     def run_scope(self, wait=True, raise_exc=True):
         self.log.debug(text.green('Starting'))
-        controlling = False
+        # controlling = False
+        spawn_error = False
         try:
-            self.spawn(wait=wait)
-            controlling = self.controlling
-            self.log.debug(text.green('Ready'))
-            yield self
+            try:
+                self.spawn(wait=wait)
+                # controlling = self.controlling
+                self.log.debug(text.green('Ready'))
+            except Exception as e:
+                spawn_error = True
+                self.log.debug(text.red('Spawn Error'))
+                raise
+            finally:
+                yield self
         except KeyboardInterrupt:
             self.log.info(text.yellow('Interrupting'))
             self.terminate()
         finally:
             try:
-                self.join(raise_exc=raise_exc)
+                self.join(raise_exc=not spawn_error and raise_exc)
             finally:
                 self.log.debug(text.green('Done'))
-                if controlling:
-                    print(self.stats_summary())
+                # if controlling:
+                #     print(self.stats_summary())
 
+    # _delay = 1
     def wait(self, duration=None):
         for _ in iters.timed(iters.sleep_loop(self._delay), duration):
             if self.done or self.error:
@@ -247,11 +258,11 @@ class Graph(BaseContext):
         return any(b.error for b in self.blocks)
 
     # Block control
-
+    _ready_flag = None
     def spawn(self, wait=True, _ready_flag=None, **kw):
         self.controlling = _ready_flag is None
         if self.controlling:
-            _ready_flag = mp.Event()
+            self._ready_flag = _ready_flag = mp.Event()
 
         for block in self.blocks:
             block.spawn(wait=False, _ready_flag=_ready_flag, **kw)
@@ -259,22 +270,27 @@ class Graph(BaseContext):
         if wait:
             self.wait_until_ready()
         if self.controlling:
+            self.raise_exception()
             _ready_flag.set()
 
     def wait_until_ready(self):
         while not self.ready and not self.error and not self.done:
-            time.sleep(0.1)#self._delay
+            time.sleep(self._delay)
 
     def join(self, close=True, terminate=False, raise_exc=None, **kw):
+        if self.controlling and not self._ready_flag.is_set():
+            self._ready_flag.set()
         if close:
             self.close()
         if terminate:
             self.terminate()
         for block in self.blocks:
             block.join(terminate=False, raise_exc=False, **kw)
-        if (self.controlling if raise_exc is None else raise_exc):
+        if raise_exc is None and self.controlling:
+            raise_exc = True
+        if raise_exc:
             self.raise_exception()
-        self.controlling = None
+        self.controlling = self._ready_flag = None
 
     def pause(self):
         for block in self.blocks:
