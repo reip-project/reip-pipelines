@@ -281,6 +281,12 @@ asdf  6     7  asdf
     assert text.underline('a b c') == '\033[4ma b c\033[0m'
 
 
+def test_separate():
+    assert [list(range(10)), list(range(10, 15)), list(range(15, 20))] == (
+        util.separate(range(20), (lambda x: x<10), (lambda x: x<15))
+    )
+
+
 def test_misc():
     assert util.adjacent_file(__file__, 'some/nested/file.blah') == os.path.abspath(os.path.join(ROOT, 'some/nested/file.blah'))
     # # test ensure_dir

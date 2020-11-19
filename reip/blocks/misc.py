@@ -1,6 +1,7 @@
 import time
 import fnmatch
 import itertools
+import collections
 import numpy as np
 
 import reip
@@ -173,3 +174,30 @@ class Lambda(reip.Block):
     @classmethod
     def define(cls, func):
         return cls(func)
+
+
+class Interleave(reip.Block):
+    def __init__(self, sort_key=None, **kw):
+        super().__init__(n_source=None, **kw)
+        self.sort_key = sort_key
+
+    def process(self, *xs, meta=None):
+        if self.sort_key:
+            xs = [x for i, x in sorted(enumerate(xs), key=lambda x: meta[x[0]][self.sort_key])]
+        for x in xs:
+            if x is not None:
+                yield [x], meta
+
+
+class Separate(reip.Block):
+    def __init__(self, bins, **kw):
+        self.bins = bins
+        super().__init__(n_sink=len(bins), **kw)
+
+    def process(self, x, meta=None):
+        out = [None]*len(self.bins)
+        for i, check in enumerate(self.bins):
+            if check(x, meta):
+                out[i] = x
+                break
+        return out, meta

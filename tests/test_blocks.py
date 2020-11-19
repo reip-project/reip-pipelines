@@ -85,6 +85,28 @@ def test_output(tmp_path):
     assert data == list(range(N))
 
 
+def test_interleave():
+    with reip.Graph() as g:
+        out = B.Interleave()(B.Increment(10), B.Increment(10, 20), B.Increment(20, 30)).output_stream()
+    g.run()
+    x = set(out.data[0].nowait())
+    print(x)
+    assert x == set(range(30))
+
+
+def test_separate():
+    with reip.Graph() as g:
+        out = B.Separate([
+            (lambda x, meta: x < 10),
+            (lambda x, meta: x < 15),
+        ])(B.Increment(20)).output_stream()
+    g.run()
+    for b in g.blocks:
+        print(b, b._except)
+    x = list(out.data.nowait())
+    print(x)
+    a, b = [reip.util.filter_none(x) for x in zip(*x)]
+    assert (a, b) == (list(range(10)), list(range(10, 15)))
 
 
 #########################

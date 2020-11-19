@@ -3,6 +3,11 @@ import re
 from functools import wraps
 import numpy as np
 
+def always(*a, **kw):
+    return True
+
+def never(*a, **kw):
+    return False
 
 
 def resize_list(lst, length, value=None):
@@ -97,7 +102,7 @@ def as_list(x):
         else [x])
 
 def is_iter(iterable):
-    return hasattr(iterable,'__iter__') and not hasattr(iterable,'__len__')
+    return not hasattr(iterable,'__len__') and hasattr(iterable,'__iter__')
 
 def as_iterlike(x):
     return (
@@ -116,6 +121,25 @@ def squeeze(x):
     >>> assert squeeze((1, 2)) == (1, 2)
     '''
     return x[0] if isinstance(x, (list, tuple)) and len(x) == 1 else x
+
+def notnone(x):
+    return x is not None
+
+def filter_none(xs):
+    return [x for x in xs if x is not None]
+
+
+def separate(xs, *conditions, keep_fails=True):
+    conditions = conditions or ((lambda x: x is not None),)
+    outs = [[] for i in range(len(conditions)+1)]
+    for x in xs:
+        for i, c in enumerate(conditions):
+            if c(x):
+                outs[i].append(x)
+                break
+        else:
+            outs[-1].append(x)
+    return outs
 
 
 def flatten(X, args=(), call=False, **kw):
