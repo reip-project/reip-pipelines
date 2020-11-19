@@ -46,6 +46,41 @@ def test_connections():
     with pytest.raises(RuntimeError):
         output._check_source_connections()
 
+    # test missing sources
+    with reip.Graph() as g:
+        output = reip.Block(max_processed=1)(*inputs, sink)
+        output.sources[0] = None
+    with pytest.raises(RuntimeError):
+        g.run()
+
+
+class Constant(reip.Block):
+    def __init__(self, x, **kw):
+        super().__init__(n_source=0, **kw)
+        self.x = x
+
+    def process(self, meta):
+        return [self.x], meta
+
+
+class Constants(reip.Block):
+    def __init__(self, x, **kw):
+        super().__init__(n_source=0, **kw)
+        self.x = x
+
+    def process(self, meta):
+        for x in self.x:
+            yield [x], meta
+
+def test_process_function_returns():
+    with reip.Graph() as g:
+        out = Constant(5, max_processed=10).output_stream()
+    g.run()
+    assert list(out.data[0].nowait()) == [5]*10
+    with reip.Graph() as g:
+        out = Constants([5, 6], max_processed=10).output_stream()
+    g.run()
+    assert list(out.data[0].nowait()) == [5, 6]*5
 
 
 # class BlockPresence(reip.Block):

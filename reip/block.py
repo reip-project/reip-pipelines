@@ -277,38 +277,55 @@ class Block:
             # if _ready_flag is None:
             #     self.log.info(self.stats_summary())
 
-
     def _send_to_sinks(self, outputs, meta_in=None):
         '''Send the outputs to the sink.'''
+        source_signals = [None]*len(self.sources)
         # retry all sources
-        if outputs == reip.RETRY:
-            pass
-        elif outputs == reip.CLOSE:
-            self.close(propagate=True)
-        elif outputs == reip.TERMINATE:
-            self.terminate(propagate=True)
-        # increment sources but don't have any outputs to send
-        elif outputs is None:
-            self._stream.next()
-        # increment sources and send outputs
-        else:
-            # detect signals meant for the source
-            if self._stream.check_signals(outputs):
-                return
-
-            # increment sources
-            self._stream.next()
-            self.processed += 1
-
-            # convert outputs to a consistent format
-            outs, meta = prepare_output(outputs, input_meta=meta_in)
-            # pass to sinks
-            for sink, out in zip(self.sinks, outs):
-                if sink is not None:
-                    sink.put((out, meta), self._put_blocking)
-            # limit the number of blocks
-            if self.max_processed and self.processed >= self.max_processed:
+        for outs in outputs if reip.util.is_iter(outputs) else (outputs,):
+            if outs == reip.RETRY:
+                source_signals = [reip.RETRY]*len(self.sources)
+            elif outs == reip.CLOSE:
                 self.close(propagate=True)
+            elif outs == reip.TERMINATE:
+                self.terminate(propagate=True)
+            # increment sources but don't have any outputs to send
+            elif outs is None:
+                pass
+            #     self._stream.next()
+            # increment sources and send outputs
+            else:
+                # detect signals meant for the source
+                if self.sources:
+                    if outs is not None and any(any(t.check(o) for t in reip.SOURCE_TOKENS) for o in outs):
+                        # check signal values
+                        if len(outputs) > len(self.sources):
+                            raise RuntimeError(
+                                'Too many signals for sources in {}. Got {}, expected a maximum of {}.'.format(
+                                    self, len(outputs), len(self.sources)))
+                        for i, o in enumerate(outs):
+                            if o is not None:
+                                source_signals[i] = o
+                        continue
+
+                # convert outputs to a consistent format
+                outs, meta = prepare_output(outs, input_meta=meta_in)
+                # pass to sinks
+                for sink, out in zip(self.sinks, outs):
+                    if sink is not None:
+                        sink.put((out, meta), self._put_blocking)
+
+                # increment sources
+                # self._stream.next()
+                self.processed += 1
+                # limit the number of blocks
+                if self.max_processed and self.processed >= self.max_processed:
+                    self.close(propagate=True)
+        for src, sig in zip(self.sources, source_signals):
+            if sig is reip.RETRY:
+                pass
+            else:
+                src.next()
+
 
     def _send_sink_signal(self, signal, block=True, meta=None):
         '''Emit a signal to all sinks.'''
