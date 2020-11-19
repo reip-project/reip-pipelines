@@ -8,6 +8,7 @@ import time
 from contextlib import contextmanager
 import weakref
 import multiprocessing as mp
+import remoteobj
 
 import reip
 from reip.util import text, iters
@@ -186,6 +187,7 @@ class Graph(BaseContext):
     def __init__(self, *blocks, **kw):
         super().__init__(*blocks, **kw)
         self.log = reip.util.logging.getLogger(self)
+        self._except = remoteobj.LocalExcept()
 
     def __repr__(self):
         return '[~{}({}) ({} children) {}~]'.format(
@@ -206,24 +208,23 @@ class Graph(BaseContext):
     def run_scope(self, wait=True, raise_exc=True):
         self.log.debug(text.green('Starting'))
         # controlling = False
-        spawn_error = False
         try:
-            try:
-                self.spawn(wait=wait)
-                # controlling = self.controlling
-                self.log.debug(text.green('Ready'))
-            except Exception as e:
-                spawn_error = True
-                self.log.debug(text.red('Spawn Error'))
-                raise
-            finally:
+            with self._except('spawn', raises=False):
+                try:
+                    self.spawn(wait=wait)
+                    # controlling = self.controlling
+                    self.log.debug(text.green('Ready'))
+                except Exception as e:
+                    self.log.debug(text.red('Spawn Error'))
+                    raise
+            with self._except(raises=False):
                 yield self
         except KeyboardInterrupt:
             self.log.info(text.yellow('Interrupting'))
             self.terminate()
         finally:
             try:
-                self.join(raise_exc=not spawn_error and raise_exc)
+                self.join(raise_exc=raise_exc)
             finally:
                 self.log.debug(text.green('Done'))
                 # if controlling:
@@ -234,6 +235,9 @@ class Graph(BaseContext):
         for _ in iters.timed(iters.sleep_loop(self._delay), duration):
             if self.done or self.error:
                 return True
+
+    def _reset_state(self):
+        self._except.clear()
 
     # state
 
@@ -255,7 +259,7 @@ class Graph(BaseContext):
 
     @property
     def error(self):
-        return any(b.error for b in self.blocks)
+        return bool(self._except.all()) or any(b.error for b in self.blocks)
 
     # Block control
     _ready_flag = None
@@ -311,6 +315,7 @@ class Graph(BaseContext):
     def raise_exception(self):
         for block in self.blocks:
             block.raise_exception()
+        self._except.raise_any()
 
     def __export_state__(self):
         return {

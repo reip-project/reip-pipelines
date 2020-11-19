@@ -86,9 +86,6 @@ class Task(reip.Graph):
         if raise_exc:
             self.raise_exception()
 
-    def _reset_state(self):
-        self._except.clear()
-
     # def _pull_state(self):
     #     self.__import_state__(self.__export_state__())
 
@@ -96,10 +93,6 @@ class Task(reip.Graph):
         # NOTE: this is to update the state when the remote process has finished
         if self._process is not None:
             self.__import_state__(self._process.result)
-
-    def raise_exception(self):
-        super().raise_exception()
-        self._except.raise_any()
 
     def __export_state__(self):
         return self.remote.super.attrs_('__export_state__')(_default=None)
@@ -136,7 +129,7 @@ class Task(reip.Graph):
 
     def __local_error(self):  # for when the remote process is not running
         self._pull_process_result()
-        return super().error or bool(self._except.all())
+        return super().error
 
     # block control
 
