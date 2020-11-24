@@ -20,6 +20,7 @@ import os
 import random
 import glob
 import reip
+import psutil
 
 
 class DiskMonitor(reip.Block):
@@ -53,7 +54,7 @@ class DiskMonitor(reip.Block):
             'usage_delta': start_usage - usage}
 
     def get_usage(self):
-        return reip.util.status.disk_usage()
+        return reip.util.status.storage('/')
 
     def get_files(self, *fs):
         return glob.glob(os.path.join(self._root_dir, *fs), recursive=True)
@@ -80,9 +81,15 @@ class DiskMonitor(reip.Block):
             yield usage
 
     @classmethod
-    @reip.util.decorator
-    def deleter(cls, func, *a, **kw):
-        return cls(func, *a, **kw)
+    def deleter(cls, *a, **kw):
+        return (
+            # called deco with no arguments, just the decoed function
+            reip.util.partial(cls, *a, **kw)
+            if len(a) == 1 and not kw and callable(a[0]) else
+            # called with misc arguments, return a function that will create
+            # a partial for catching the function
+            reip.util.create_partial(cls, *a, **kw)
+        )
 
 
 
