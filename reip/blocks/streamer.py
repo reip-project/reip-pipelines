@@ -18,7 +18,7 @@ class Streamer(reip.Block):
         self._new_block = new
         self._extra_args = a
         self.__class__ = type(new.__name__, (self.__class__,), {})
-        super().__init__(name=name, **kw)
+        super().__init__(name=name, extra_kw=True, **kw)
 
     def init(self):
         self._feeder = _feeder()
@@ -68,7 +68,7 @@ class _ContextFunc(reip.Block):
     _context = _process = None
     def __init__(self, func, **kw):
         self.func = contextmanager(func)
-        super().__init__(**kw)
+        super().__init__(extra_kw=True, **kw)
 
     def init(self):
         self._context = self.func(**self.extra_kw)

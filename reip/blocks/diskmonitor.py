@@ -29,7 +29,7 @@ class DiskMonitor(reip.Block):
         self.threshold = threshold
         self.padding = padding
         self._files = []
-        super().__init__(max_rate=1./interval, **kw)
+        super().__init__(max_rate=1./interval, extra_kw=True, **kw)
 
     def process(self, *files, meta):
         # initial usage check

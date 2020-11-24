@@ -64,7 +64,7 @@ class _VideoWriter(reip.util.CycledWriter):
 class VideoWriter(reip.Block):
     def __init__(self, filename, **kw):
         self.filename = filename
-        super().__init__(**kw)
+        super().__init__(extra_kw=True, **kw)
 
     def init(self):
         self.writer = _VideoWriter(self.filename, **self.extra_kw)

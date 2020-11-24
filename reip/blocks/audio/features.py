@@ -9,7 +9,7 @@ class SPL(reip.Block):
     n_fft = None
     def __init__(self, duration=1, weighting='zac',
                  calibration=0, **kw):
-        super().__init__(**kw)
+        super().__init__(extra_kw=True, **kw)
         self.duration = duration
         self.calibration = calibration
         self._weighting = weighting
