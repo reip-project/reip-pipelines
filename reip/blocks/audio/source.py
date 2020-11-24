@@ -23,39 +23,51 @@ def np2pafmt(fmt):
 
 
 class Mic(reip.Block):
-    def __init__(self, device=None, sr=None, block_duration=1, channels=None, mono=False, fmt='int16', **kw):
-        self.device = device
+    def __init__(self, device=None, sr=None, block_duration=1, channels=None, mono=False, search_interval=10, fmt='int16', **kw):
+        self.device_name = device
         self.sr = sr
         self.block_duration = block_duration
         self.channels = channels
         self.mono = (0 if mono is True else mono if mono is not False else None)
         self.fmt = np.dtype(fmt)
         self._is_float = self.fmt == np.float32
-        self.kw = kw
-        super().__init__()
+        self.search_interval = search_interval
+        super().__init__(**kw)
 
         self._q = reip.stores.Producer()
         self.sources[0] = self._q.gen_source()
 
     def search_devices(self, query, min_input=1, min_output=0):
         '''Search for an audio device by name.'''
-        if query is None:
-            return self._pa.get_device_info_by_index(0)
-        devices = (
+        devices = [
             dict(self._pa.get_device_info_by_index(i), index=i)
-            for i in range(self._pa.get_device_count()))
-        return next((
-            d for d in devices
-            if d['maxInputChannels'] >= min_input
-            and d['maxOutputChannels'] >= min_output
-            and (query is None or query in d['name'])
-        ), None)
+            for i in range(self._pa.get_device_count())]
+        try:
+            return next((
+                d for d in devices
+                if d['maxInputChannels'] >= min_input
+                and d['maxOutputChannels'] >= min_output
+                and (query is None or query in d['name'])
+            ))
+        except StopIteration:
+            raise OSError('No device found matching "{}" in {}.'.format(
+                query, [d['name'] for d in devices]))
 
+    device = blocksize = None
+    _pa = _pastream = None
     def init(self):
         '''Start pyaudio and start recording'''
+        for i in reip.util.iters.run_loop(interval=self.search_interval):
+            try:
+                self._init()
+                break
+            except Exception as e:
+                self.log.error('Microphone Init: ({}) {}'.format(e.__class__.__name__, e))
+
+    def _init(self):
         # initialize pyaudio
-        self._pa = pyaudio.PyAudio()
-        device = self.search_devices(self.device)
+        self._pa = self._pa or pyaudio.PyAudio()
+        device = self.search_devices(self.device_name)
         self.log.info('Using audio device: {} - {}'.format(device['name'], device))
 
         # get parameters from device
@@ -104,3 +116,4 @@ class Mic(reip.Block):
         self._pastream.stop_stream()
         self._pastream.close()
         self._pa.terminate()
+        self._pa = self._pastream = None
