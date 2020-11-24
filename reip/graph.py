@@ -45,7 +45,7 @@ class BaseContext:  # (metaclass=_MetaContext)
 
     @classmethod
     def _initialize_default_graph(cls):
-        _ContextScope.default = _ContextScope.top = Graph()
+        _ContextScope.default = _ContextScope.top = Graph(name='_default_')
 
     @classmethod
     def get(cls, instance=None):
@@ -263,26 +263,27 @@ class Graph(BaseContext):
 
     # Block control
     _ready_flag = None
-    def spawn(self, wait=True, _ready_flag=None, **kw):
-        self.controlling = _ready_flag is None
-        if self.controlling:
-            self._ready_flag = _ready_flag = mp.Event()
+    def spawn(self, wait=True, _controlling=True, _ready_flag=None, **kw):
+        self.controlling = _controlling
+        # if self.controlling:
+        #     self._ready_flag = _ready_flag = mp.Event()
 
         for block in self.blocks:
-            block.spawn(wait=False, _ready_flag=_ready_flag, **kw)
+            block.spawn(wait=False, _controlling=False, _ready_flag=_ready_flag, **kw)
 
         if wait:
             self.wait_until_ready()
         if self.controlling:
             self.raise_exception()
-            _ready_flag.set()
+            if self._ready_flag is not None:
+                _ready_flag.set()
 
     def wait_until_ready(self):
         while not self.ready and not self.error and not self.done:
             time.sleep(self._delay)
 
     def join(self, close=True, terminate=False, raise_exc=None, **kw):
-        if self.controlling and not self._ready_flag.is_set():
+        if self._ready_flag is not None and not self._ready_flag.is_set():
             self._ready_flag.set()
         if close:
             self.close()
@@ -326,6 +327,11 @@ class Graph(BaseContext):
         if state:
             for b, update in zip(self.blocks, state.pop('blocks', ())):
                 b.__import_state__(update)
+
+    def short_str(self):
+        return '[{}({})[{} children]]'.format(
+            self.__class__.__name__[0],
+            self.name, len(self.blocks))
 
     def stats(self):
         return {

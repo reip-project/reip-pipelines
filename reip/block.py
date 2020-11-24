@@ -70,6 +70,7 @@ class Block:
     parent_id, task_id = None, None
     started = ready = done = _terminated = False
     processed = 0
+    controlling = False
 
     def __init__(self, n_source=1, n_sink=1, queue=1000, blocking=False,
                  max_rate=None, max_processed=None, graph=None, name=None,
@@ -95,10 +96,12 @@ class Block:
         self.max_rate = max_rate
         self.max_processed = max_processed
         self._put_blocking = blocking
-        if not extra_kw and kw:
+        if extra_kw:
+            self.extra_kw = kw
+        elif kw:
             raise TypeError('{} received {} unexpected keyword arguments: {}.'.format(
                 self, len(kw), set(kw)))
-        self.extra_kw = kw
+
         # block timer
         self._sw = reip.util.Stopwatch(str(self))
         self.log = reip.util.logging.getLogger(self)
@@ -117,19 +120,21 @@ class Block:
         self._except.clear()
 
     def __repr__(self):
-        state = (
+        return '[Block({}): ({}/{} in, {} out; {} processed) - {}]'.format(
+            self.name, sum(s is not None for s in self.sources),
+            '?' if self.n_expected_sources is None else self.n_expected_sources,
+            len(self.sinks), self.processed,
+            self.block_state_name)
+
+    @property
+    def block_state_name(self):
+        return (
             (type(self._exception).__name__
              if self._exception is not None else 'error') if self.error else
             ('terminated' if self.terminated else 'done') if self.done else
             ('running' if self.running else 'paused') if self.ready else
             'started' if self.started else '--'  # ??
         )  # add "uptime 35.4s"
-
-        return '[Block({}): ({}/{} in, {} out; {} processed) - {}]'.format(
-            self.name, sum(s is not None for s in self.sources),
-            '?' if self.n_expected_sources is None else self.n_expected_sources,
-            len(self.sinks), self.processed,
-            state)
 
     # Graph definition
 
@@ -336,9 +341,9 @@ class Block:
 
     # Thread management
 
-    def spawn(self, wait=True, _ready_flag=None):
+    def spawn(self, wait=True, _controlling=True, _ready_flag=None):
         '''Spawn the block thread'''
-        self.controlling = _ready_flag is None
+        self.controlling = _controlling
         self.log.debug(text.blue('Spawning...'))
         # print(self.summary())
 
@@ -477,6 +482,11 @@ class Block:
 
 
     # debug
+
+    def short_str(self):
+        return '[B({})[{}i/{}o]({})]'.format(
+            self.name, len(self.sources), len(self.sinks),
+            self.block_state_name)
 
     def stats(self):
         total_time = self._sw.stats().sum if '' in self._sw else 0
