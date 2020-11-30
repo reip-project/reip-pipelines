@@ -3,14 +3,21 @@ import itertools
 import numpy as np
 
 
-def loop():
+def run_loop(duration=None, rate=None, interval=None, n=None, delay=1e-6):
+    loop_ = sleep_loop(delay) if delay else loop()
+    return throttled(
+        timed(limit(loop_, n), duration=duration),
+        rate, interval, delay=delay or 0)
+
+def loop(i=0):
     '''Infinite loop'''
     while True:
-        yield
+        yield i
+        i += 1
 
 def sleep_loop(delay=1e-6):
-    while True:
-        yield delay
+    for _ in loop():
+        yield _
         time.sleep(delay)
 
 def timed(it=None, duration=None, error=False):

@@ -33,6 +33,9 @@ class Watch(reip.Block):
         super().__init__(n_source=0, **kw)
 
     _Handler = _WatchBlockHandler
+
+    # define a global observer - is this right?
+
     _observer = None
     @property
     def observer(self):
@@ -46,7 +49,9 @@ class Watch(reip.Block):
         Watch._observer = value
 
     def init(self):
+        # a queue is used to gather all events emitted
         self._q = queue.Queue()
+        # create watchdog stuff
         self._event_handler = self._Handler(
             self._q, self.event_types, patterns=self.patterns)
         self._watch = self.observer.schedule(
@@ -63,8 +68,10 @@ class Watch(reip.Block):
         return [event.src_path], {'event_type': event.event_type}
 
     def finish(self):
+        # remove handler
         self.observer.remove_handler_for_watch(self._event_handler, self._watch)
         if self.observer.is_alive() and not any(self.observer._handlers.values()):
+            # if there are no more handlers, shutdown the observer
             self.observer.unschedule_all()
             self.observer.stop()
             self.observer.join()

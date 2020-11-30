@@ -15,6 +15,7 @@ reip.blocks.Lambda(
 '''
 import os
 import re
+import fnmatch
 import socket
 from datetime import datetime
 import psutil
@@ -101,18 +102,27 @@ def cellular(cell_name='ppp0', cell_tty_commands='/dev/ttyUSB2', meta=None):
     return {}
 
 
+_IFC_MAP = {'ip': 'inet', 'mac': 'ether'}
+DEFAULT_IFCONFIG = {
+    'wlan0': _IFC_MAP,
+    'eth0': _IFC_MAP,
+    'tun0': {'ip': 'inet'},
+}
+
 @register_stats
-def network(meta=None):
+def network(cfg=DEFAULT_IFCONFIG, meta=None):
     ifaces = ifcfg.interfaces()
-    wlan, tun, eth = (ifaces.get(i, {}) for i in ('wlan0', 'tun0', 'eth0'))
+    # wlan, tun, eth = (ifaces.get(i, {}) for i in ('wlan0', 'tun0', 'eth0'))
     return {
         'RX_packets': int(str(psutil.net_io_counters().bytes_recv).replace('L', '')),
         'TX_packets': int(str(psutil.net_io_counters().bytes_sent).replace('L', '')),
-        'wlan0_ip': wlan.get('inet'),
-        'wlan0_mac': wlan.get('ether'),
-        'tun0_ip': tun.get('inet'),
-        'eth0_mac': eth.get('ether'),
-        'eth0_ip': eth.get('inet'),
+        **{
+            '{}_{}'.format(pat, kname): ifcfg.get(pat, {}).get(key)
+            for pat, keys in cfg.items()
+            # for name, ifcfg in ifaces.items()
+            # if fnmatch.fnmatch(name, pat)
+            for kname, key, in keys.items()
+        }
     }
 
 
@@ -128,9 +138,23 @@ def _search_usb(devices, pattern, cast=None):
     return match
 
 @register_stats
-def usb(devices, meta=None):
+def usb(meta=None, **devices):
+    if not devices:
+        return {}
     found_devices = reip.util.shell.lsusb()
     return {k: _search_usb(found_devices, **kw) for k, kw in devices.items()}
+
+
+DEFAULT_STORAGE_LOCATIONS = {'root': '/', 'tmp': '/tmp', 'varlog': '/var/log'}
+
+@register_stats
+def storage(*poslocs, meta=None, **locs):
+    locs.update({p.replace('/', '') or 'root': p for p in poslocs})
+    locs = locs or DEFAULT_STORAGE_LOCATIONS
+    return {
+        '{}_usage'.format(k): psutil.disk_usage(path).percent
+        for k, path in locs.items()
+    }
 
 
 def base(meta=None):
@@ -144,4 +168,4 @@ def meta(meta=None):
 meta_ = meta
 
 def full(include_meta=False):
-    return reip.util.mergedict(base, cpu, memory, network, wifi, usb, meta if include_meta else {})
+    return reip.util.mergedict(base, cpu, memory, network, wifi, usb, storage, meta if include_meta else {})
