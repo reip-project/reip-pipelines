@@ -12,7 +12,7 @@ class C:
     UNDERLINE = '\033[4m'
 
 def _text_wrapper(start, end=C.ENDC):
-    return f'{start}{{}}{end}'.format
+    return '{}{{}}{}'.format(start, end).format
 
 red = _text_wrapper(C.FAIL)
 blue = _text_wrapper(C.OKBLUE)
@@ -77,16 +77,16 @@ def strip_each_line(txt):
 def comment(txt, ch='#', n=1, spaces=1):
     '''Apply prefix to each line. Defaults to python comments.'''
     ch, spaces = ch*n, " "*spaces
-    return '\n'.join(f'{ch}{spaces}{l}' for l in txt.splitlines())
+    return '\n'.join('{}{}{}'.format(ch, spaces, l) for l in txt.splitlines())
 
 
 def block_text(*txts, n=20, ch='*', div=''):
     '''Create a block of text with a character border.'''
-    return ch * n + f'\n{comment(b_(*txts, div=div), ch=ch)}\n' + ch * n
+    return ch * n + '\n{}\n'.format(comment(b_(*txts, div=div), ch=ch)) + ch * n
 
 def b_(*lines, div=''):
     '''Convert arguments to lines. Lines can be tuples (will be joined by a space.)'''
-    div = f'\n{div}\n' if div else '\n'
+    div = '\n{}\n'.format(div) if div else '\n'
     return div.join(
         l_(*l) if isinstance(l, (list, tuple)) else str(l)
         for l in lines if l is not None)

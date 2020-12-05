@@ -60,6 +60,7 @@ class DiskMonitor(reip.Block):
         return glob.glob(os.path.join(self._root_dir, *fs), recursive=True)
 
     def delete(self, fs):
+        fs = reip.util.as_list(fs)
         for f in fs:
             os.remove(f)
         self._files.extend(fs)

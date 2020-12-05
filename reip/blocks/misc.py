@@ -114,16 +114,17 @@ class Increment(Iterator):
 
 
 class Debug(reip.Block):
-    def __init__(self, message=None, value=False, summary=False, period=None, name=None, **kw):
+    def __init__(self, message=None, value=False, summary=False, period=None, name=None, border=False, **kw):
         self.message = message or 'Debug'
         self.value = value
         self.period = period
         self._summary = summary
+        self._border = border
         self._last_time = 0
         name = 'Debug-{}'.format(message.replace(" ", "-")) if message else None
         super().__init__(name=name, **kw)
 
-    def _format(self, x):
+    def _block_line_format(self, x):
         if isinstance(x, np.ndarray):
             if self._summary:
                 return x.shape, x.dtype, 'min:', x.min(), 'max:', x.max(), 'mean:', x.mean()
@@ -132,16 +133,20 @@ class Debug(reip.Block):
             return x.shape, x.dtype, x
         return type(x).__name__, x
 
+    def _block_format(self, *xs, meta):
+        return (text.block_text if self._border else text.b_)(
+            text.blue(self.message),
+            'data:', *[
+                ('\t', i) + tuple(self._block_line_format(x))
+                for i, x in enumerate(xs)],
+            ('meta:', meta)
+        )
+
     def process(self, *xs, meta=None):
         if not self.period or time.time() - self._last_time > self.period:
             self._last_time = time.time()
-            print(text.block_text(
-                text.blue(self.message),
-                'data:', *[
-                    ('\t', i) + tuple(self._format(x))
-                    for i, x in enumerate(xs)],
-                ('meta:', meta)
-            ), flush=True)
+            self.log.info(self._block_format(*xs, meta=meta))
+            # print(, flush=True)
         return xs, meta
 
 

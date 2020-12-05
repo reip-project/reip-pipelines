@@ -15,6 +15,7 @@ reip.blocks.Lambda(
 '''
 import os
 import re
+import functools
 import fnmatch
 import socket
 from datetime import datetime
@@ -23,12 +24,24 @@ import ifcfg
 import ixconfig
 import netswitch
 import reip
+import logging
+
+log = logging.getLogger(__name__)
 
 
 STATS_FUNCTIONS = {}
 def register_stats(func):
-    STATS_FUNCTIONS[func.__name__] = func
-    return func
+    @functools.wraps(func)
+    def stats(*a, **kw):
+        try:
+            return func(*a, **kw)
+        except Exception as e:
+            log.exception(e)
+            log.error('Error getting {} status: ({}) {}'.format(
+                func.__name__, type(e).__name__, e))
+        return {}
+    STATS_FUNCTIONS[func.__name__] = stats
+    return stats
 
 
 # strip suffix from string if present
@@ -87,7 +100,7 @@ def memory(meta=None):
 @register_stats
 def wifi(wlan='wlan*', meta=None):
     iwc = ixconfig.Iwc().ifaces(wlan)
-    wlan = next(iwc, None)
+    wlan = next(iter(iwc), None)
     return ({
         'wifi_quality': float(iwc[wlan].quality_ratio),
         'wifi_strength': float(iwc[wlan].strength),
@@ -117,7 +130,7 @@ def network(cfg=DEFAULT_IFCONFIG, meta=None):
         'RX_packets': int(str(psutil.net_io_counters().bytes_recv).replace('L', '')),
         'TX_packets': int(str(psutil.net_io_counters().bytes_sent).replace('L', '')),
         **{
-            '{}_{}'.format(pat, kname): ifcfg.get(pat, {}).get(key)
+            '{}_{}'.format(pat, kname): ifaces.get(pat, {}).get(key)
             for pat, keys in cfg.items()
             # for name, ifcfg in ifaces.items()
             # if fnmatch.fnmatch(name, pat)

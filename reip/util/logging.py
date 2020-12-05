@@ -1,6 +1,8 @@
 import sys
+import time
 import logging
 import colorlog
+logging.Formatter.converter = time.localtime
 
 MULTILINE_FORMAT = (
     '%(log_color)s[%(levelname)s]%(reset)s %(thin)s%(asctime)s%(reset)s: '
@@ -18,6 +20,44 @@ COMPACT_FORMAT = (
 
 DATE_FORMAT = "%m/%d/%y %H:%M:%S"
 
+
+def getLogger(block, debug=True, compact=True):
+    if isinstance(block, str):
+        log = logging.getLogger(block)
+    else:
+        log = logging.getLogger(block.name)
+        log.addFilter(InjectData(dict(
+            block=StrRep(block, 'short_str' if compact else None)
+        )))
+    log.setLevel(minlevel(debug))
+    formatter = colorlog.ColoredFormatter(COMPACT_FORMAT if compact else MULTILINE_FORMAT)
+    return add_stdouterr(log, formatter=formatter, debug=debug)
+
+
+def add_stdouterr(log, formatter=None, debug=False, errlevel=logging.WARNING):
+    # https://stackoverflow.com/questions/16061641/python-logging-split-between-stdout-and-stderr
+    h_out = levelrange(logging.StreamHandler(sys.stdout), minlevel(debug), errlevel)
+    h_err = levelrange(logging.StreamHandler(sys.stderr), errlevel)
+    if formatter is not None:
+        h_out.setFormatter(formatter)
+        h_err.setFormatter(formatter)
+    log.addHandler(h_out)
+    log.addHandler(h_err)
+    return log
+
+
+def levelrange(log, minlevel=logging.DEBUG, maxlevel=None):
+    if minlevel is not None:
+        log.setLevel(minlevel)
+    if maxlevel is not None:
+        log.addFilter(MaxLevel(maxlevel))
+    return log
+
+
+def minlevel(debug=False):
+    return logging.DEBUG if debug else logging.INFO
+
+
 class StrRep:
     '''Wrapping an object to provide an alternative string representation.'''
     def __init__(self, obj, method=None, *a, **kw):
@@ -27,34 +67,6 @@ class StrRep:
     def __str__(self):
         return self._str(*self.a, **self.kw)
 
-# def str_rep(obj, method=None, *a, **kw):
-#     func = getattr(obj, method or '__str__')
-#     return type('StrRep', (), {'__str__': lambda self: func(*a, **kw)})
-
-def getLogger(block, debug=True, compact=True):
-    log = logging.getLogger(block.name)
-    log.setLevel(logging.DEBUG if debug else logging.INFO)
-
-    # https://stackoverflow.com/questions/16061641/python-logging-split-between-stdout-and-stderr
-    log.addFilter(InjectData(dict(
-        name=block.name,
-        block=StrRep(block, 'short_str' if compact else None)
-    )))
-    # '(%(name)s:%(levelname)s) %(asctime)s: %(message)s | %(block)s'
-    formatter = colorlog.ColoredFormatter(
-        COMPACT_FORMAT if compact else MULTILINE_FORMAT)
-
-    h_stdout = logging.StreamHandler(sys.stdout)
-    h_stdout.setLevel(logging.DEBUG if debug else logging.INFO)
-    h_stdout.addFilter(MaxLevel(logging.INFO))
-    h_stdout.setFormatter(formatter)
-    h_stderr = logging.StreamHandler(sys.stderr)
-    h_stderr.setLevel(logging.WARNING)
-    h_stderr.setFormatter(formatter)
-    log.addHandler(h_stdout)
-    log.addHandler(h_stderr)
-    return log
-
 
 class MaxLevel(logging.Filter):
     '''Filters (lets through) all messages with level < LEVEL'''
@@ -62,13 +74,14 @@ class MaxLevel(logging.Filter):
         self.level = level
 
     def filter(self, record):
-        return record.levelno <= self.level
+        return record.levelno < self.level
 
 
 class InjectData(logging.Filter):
     def __init__(self, fields, *a, **kw):
         self._fields = fields
         super().__init__(*a, **kw)
+
     def filter(self, record):
         for k, v in self._fields.items():
             setattr(record, k, v)

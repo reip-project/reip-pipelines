@@ -7,6 +7,7 @@ from . import logging
 from . import shell
 from . import func
 from . import iters
-from . import remote
+# from . import remote
+from . import config
 # from .background_process import *
 from .writer import *

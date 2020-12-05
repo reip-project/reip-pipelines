@@ -139,10 +139,11 @@ def generate_wpa_config(ssid, password=None, kind='basic', group='netdev', count
         status (bool): True if no exception was raised when creating
     '''
     logger.debug("Creating config for: " + str(ssid))
-    password = password or askpass()
-
     if kind == 'basic':
-        network = dict(ssid=ssid, psk=password)
+        if password:
+            network = dict(ssid=ssid, psk=password)
+        else:
+            network = dict(ssid=ssid, key_mgmt='NONE')
     elif kind == 'wpa-eap':
         network = dict(
             ssid=ssid, proto='RSN', key_mgmt='WPA-EAP',

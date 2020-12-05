@@ -1,5 +1,4 @@
-'''
-'''
+''''''
 import copy
 import time
 # import reip
@@ -93,6 +92,13 @@ class State(BaseState):
                 self.action(self.instance, *a, **kw)
             maybe_call(self.instance, 'after_{}'.format(self.name), *a, **kw)
 
+    def __enter__(self):
+        self.set()
+        return self
+
+    def __exit__(self, *x):
+        self.unset()
+
     _previous_state = None
     def set(self):
         '''Activate the state, if not already active. Returns True if there was
@@ -104,10 +110,10 @@ class State(BaseState):
         print('!! setting', self)
         return True
 
-    def revert(self):  # XXX: idk may remove this.
+    def unset(self):  # XXX: idk may remove this.
         '''Revert to the previous state - (undo set().)'''
         if self and self._previous_state is not None:
-            self._previous_state.set()
+            self.instance.state = self._previous_state
 
     def to(self, *states, **kw):
         '''Connect this state to another state to form a transition.'''
@@ -274,6 +280,11 @@ class TrafficLight(StateModel):
     go = red.to(green)
     stop = green.to(yellow).to(red)
     on = off.to(green)
+
+    # __hierarchy__ = {
+    #     off: None,
+    #     on: [go, yellow, red],
+    # }
 
     # def on_green(self):
     #     print('on_green')

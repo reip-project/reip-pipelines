@@ -194,6 +194,9 @@ class Graph(BaseContext):
             self.__class__.__name__, self.name, len(self.blocks),
             ''.join('\n' + text.indent(b) for b in self.blocks))
 
+    def __bool__(self):
+        return not (self.done or self.error)
+
     @classmethod
     def detached(cls, *blocks, **kw):
         return cls(*blocks, parent=None, **kw)

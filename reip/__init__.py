@@ -23,6 +23,15 @@ from .blocks import *
 def run(*a, **kw):
     default_graph().run(*a, **kw)
 
+def graph_function(func):
+    def inner(*a, **kw):
+        with reip.Graph() as g:
+            func(*a, **kw)
+        g.run()
+        return g
+    return inner
+
+
 def moment(delay=1e-6):
     '''Sleep for the minimum amount of time.'''
     time.sleep(delay)

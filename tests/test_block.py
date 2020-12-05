@@ -157,6 +157,8 @@ class ErrorStateTester(StateTester):
 
     def finish(self):
         self._check_state(error=RuntimeError)
+        del self._except._groups['process']
+        self._except.last = None
 
     def _do_finish(self, *a, **kw):
         super()._do_finish(self, *a, **kw)
@@ -168,8 +170,7 @@ def test_error_state():
         tester = ErrorStateTester()
     print(g)
     for _ in range(5):
-        with pytest.raises(RuntimeError):
-            g.run(duration=0.1, raise_exc=True)
+        g.run(duration=0.1, raise_exc=True)
 
 
 

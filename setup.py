@@ -15,26 +15,24 @@ setuptools.setup(
     packages=setuptools.find_packages(),
     # entry_points={'console_scripts': ['{name}={name}:main'.format(name=NAME)]},
     install_requires=[
-        'numpy',
-        # 'pyarrow',
-        'tflit>=0.0.13',
-        'remoteobj>=0.2.6',
-        # utils
-        'pycrypto',
-        # general
+        # cli
         'fire', 'colorlog',
-        # 'netswitch',
-        'watchdog',
-
+        # core packages
+        'numpy',
+        'remoteobj>=0.2.6',
+        # 'pyarrow',
+        # block packages
+        'watchdog', 'tflit>=0.0.13',
         # status messages
-        'ifcfg', 'ixconfig>=0.1.0',
+        'psutil', 'ifcfg', 'ixconfig>=0.1.1', 'netswitch', 'requests',
     ],
     extras_require={
-        'status': ['psutil', 'ixconfig', 'netswitch'],
-        'audio': ['pyaudio', 'librosa'],
+        # 'status': ['psutil', 'ixconfig', 'netswitch'],
+        'audio': ['sounddevice', 'librosa'],
         'video': ['opencv-python'],  # already installed on Jetson by default
+        'encrypt': ['pycrypto'],
         'vis': ['matplotlib'],
         'docs': ['sphinx!=1.3.1', 'sphinx_theme', 'sphinx-gallery'],
     },
-    license='MIT License',
-    keywords='')
+    license='BSD 3-Clause Clear License',
+    keywords='iot embedded app pipeline block multiprocessing')
