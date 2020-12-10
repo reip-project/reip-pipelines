@@ -93,6 +93,16 @@ def memory(meta=None):
         'mem_percent': float(mem.percent)
     }
 
+@register_stats
+def git(meta=None, root=None):
+    local_hash = reip.util.shell.git('rev-parse HEAD')
+    remte_hash = reip.util.shell.git('rev-parse origin/master')
+    return {
+        'branch': reip.util.shell.git('rev-parse --abbrev-ref HEAD'),
+        'commit_date': reip.util.shell.git('log -1 --format=%ci'),
+        'commit': reip.util.shell.git('rev-parse --short HEAD'),
+        'uptodate': int(local_hash == remte_hash)
+    }
 
 # network
 
@@ -100,11 +110,11 @@ def memory(meta=None):
 @register_stats
 def wifi(wlan='wlan*', meta=None):
     iwc = ixconfig.Iwc().ifaces(wlan)
-    wlan = next(iter(iwc), None)
+    wlan = max(iwc or [None])
     return ({
         'wifi_quality': float(iwc[wlan].quality_ratio),
         'wifi_strength': float(iwc[wlan].strength),
-        'AP': netswitch.Wpa().ssid
+        'ap': netswitch.Wpa().ssid
     } if wlan else {})
 
 
@@ -173,7 +183,7 @@ def storage(*poslocs, meta=None, **locs):
 def base(meta=None):
     return {
         'time': datetime.utcnow().isoformat(),
-        'hostname': socket.getfqdn(),
+        'fqdn': socket.getfqdn(),
     }
 
 def meta(meta=None):

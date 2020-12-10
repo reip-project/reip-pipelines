@@ -24,7 +24,7 @@ def resize_list(lst, length, value=None):
             value() if callable(value) else value
             for i in range(max(0, length - len(lst)))
         ]
-    )[:length]
+    )[:length] if length is not None and len(lst) != length else lst
 
 
 def decorator(__func__=None, **kw):

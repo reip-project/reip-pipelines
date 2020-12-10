@@ -39,8 +39,10 @@ def timed(it=None, duration=None, error=False):
         yield x
 
 
-def throttled(it=None, rate=None, interval=None, delay=1e-6):
+def throttled(it=None, rate=None, interval=None, delay=1e-6, initial=None):
     '''Throttle a loop to take '''
+    if initial:
+        time.sleep(initial)
     if it is None:
         it = loop()
     rate = 1. / interval if interval else rate
