@@ -24,12 +24,25 @@ class Iterator(reip.Block):
 
 class Interval(reip.Block):
     '''Call this function every X seconds'''
-    def __init__(self, seconds=2, **kw):
+    def __init__(self, seconds=2, initial=None, **kw):
         self.seconds = seconds
+        self.initial = initial
+        self._did_init = False
         super().__init__(n_source=0, **kw)
 
     def process(self, meta=None):
-        time.sleep(self.seconds)
+        if self.initial and not self._did_init:
+            time.sleep(self.initial)
+            self._did_init = True
+        else:
+            time.sleep(self.seconds)
+        return [None], {'time': time.time()}
+
+
+class ControlledDelay(reip.Block):
+    '''Add system time to metadata.'''
+    def process(self, x, meta=None):
+        time.sleep(x)
         return [None], {'time': time.time()}
 
 

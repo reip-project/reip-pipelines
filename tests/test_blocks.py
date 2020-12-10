@@ -58,6 +58,23 @@ def test_increment():
     assert data == list(range(10, 100, 10))
 
 
+# def test_sync(delays=(0.05, 0.05, 0.08, 0.09, 0.01), interval=0.2):
+#     with reip.Graph() as g:
+#         sink = reip.Producer()
+#         delay_sink = reip.Producer()
+#         B.ControlledDelay()(delay_sink)
+#         b1 = .to(reip.Block())
+#         b2 = B.Interval(interval, initial=interval/2)(sink).to(reip.Block())
+#
+#     for i in range(10):
+#         for x in delays:
+#             sink.put(((x, i), {}))
+#             delay_sink.put((x, meta))
+#
+#     with g.run_scope():
+#         while len(sink):
+
+
 #########################
 # test blocks/output.py
 #########################

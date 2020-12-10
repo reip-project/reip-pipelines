@@ -1,4 +1,5 @@
 from .meta import Meta
+from . import statistics
 from .stopwatch import Stopwatch
 from .text import *
 from .debug import *

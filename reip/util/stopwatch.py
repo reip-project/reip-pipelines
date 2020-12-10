@@ -2,55 +2,7 @@ import time
 import collections
 import numpy as np
 import reip
-
-
-class OnlineStats:
-    def __init__(self, history=0):
-        self.count = 0
-        self.mean = 0
-        self._var = 0
-        self.last = 0
-        self.samples = collections.deque(maxlen=history) if history else None
-
-    def __getstate__(self):
-        return dict(self.__dict__, samples=None)
-
-    def __str__(self):
-        return '(total = {total:.4f} avg = {mean:.6f} ± {std:.6f}, n = {count:8,})\n'.format(
-            total=self.mean * self.count, mean=self.mean, std=self.std,
-            count=self.count)
-
-    def __len__(self):
-        return self.count
-
-    def append(self, x):
-        self.last = x
-        # online mean
-        last_mean = self.mean
-        self.mean = (self.mean * self.count + x) / (self.count + 1)
-        # online std deviation
-        if self.count:
-            self._var = self._var + (x - last_mean)*(x - self.mean)
-        #
-        self.count += 1
-        if self.samples is not None:
-            self.samples.append(x)
-
-    def extend(self, xs):
-        for x in xs:
-            self.append(x)
-
-    @property
-    def sum(self):
-        return self.mean * self.count
-
-    @property
-    def std(self):
-        return np.sqrt(self.var)
-
-    @property
-    def var(self):
-        return self._var / (self.count - 1) if self.count > 1 else 0
+from reip.util.statistics import OnlineStats
 
 
 _BLANK = ''
