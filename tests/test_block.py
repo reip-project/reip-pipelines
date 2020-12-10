@@ -83,6 +83,14 @@ def test_process_function_returns():
     assert list(out.data[0].nowait()) == [5, 6]*5
 
 
+def test_init_errors_from_block_in_task():
+    with reip.Graph() as g:
+        with reip.Task() as t:
+            reip.Block(max_processed=10)(reip.Block(), reip.Block())
+    with pytest.raises(RuntimeError, match='Expected \d+ sources'):
+        g.run()
+
+
 # class BlockPresence(reip.Block):
 #     def __init__(self, *a, **kw):
 #         super().__init__(*a, n_source=None, **kw)

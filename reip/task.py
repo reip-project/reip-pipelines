@@ -25,7 +25,7 @@ class Task(reip.Graph):
     def _run(self, duration=None, _controlling=True, _ready_flag=None):
         self.log.debug(text.blue('Starting'))
         try:
-            with self.remote.listen_(bg=False):
+            with self._except(raises=False), self.remote.listen_(bg=False):
                 try:
                     # initialize
                     super().spawn(wait=False, _controlling=_controlling, _ready_flag=_ready_flag)
