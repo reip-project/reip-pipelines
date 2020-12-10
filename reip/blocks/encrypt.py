@@ -16,9 +16,10 @@ class TwoStageEncrypt(reip.Block):
     PADDING = b'{'
     BLOCK_SIZE = 32
 
-    def __init__(self, filename, rsa_key, create=True, **kw):
+    def __init__(self, filename, rsa_key, create=True, remove_files=False, **kw):
         super().__init__(**kw)
         self.filename = str(filename)
+        self.remove_files = remove_files
         self.public_key = rsa_key
         if not os.path.isfile(self.public_key):
             if not create:
@@ -34,7 +35,9 @@ class TwoStageEncrypt(reip.Block):
         '''
         fname = reip.util.ensure_dir(self.filename.format(
             name=reip.util.fname(file), **meta))
-        return [self.compress(self.encrypt(file), fname)], {}
+        compressed = self.compress(self.encrypt(file), fname)
+        self.maybe_delete_files(file)
+        return [compressed], {}
 
     def encrypt(self, file):
         # Encrypt the file using AES and AES using RSA
@@ -57,6 +60,11 @@ class TwoStageEncrypt(reip.Block):
                 tar_addbytes(tar, f, data)
         return out_file
 
+    def maybe_remove_files(self, *files):
+        if self.remove_files:
+            for f in files:
+                os.remove(f)
+
     def pad(self, msg):
         n = self.BLOCK_SIZE - len(msg) % self.BLOCK_SIZE
         return msg + n * self.PADDING
@@ -68,10 +76,11 @@ class TwoStageEncrypt(reip.Block):
 class TwoStageDecrypt(reip.Block):
     '''Decrypt a file encrypted with TwoStepEncryptFile.
     '''
-    def __init__(self, filename, rsa_key, **kw):
+    def __init__(self, filename, rsa_key, remove_files=False, **kw):
         super().__init__(**kw)
         self.filename = str(filename)
         self.private_key = rsa_key
+        self.remove_files = remove_files
 
     def process(self, file, meta=None):
         # get the output filename and make sure the parent dir exists
@@ -79,7 +88,9 @@ class TwoStageDecrypt(reip.Block):
             name=reip.util.fname(file), **meta))
         # decrypt file to disk
         enc_file, enc_key = self.decompress(file)
-        return [self.decrypt(enc_file, enc_key, fname)], {}
+        decrypted = self.decrypt(enc_file, enc_key, fname)
+        self.maybe_remove_files(file, enc_file, enc_key)
+        return [decrypted] {}
 
     def decrypt(self, enc_file, enc_key, fname):
         '''Decrypt file with AES 4096.'''
@@ -98,6 +109,11 @@ class TwoStageDecrypt(reip.Block):
                 next(tar.extractfile(f).read() for f in tar.getmembers()
                      if f.name.endswith('.key'))
             )
+
+    def maybe_remove_files(self, *files):
+        if self.remove_files:
+            for f in files:
+                os.remove(f)
 
 
 def get_private_key(public_fname):

@@ -127,17 +127,21 @@ class Increment(Iterator):
 
 
 class Debug(reip.Block):
-    def __init__(self, message=None, value=False, summary=False, period=None, name=None, border=False, **kw):
+    def __init__(self, message=None, level='debug', convert=None, value=False, summary=False, period=None, name=None, border=False, **kw):
         self.message = message or 'Debug'
         self.value = value
         self.period = period
         self._summary = summary
         self._border = border
         self._last_time = 0
+        self.level = reip.util.logging.aslevel(level)
+        self.convert = convert
         name = 'Debug-{}'.format(message.replace(" ", "-")) if message else None
         super().__init__(name=name, **kw)
 
     def _block_line_format(self, x):
+        if self.convert:
+            return type(x).__name__, self.convert(x)
         if isinstance(x, np.ndarray):
             if self._summary:
                 return x.shape, x.dtype, 'min:', x.min(), 'max:', x.max(), 'mean:', x.mean()
@@ -150,7 +154,7 @@ class Debug(reip.Block):
         return (text.block_text if self._border else text.b_)(
             text.blue(self.message),
             'data:', *[
-                ('\t', i) + tuple(self._block_line_format(x))
+                ('  ', i) + tuple(self._block_line_format(x))
                 for i, x in enumerate(xs)],
             ('meta:', meta)
         )
@@ -158,7 +162,7 @@ class Debug(reip.Block):
     def process(self, *xs, meta=None):
         if not self.period or time.time() - self._last_time > self.period:
             self._last_time = time.time()
-            self.log.info(self._block_format(*xs, meta=meta))
+            self.log.log(self.level, self._block_format(*xs, meta=meta))
             # print(, flush=True)
         return xs, meta
 

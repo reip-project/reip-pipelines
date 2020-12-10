@@ -183,7 +183,7 @@ def storage(*poslocs, meta=None, **locs):
 def base(meta=None):
     return {
         'time': datetime.utcnow().isoformat(),
-        'fqdn': socket.getfqdn(),
+        'fqdn': socket.getfqdn(),# 'hostname'
     }
 
 def meta(meta=None):
