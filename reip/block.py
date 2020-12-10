@@ -1,6 +1,5 @@
 import time
 import threading
-import traceback
 from contextlib import contextmanager
 import remoteobj
 
@@ -84,13 +83,12 @@ class Block:
         # If a block has a fixed number of sources, you can specify that
         # and it will throw an exception when spawning if the number of
         # sources does not match.
+        self._block_sink_queue_length = queue  # needed for set sink count
         self.n_expected_sources = n_source
-        self.sources = [None] * (n_source or 0)
-        # TODO: should we have n_sink=None, signify, n_sink=n_source ?
-        self.sinks = [
-            Producer(queue, task_id=self.task_id)
-            for _ in range(n_sink or 0)
-        ]
+        self.sources, self.sinks = [], []
+        self.set_block_source_count(n_source)
+        self.set_block_sink_count(n_sink)
+        # used in Stream class. Can be all(), any() e.g. source_strategy=all
         self._source_strategy = source_strategy
 
         self.max_rate = max_rate
@@ -107,6 +105,15 @@ class Block:
         self.log = reip.util.logging.getLogger(self)
         # signals
         self._reset_state()
+
+    def set_block_source_count(self, n):
+        # NOTE: if n is None, no resize will happen
+        self.sources = reip.util.resize_list(self.sources, n, None)
+
+    def set_block_sink_count(self, n):
+        # NOTE: if n is None, no resize will happen
+        new_sink = lambda: Producer(self._block_sink_queue_length, task_id=self.task_id)
+        self.sinks = reip.util.resize_list(self.sinks, n, new_sink)
 
     def _reset_state(self):
         # state
@@ -156,8 +163,7 @@ class Block:
 
             if sinks:
                 # make sure the list is long enough
-                self.sources = reip.util.resize_list(
-                    self.sources, j + len(sinks), None)
+                self.set_block_source_count(j + len(sinks))
 
                 # create and add the source
                 for j, sink in enumerate(sinks, j):
@@ -262,7 +268,7 @@ class Block:
                                 self._send_to_sinks(outputs, meta)
 
                 except KeyboardInterrupt:
-                    if _ready_flag is None:
+                    if self.controlling:
                         self.log.info(text.yellow('Interrupting'))
                 finally:
                     # finish up and shut down block
@@ -484,7 +490,7 @@ class Block:
     # debug
 
     def short_str(self):
-        return '[B({})[{}i/{}o]({})]'.format(
+        return '[B({})[{}/{}]({})]'.format(
             self.name, len(self.sources), len(self.sinks),
             self.block_state_name)
 
