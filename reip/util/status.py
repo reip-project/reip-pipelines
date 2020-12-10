@@ -102,9 +102,9 @@ def wifi(wlan='wlan*', meta=None):
     iwc = ixconfig.Iwc().ifaces(wlan)
     wlan = next(iter(iwc), None)
     return ({
-        'wifi_quality': float(iwc[wlan].quality_ratio),
-        'wifi_strength': float(iwc[wlan].strength),
-        'AP': netswitch.Wpa().ssid
+        'wifi_quality': float(iwc[wlan]['quality_ratio']),
+        'wifi_strength': float(iwc[wlan]['strength']),
+        'ap': netswitch.Wpa().ssid
     } if wlan else {})
 
 
@@ -173,7 +173,7 @@ def storage(*poslocs, meta=None, **locs):
 def base(meta=None):
     return {
         'time': datetime.utcnow().isoformat(),
-        'hostname': socket.getfqdn(),
+        'fqdn': socket.getfqdn(),# 'hostname'
     }
 
 def meta(meta=None):

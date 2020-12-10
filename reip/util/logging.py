@@ -1,3 +1,4 @@
+import os
 import sys
 import time
 import logging
@@ -20,8 +21,10 @@ COMPACT_FORMAT = (
 
 DATE_FORMAT = "%m/%d/%y %H:%M:%S"
 
+DEFAULT_LEVEL = os.getenv('REIP_LOG_LEVEL') or 'info'
 
-def getLogger(block, debug=True, compact=True):
+
+def getLogger(block, level=DEFAULT_LEVEL, compact=True):
     if isinstance(block, str):
         log = logging.getLogger(block)
     else:
@@ -29,14 +32,15 @@ def getLogger(block, debug=True, compact=True):
         log.addFilter(InjectData(dict(
             block=StrRep(block, 'short_str' if compact else None)
         )))
-    log.setLevel(minlevel(debug))
+
+    log.setLevel(aslevel(DEFAULT_LEVEL if level is None else level))
     formatter = colorlog.ColoredFormatter(COMPACT_FORMAT if compact else MULTILINE_FORMAT)
-    return add_stdouterr(log, formatter=formatter, debug=debug)
+    return add_stdouterr(log, formatter=formatter, level=level)
 
 
-def add_stdouterr(log, formatter=None, debug=False, errlevel=logging.WARNING):
+def add_stdouterr(log, formatter=None, level='info', errlevel=logging.WARNING):
     # https://stackoverflow.com/questions/16061641/python-logging-split-between-stdout-and-stderr
-    h_out = levelrange(logging.StreamHandler(sys.stdout), minlevel(debug), errlevel)
+    h_out = levelrange(logging.StreamHandler(sys.stdout), aslevel(level), errlevel)
     h_err = levelrange(logging.StreamHandler(sys.stderr), errlevel)
     if formatter is not None:
         h_out.setFormatter(formatter)
@@ -48,11 +52,16 @@ def add_stdouterr(log, formatter=None, debug=False, errlevel=logging.WARNING):
 
 def levelrange(log, minlevel=logging.DEBUG, maxlevel=None):
     if minlevel is not None:
-        log.setLevel(minlevel)
+        log.setLevel(aslevel(minlevel))
     if maxlevel is not None:
-        log.addFilter(MaxLevel(maxlevel))
+        log.addFilter(MaxLevel(aslevel(maxlevel)))
     return log
 
+def aslevel(level):
+    if str(level) == level:
+        levelkey = level.upper() if level not in logging._nameToLevel else level
+        return logging._nameToLevel.get(levelkey, level)
+    return level
 
 def minlevel(debug=False):
     return logging.DEBUG if debug else logging.INFO

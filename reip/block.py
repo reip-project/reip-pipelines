@@ -74,7 +74,7 @@ class Block:
 
     def __init__(self, n_source=1, n_sink=1, queue=1000, blocking=False,
                  max_rate=None, max_processed=None, graph=None, name=None,
-                 source_strategy=all, extra_kw=False, **kw):
+                 source_strategy=all, extra_kw=False, log_level=None, **kw):
         self._except = remoteobj.LocalExcept(raises=True)
         self.name = name or f'{self.__class__.__name__}_{id(self)}'
         self.parent_id, self.task_id = reip.Graph.register_instance(self, graph)
@@ -104,7 +104,7 @@ class Block:
 
         # block timer
         self._sw = reip.util.Stopwatch(str(self))
-        self.log = reip.util.logging.getLogger(self)
+        self.log = reip.util.logging.getLogger(self, level=log_level)
         # signals
         self._reset_state()
 
@@ -275,10 +275,11 @@ class Block:
                         self._send_sink_signal(self._stream.signal)
                     # profiler.stop()
                     # print(profiler.output_text(unicode=True, color=True))
-                    self.done = True
-                    self.log.debug(text.green('Done.'))
+                    
         finally:
-            pass
+            self.done = True
+            self.log.debug(text.green('Done.'))
+            #pass
             # if _ready_flag is None:
             #     self.log.info(self.stats_summary())
 

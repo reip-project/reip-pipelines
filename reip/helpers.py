@@ -38,13 +38,32 @@ import warnings
 from contextlib import contextmanager
 
 
-def asblock(single_output=False, meta=True, context=False, self=False, **kw):
+def asblock(__func__=None, single_output=False, meta=True, context=False, self=False, **kw):
     def asblock_converter(func):
         return reip.util.partial(
             _BlockHelper, func=func, __name__=func.__name__,
             single_output=single_output, meta=meta, context=context,
             _self=self, **kw)
-    return asblock_converter
+    return asblock_converter(__func__) if callable(__func__) else asblock_converter
+
+def asbasic(__func__, **kw):
+    return asblock(single_output=True, meta=False, **kw)(__func__)
+
+def asmulti(__func__, **kw):
+    return asblock(single_output=False, meta=False, **kw)(__func__)
+
+def asbasicmeta(__func__, **kw):
+    return asblock(single_output=True, meta=True, **kw)(__func__)
+
+def asmultimeta(__func__, **kw):
+    return asblock(single_output=False, meta=True, **kw)(__func__)
+
+def ascontext(__func__, self=True, meta=True, single_output=False, **kw):
+    return asblock(context=True, self=self, meta=meta, single_output=single_output, **kw)(__func__)
+
+
+# internals
+
 
 def wrap_process(single_output=False, meta=True):
     '''Handle multiple output formats. Convert them to a uniform format.'''
@@ -95,3 +114,4 @@ class _BlockHelper(reip.Block):
 
     def finish(self):
         self._ctx.__exit__(*sys.exc_info())
+

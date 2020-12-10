@@ -25,7 +25,7 @@ class Task(reip.Graph):
     def _run(self, duration=None, _controlling=True, _ready_flag=None):
         self.log.debug(text.blue('Starting'))
         try:
-            with self.remote.listen_(bg=False):
+            with self._except(raises=False), self.remote.listen_(bg=False):
                 try:
                     # initialize
                     super().spawn(wait=False, _controlling=_controlling, _ready_flag=_ready_flag)
@@ -54,6 +54,7 @@ class Task(reip.Graph):
                     #     print(self.stats_summary())
         finally:
             _ = super().__export_state__()
+            self.log.debug(str(_))
             return _
 
 
@@ -78,21 +79,28 @@ class Task(reip.Graph):
     def join(self, *a, timeout=10, raise_exc=True, **kw):
         if self._process is None:
             return
-
+        
         self.remote.super.join(*a, raise_exc=False, _default=None, **kw)  # join children
         self._process.join(timeout=timeout, raises=False)
         self.__import_state__(self._process.result)
+        #print(self._except)
         self._process = None
         if raise_exc:
             self.raise_exception()
 
     # def _pull_state(self):
     #     self.__import_state__(self.__export_state__())
-
+    _aaaa = False
     def _pull_process_result(self):
         # NOTE: this is to update the state when the remote process has finished
         if self._process is not None:
-            self.__import_state__(self._process.result)
+            r = self._process.result
+            self.__import_state__(r)
+            #self.log.info('result: {}'.format(r))
+            if not self._aaaa and r is not None:
+                self._aaaa = True
+                self.log.debug('process state: {} \n\n{}'.format(r, self))
+                
 
     def __export_state__(self):
         return self.remote.super.attrs_('__export_state__')(_default=None)
@@ -125,10 +133,12 @@ class Task(reip.Graph):
 
     def __local_done(self):  # for when the remote process is not running
         self._pull_process_result()
+        #self.log.debug('local done {} {}'.format(super().done, self))
         return super().done
 
     def __local_error(self):  # for when the remote process is not running
         self._pull_process_result()
+        #self.log.debug('local error {} {}'.format(super().error, self))
         return super().error
 
     # block control

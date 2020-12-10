@@ -40,7 +40,7 @@ class SPL(reip.Block):
         leq = self.calibration + librosa.power_to_db((
             self.weightings[..., None] * (S ** 2)).mean(-2)).T
         return [leq], {
-            'spl_weightings': self.weight_names,
+            #'spl_weightings': self.weight_names,
             'hop_duration': self.hop_duration,
         }
 

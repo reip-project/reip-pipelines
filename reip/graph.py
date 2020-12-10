@@ -181,7 +181,7 @@ class BaseContext:  # (metaclass=_MetaContext)
 
 class Graph(BaseContext):
     _delay = 1e-4
-    _main_delay = 0.1
+    _main_delay = 1e-4#0.1
     controlling = None
 
     def __init__(self, *blocks, **kw):
@@ -323,7 +323,8 @@ class Graph(BaseContext):
 
     def __export_state__(self):
         return {
-            'blocks': [b.__export_state__() for b in self.blocks]
+            'blocks': [b.__export_state__() for b in self.blocks],
+            '_except': self._except,
         }
 
     def __import_state__(self, state):
