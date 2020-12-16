@@ -56,7 +56,7 @@ def decorator(__func__=None, **kw):
 def partial(__partial_func__, *a, __name__=None, **kw):
     @wraps(__partial_func__)
     def inner(*ai, **kwi):
-        return __partial_func__(*a, *ai, **kw, **kwi)
+        return __partial_func__(*a, *ai, **dict(kw, **kwi))
     if __name__ is not None:
         inner.__name__ = __name__
     return inner
@@ -104,9 +104,8 @@ def as_list(x):
 def is_iter(iterable):
     return not hasattr(iterable,'__len__') and hasattr(iterable,'__iter__')
 
-def as_iterlike(x):
-    return (
-        x if isinstance(x, (list, tuple, np.ndarray)) or is_iter(x) else [x])
+def as_iterlike(x, like=(list, tuple, set, np.ndarray)):
+    return x if isinstance(x, like) or is_iter(x) else [x]
 
 def squeeze(x):
     '''If the input is a one-element list or tuple, take the first element.

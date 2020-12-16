@@ -48,7 +48,8 @@ def register_stats(func):
 stripsfx = lambda x, sfx: x[:-len(sfx)] if x.endswith(sfx) else x
 # find regex pattern in shell output
 shfind = lambda pat, cmd: re.findall(pat, reip.util.shell.run(cmd)[0])
-
+#
+as_kw = lambda kw, key: kw if isinstance(kw, dict) else {key: kw}
 
 # class Status(reip.Block):
 #     def __init__(self, **kw):
@@ -165,7 +166,10 @@ def usb(meta=None, **devices):
     if not devices:
         return {}
     found_devices = reip.util.shell.lsusb()
-    return {k: _search_usb(found_devices, **kw) for k, kw in devices.items()}
+    return {
+        k: _search_usb(found_devices, **as_kw(kw, 'pattern'))
+        for k, kw in devices.items()
+    }
 
 
 DEFAULT_STORAGE_LOCATIONS = {'root': '/', 'tmp': '/tmp', 'varlog': '/var/log'}
