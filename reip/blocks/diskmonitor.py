@@ -24,9 +24,9 @@ import psutil
 
 
 class DiskMonitor(reip.Block):
-    def __init__(self, deleter, root_dir, threshold=0.95, padding=0.1, interval=60, **kw):
-        self._deleter = deleter
-        self._root_dir = root_dir
+    def __init__(self, *root_dirs, deleter=None, threshold=0.95, padding=0.1, interval=60, **kw):
+        self._deleter = deleter if callable(deleter) else self._default_deleter
+        self._root_dirs = root_dirs
         self.threshold = threshold
         self.padding = padding
         self._files = []
@@ -42,8 +42,6 @@ class DiskMonitor(reip.Block):
         self._files.clear()
         self.log.warning('Disk usage exceeded ({:.1%} > {:.1%}).'.format(start_usage, self.threshold))
         self._deleter(self, **self.extra_kw)
-        if not self._files:  # none we're deleted ?
-            return
 
         # send deleted files with change in usage
         usage = self.get_usage()
@@ -57,18 +55,19 @@ class DiskMonitor(reip.Block):
         return reip.util.status.storage('/')
 
     def get_files(self, *fs):
-        return glob.glob(os.path.join(self._root_dir, *fs), recursive=True)
+        return [
+            f for root in self._root_dirs
+            for f in glob.glob(os.path.join(root, *fs), recursive=True)
+        ]
 
-    def delete(self, fs):
-        fs = reip.util.as_list(fs)
-        for f in fs:
-            os.remove(f)
-        self._files.extend(fs)
-
-    def delete_while_full(self, fs, chunksize=1, randomize=True):
+    def delete_while_full(self, fs, chunksize=1, method='random'):
         chunksize = chunksize or len(fs)
-        if randomize:
+        if method == 'random':
             random.shuffle(fs)
+        elif method == 'newest':
+            fs = fs[::-1]
+        elif method == 'oldest':
+            pass
         for usage, i in zip(self.while_full(), range(0, len(fs), chunksize)):
             self.delete(fs[i:i+chunksize])
         return i + chunksize < len(fs)
@@ -81,31 +80,34 @@ class DiskMonitor(reip.Block):
                 break
             yield usage
 
+    def delete(self, fs):
+        fs = reip.util.as_list(fs)
+        for f in fs:
+            os.remove(f)
+        self._files.extend(fs)
+
     @classmethod
     def deleter(cls, *a, **kw):
         return (
             # called deco with no arguments, just the decoed function
-            reip.util.partial(cls, *a, **kw)
-            if len(a) == 1 and not kw and callable(a[0]) else
+            reip.util.partial(cls, *a[1:], deleter=a[0], **kw)
+            if a and callable(a[0]) else
             # called with misc arguments, return a function that will create
             # a partial for catching the function
             reip.util.create_partial(cls, *a, **kw)
         )
 
+    @staticmethod
+    def _default_deleter(block):
+        return block.delete_while_full(block.get_files())
+
 
 
 
 @DiskMonitor.deleter
-def sonyc_deleter(block, chunksize=5):
-    chunksize = chunksize or 20
-    # delete all logs first
-    block.delete(block.get_files('logs'))
-    # first goes audio
-    if block.delete_while_full(block.get_files('audio')[1::2], chunksize):
-        return
-    # if that's all gone, do ml
-    if block.delete_while_full(block.get_files('ml')[1::2], chunksize):
-        return
-    # and if we have to, do spl
-    if block.delete_while_full(block.get_files('spl')[1::2], chunksize):
-        return
+def SonycDiskMonitor(block, chunksize=5, skip=2, offset=1):
+    block.delete(block.get_files('logs'))  # delete all logs first
+    return (
+        block.delete_while_full(block.get_files('audio')[offset::skip], chunksize) or
+        block.delete_while_full(block.get_files('ml')[offset::skip], chunksize) or
+        block.delete_while_full(block.get_files('spl')[offset::skip], chunksize))
