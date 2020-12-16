@@ -61,6 +61,8 @@ def asmultimeta(__func__, **kw):
 def ascontext(__func__, self=True, meta=True, single_output=False, **kw):
     return asblock(context=True, self=self, meta=meta, single_output=single_output, **kw)(__func__)
 
+def asbasiccontext(__func__, self=True, meta=False, single_output=True, **kw):
+    return asblock(context=True, self=self, meta=meta, single_output=single_output, **kw)(__func__)
 
 # internals
 
@@ -114,4 +116,3 @@ class _BlockHelper(reip.Block):
 
     def finish(self):
         self._ctx.__exit__(*sys.exc_info())
-
