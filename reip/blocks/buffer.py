@@ -6,7 +6,7 @@ import reip
 
 
 class Rebuffer(reip.Block):
-    def __init__(self, size=None, duration=None, sr_key='sr', **kw):
+    def __init__(self, size=None, duration=None, *a, sr_key='sr', **kw):
         assert size or duration, 'You must specify a size or duration.'
         self.size = size
         self.duration = duration
@@ -100,33 +100,25 @@ class GatedRebuffer(Rebuffer):
 
 
 
-def temporal_coverage(clip_duration, coverage=0.5, min_silence=5.0, sampling='normal'):
+def temporal_coverage(clip_duration=10, coverage=0.5, min_silence=5.0, sampling='normal'):
     '''Given a clip_duration and desired coverage fraction, compute
     how long the silence between clips needs to be to satisfy the desired
     coverage and add some random variance to the silence based so that it
     gives values sampled from the distribution specified by sampling.
 
-    Parameters
-    ----------
-    clip_duration : float
-        Duration of non-silent clip in seconds
-    coverage : float
-        Fraction of time to be recorded (non-silence), must be in range
-        (0,1]
-    min_silence : float
-        Minimum silence allowed between clips, in seconds
-    sampling : str
-        The distribution from which silence durations will be sampled, must
-        be 'uniform' or 'normal'.
+    Arguments:
+        clip_duration (float): Duration of non-silent clip in seconds
+        coverage (float): Fraction of time to be recorded (non-silence), must
+            be in range (0,1].
+        min_silence (float): Minimum silence allowed between clips, in seconds
+        sampling (str): The distribution from which silence durations will be
+            sampled, must be 'uniform' or 'normal'.
 
-    Returns
-    -------
-    silence : float
-        The amount of silence to insert between the current and next clip,
-        in seconds.
+    Returns:
+        silence (float): The amount of silence to insert between the current
+            and next clip, in seconds.
 
     '''
-    # checks and warnings
     if clip_duration <= 0:
         raise ValueError('Clip duration must be positive.')
     if not (0 < coverage <= 1):
@@ -158,5 +150,4 @@ def temporal_coverage(clip_duration, coverage=0.5, min_silence=5.0, sampling='no
         silence += sigma / 3. * np.random.randn() # +N(0, sig/3)
 
     # Make sure silence is within limits
-    silence = min(max(silence, min_silence), max_silence)
-    return silence
+    return min(max(silence, min_silence), max_silence)
