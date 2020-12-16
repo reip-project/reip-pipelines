@@ -1,5 +1,6 @@
 import time
 import threading
+import warnings
 from contextlib import contextmanager
 import remoteobj
 
@@ -72,7 +73,7 @@ class Block:
     controlling = False
 
     def __init__(self, n_source=1, n_sink=1, queue=1000, blocking=False,
-                 max_rate=None, max_processed=None, graph=None, name=None,
+                 max_rate=None, min_interval=None, max_processed=None, graph=None, name=None,
                  source_strategy=all, extra_kw=False, log_level=None, **kw):
         self._except = remoteobj.LocalExcept(raises=True)
         self.name = name or f'{self.__class__.__name__}_{id(self)}'
@@ -91,7 +92,15 @@ class Block:
         # used in Stream class. Can be all(), any() e.g. source_strategy=all
         self._source_strategy = source_strategy
 
-        self.max_rate = max_rate
+        if min_interval and max_rate:
+            warnings.warn((
+                'Both max_rate ({}) and min_interval ({}) are set, but are '
+                'mutually exclusive (max_rate=1/min_interval). min_interval will'
+                'be used.').format(max_rate, min_interval))
+        if max_rate:
+            self.max_rate = max_rate
+        if min_interval:
+            self.min_interval = min_interval
         self.max_processed = max_processed
         self._put_blocking = blocking
         if extra_kw:
@@ -105,6 +114,14 @@ class Block:
         self.log = reip.util.logging.getLogger(self, level=log_level)
         # signals
         self._reset_state()
+
+    @property
+    def min_interval(self):
+        return self.max_rate
+
+    @min_interval.setter
+    def min_interval(self, value):
+        self.max_rate = 1. / value if value is not None else value
 
     def set_block_source_count(self, n):
         # NOTE: if n is None, no resize will happen
@@ -281,7 +298,7 @@ class Block:
                         self._send_sink_signal(self._stream.signal)
                     # profiler.stop()
                     # print(profiler.output_text(unicode=True, color=True))
-                    
+
         finally:
             self.done = True
             self.log.debug(text.green('Done.'))
