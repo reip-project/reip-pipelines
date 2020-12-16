@@ -15,7 +15,7 @@ class Synchronize(reip.Block):
         '''Synchronize two Block outputs'''
         self.key = key
         self.tol = tol
-        super().__init__(n_source=None, n_sink=None, **kw)
+        super().__init__(n_inputs=None, n_outputs=None, **kw)
 
     # XXX: so that the number of sinks always equals the number of sources
     def set_block_source_count(self, n):

@@ -8,7 +8,7 @@ class Array(reip.Block):
     def __init__(self, shape, **kw):
         self.shape = shape
         self.array = None
-        super().__init__(n_source=0, **kw)
+        super().__init__(n_inputs=0, **kw)
 
     def init(self):
         self.array = np.ones(self.shape, dtype=np.uint8)
@@ -24,7 +24,7 @@ SomeArray = Array
 class Op(reip.Block):
     def __init__(self, offset=0, **kw):
         self.offset = offset
-        super().__init__(n_source=None, **kw)
+        super().__init__(n_inputs=None, **kw)
 
     def process(self, *data, meta=None):
         return data, {'offset': self.offset}
@@ -34,7 +34,7 @@ class TimeBomb(reip.Block):
     clock = None
     def __init__(self, t_minus=5, min_rate=0.001, **kw):
         self.t_minus = t_minus
-        super().__init__(n_source=None, min_rate=min_rate, **kw)
+        super().__init__(n_inputs=None, min_rate=min_rate, **kw)
 
     def init(self):
         self.clock = time.time()
@@ -51,7 +51,7 @@ class TextFile(reip.Block):
         self.content = (
             content if callable(content) else str(content or '').format)
         self.fname = str(fname)
-        super().__init__(n_source=None, **kw)
+        super().__init__(n_inputs=None, **kw)
 
     def process(self, *xs, meta):
         fname = self.fname.format(*xs, **meta)

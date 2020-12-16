@@ -12,7 +12,7 @@ import pytest
 
 class BadInit(reip.Block):
     def __init__(self, **kw):
-        super().__init__(n_source=None, **kw)
+        super().__init__(n_inputs=None, **kw)
 
     def init(self):
         time.sleep(0.01)
@@ -21,7 +21,7 @@ class BadInit(reip.Block):
 
 class BadBlock(reip.Block):
     def __init__(self, **kw):
-        super().__init__(n_source=None, **kw)
+        super().__init__(n_inputs=None, **kw)
 
     def process(self, meta):
         time.sleep(0.01)
@@ -30,7 +30,7 @@ class BadBlock(reip.Block):
 
 class BadFinish(reip.Block):
     def __init__(self, **kw):
-        super().__init__(n_source=None, **kw)
+        super().__init__(n_inputs=None, **kw)
 
     def process(self, meta):
         return reip.CLOSE

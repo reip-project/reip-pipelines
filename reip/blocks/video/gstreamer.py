@@ -17,7 +17,7 @@ class GStreamer(reip.Block):
         self._gs = stream
         self._outputs = outputs
         self._lazy_sources = lazy_sources
-        super().__init__(n_source=0, n_sink=len(outputs))
+        super().__init__(n_inputs=0, n_outputs=len(outputs))
 
     def init(self):
         self._gs.start()

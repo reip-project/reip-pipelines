@@ -30,7 +30,7 @@ class Watch(reip.Block):
         self.path = path
         self.event_types = event_types or self.event_types
         self.recursive = recursive
-        super().__init__(n_source=0, **kw)
+        super().__init__(n_inputs=0, **kw)
 
     _Handler = _WatchBlockHandler
 

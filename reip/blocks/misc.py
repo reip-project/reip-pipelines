@@ -12,7 +12,7 @@ class Iterator(reip.Block):
     '''Call this function every X seconds'''
     def __init__(self, iterator, **kw):
         self.iterator = iter(iterator)
-        super().__init__(n_source=0, **kw)
+        super().__init__(n_inputs=0, **kw)
 
     def process(self, meta=None):
         try:
@@ -28,7 +28,7 @@ class Interval(reip.Block):
         self.seconds = seconds
         self.initial = initial
         self._did_init = False
-        super().__init__(n_source=0, **kw)
+        super().__init__(n_inputs=0, **kw)
 
     def process(self, meta=None):
         if self.initial and not self._did_init:
@@ -78,7 +78,7 @@ class AsDict(reip.Block):
         self.columns = columns
         self.prepare = prepare
         self.meta_keys = reip.util.as_list(meta or ())
-        super().__init__(n_source=len(columns), **kw)
+        super().__init__(n_inputs=len(columns), **kw)
 
     def process(self, *xs, meta=None):
         data = {}
@@ -111,7 +111,7 @@ class Sleep(reip.Block):
 class Constant(reip.Block):
     def __init__(self, value, *a, **kw):
         self.value = value
-        super().__init__(*a, n_source=0, **kw)
+        super().__init__(*a, n_inputs=0, **kw)
 
     def process(self, meta):
         return [self.value], meta
@@ -183,12 +183,12 @@ class Results(reip.Block):
 
 
 class Lambda(reip.Block):
-    def __init__(self, func, name=None, n_source=None, **kw):
+    def __init__(self, func, name=None, n_inputs=None, **kw):
         self.func = func
         name = name or self.func.__name__
         if name == '<lambda>':
             name = '_lambda_'  # how to get the signature?
-        super().__init__(name=name, n_source=n_source, **kw)
+        super().__init__(name=name, n_inputs=n_inputs, **kw)
 
     def process(self, *xs, meta=None):
         return self.func(*xs, meta=meta)
@@ -200,7 +200,7 @@ class Lambda(reip.Block):
 
 class Interleave(reip.Block):
     def __init__(self, sort_key=None, **kw):
-        super().__init__(n_source=None, **kw)
+        super().__init__(n_inputs=None, **kw)
         self.sort_key = sort_key
 
     def process(self, *xs, meta=None):
@@ -214,7 +214,7 @@ class Interleave(reip.Block):
 class Separate(reip.Block):
     def __init__(self, bins, **kw):
         self.bins = bins
-        super().__init__(n_sink=len(bins), **kw)
+        super().__init__(n_outputs=len(bins), **kw)
 
     def process(self, x, meta=None):
         out = [None]*len(self.bins)

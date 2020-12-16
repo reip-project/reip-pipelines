@@ -37,10 +37,10 @@ class Block:
 
     Arguments:
         queue (int): the maximum queue length.
-        n_source (int, or None): the number of sources to expect. If None,
+        n_inputs (int, or None): the number of sources to expect. If None,
             it will accept a variable number of sources.
-        n_sink (int): the number of sinks to expect.
-             - If `n_sink=0`, then there will be a single sink, that outputs no
+        n_outputs (int): the number of sinks to expect.
+             - If `n_outputs=0`, then there will be a single sink, that outputs no
                buffer value, but does output metadata.
                e.g.
                ```python
@@ -53,7 +53,7 @@ class Block:
                def process(self, meta):  # no buffer value
                    assert meta['just some metadata'] == True
                ```
-             - If `n_sink=None`, then the block will have no sinks.
+             - If `n_outputs=None`, then the block will have no sinks.
 
         blocking (bool): should the block wait for sinks to have a free space
             before processing more items?
@@ -71,8 +71,9 @@ class Block:
     started = ready = done = _terminated = False
     processed = 0
     controlling = False
+    max_rate = None
 
-    def __init__(self, n_source=1, n_sink=1, queue=1000, blocking=False,
+    def __init__(self, n_inputs=1, n_outputs=1, queue=1000, blocking=False,
                  max_rate=None, min_interval=None, max_processed=None, graph=None, name=None,
                  source_strategy=all, extra_kw=False, log_level=None, **kw):
         self._except = remoteobj.LocalExcept(raises=True)
@@ -85,10 +86,10 @@ class Block:
         # and it will throw an exception when spawning if the number of
         # sources does not match.
         self._block_sink_queue_length = queue  # needed for set sink count
-        self.n_expected_sources = n_source
+        self.n_expected_sources = n_inputs
         self.sources, self.sinks = [], []
-        self.set_block_source_count(n_source)
-        self.set_block_sink_count(n_sink)
+        self.set_block_source_count(n_inputs)
+        self.set_block_sink_count(n_outputs)
         # used in Stream class. Can be all(), any() e.g. source_strategy=all
         self._source_strategy = source_strategy
 

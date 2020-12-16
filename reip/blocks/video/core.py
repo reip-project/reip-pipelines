@@ -9,7 +9,7 @@ class Video(reip.Block):
         self.index = index
         self.size = size
         self.fps = fps
-        super().__init__(n_source=None, **kw)
+        super().__init__(n_inputs=None, **kw)
 
     def init(self):
         self.cap = cv2.VideoCapture(self.index)
@@ -82,7 +82,7 @@ class VideoWriter(reip.Block):
 # class VideoShow(reip.Block):
 #     '''XXX: Doesn't work in multithreaded environments. use stream_imshow'''
 #     def __init__(self, window_name=None, quit_key='q', **kw):
-#         super().__init__(n_sink=0, **kw)
+#         super().__init__(n_outputs=0, **kw)
 #         self.window_name = window_name or self.name
 #         self.quit_keys = {ord(k) for k in quit_key}
 #

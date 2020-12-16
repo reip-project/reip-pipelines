@@ -14,20 +14,20 @@ def test_connections():
     - test output stream
     '''
     # test with 0-3 sinks
-    inputs = [reip.Block(n_sink=i) for i in range(4)]
+    inputs = [reip.Block(n_outputs=i) for i in range(4)]
     sink = reip.Producer(10)
     assert all(len(b_in.sinks) == i for i, b_in in enumerate(inputs))
     all_sinks = sum((b.sinks for b in inputs), []) + [sink]
 
     # test that the sources were added correctly
-    output = reip.Block(n_source=0)
+    output = reip.Block(n_inputs=0)
     assert len(output.sources) == 0
     output(*inputs, sink)
     assert [s.source for s in output.sources] == all_sinks
 
     # test a restricted number of sources
     n = 3
-    output = reip.Block(n_source=n)
+    output = reip.Block(n_inputs=n)
     assert output.sources == [None]*n
     output(*inputs, sink)
     assert len(output.sources) == sum(len(i.sinks) for i in inputs) + 1
@@ -35,7 +35,7 @@ def test_connections():
     assert [s.source for s in output.sources] == all_sinks[:n]
 
     # test too many sources
-    output = reip.Block(n_source=n)(*inputs, sink)
+    output = reip.Block(n_inputs=n)(*inputs, sink)
     output.sources.append(sink.gen_source())
     with pytest.raises(RuntimeError):
         output._check_source_connections()
@@ -56,7 +56,7 @@ def test_connections():
 
 class Constant(reip.Block):
     def __init__(self, x, **kw):
-        super().__init__(n_source=0, **kw)
+        super().__init__(n_inputs=0, **kw)
         self.x = x
 
     def process(self, meta):
@@ -65,7 +65,7 @@ class Constant(reip.Block):
 
 class Constants(reip.Block):
     def __init__(self, x, **kw):
-        super().__init__(n_source=0, **kw)
+        super().__init__(n_inputs=0, **kw)
         self.x = x
 
     def process(self, meta):
@@ -93,7 +93,7 @@ def test_init_errors_from_block_in_task():
 
 # class BlockPresence(reip.Block):
 #     def __init__(self, *a, **kw):
-#         super().__init__(*a, n_source=None, **kw)
+#         super().__init__(*a, n_inputs=None, **kw)
 #
 #     def process(self, *xs, meta=None):
 #         return [None] * len(self.sinks), {self.name: True}
@@ -101,7 +101,7 @@ def test_init_errors_from_block_in_task():
 #
 # def test_zero_sinks():
 #     with reip.Graph() as g:
-#         inputs = [BlockPresence(n_sink=i) for i in range(4)]
+#         inputs = [BlockPresence(n_outputs=i) for i in range(4)]
 #         output = reip.Block()(*inputs)
 #
 #     with g.run_scope():
@@ -120,7 +120,7 @@ def test_init_errors_from_block_in_task():
 
 class StateTester(reip.Block):
     def __init__(self, *a, **kw):
-        super().__init__(*a, n_source=None, **kw)
+        super().__init__(*a, n_inputs=None, **kw)
 
     def _check_state(self, ready=True, running=True, done=False, terminated=False, error=None):
         assert ready is None or self.ready == ready
@@ -261,7 +261,7 @@ def test_pause_resume_state():
 def test_prints():
     # test too many sources
     with reip.Graph() as g:
-        block = reip.Block(n_source=None)
+        block = reip.Block(n_inputs=None)
     with g.run_scope():
         pass
     block.status()
