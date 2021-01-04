@@ -54,7 +54,6 @@ class Task(reip.Graph):
                     #     print(self.stats_summary())
         finally:
             _ = super().__export_state__()
-            self.log.debug(str(_))
             return _
 
 
@@ -83,24 +82,19 @@ class Task(reip.Graph):
         self.remote.super.join(*a, raise_exc=False, _default=None, **kw)  # join children
         self._process.join(timeout=timeout, raises=False)
         self.__import_state__(self._process.result)
-        #print(self._except)
+
         self._process = None
         if raise_exc:
             self.raise_exception()
 
     # def _pull_state(self):
     #     self.__import_state__(self.__export_state__())
-    _aaaa = False
     def _pull_process_result(self):
         # NOTE: this is to update the state when the remote process has finished
         if self._process is not None:
             r = self._process.result
             self.__import_state__(r)
             #self.log.info('result: {}'.format(r))
-            if not self._aaaa and r is not None:
-                self._aaaa = True
-                self.log.debug('process state: {} \n\n{}'.format(r, self))
-                
 
     def __export_state__(self):
         return self.remote.super.attrs_('__export_state__')(_default=None)

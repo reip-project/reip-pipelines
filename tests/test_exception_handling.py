@@ -8,7 +8,8 @@ import time
 import reip
 import pytest
 
-
+class CustomError(Exception):
+    pass
 
 class BadInit(reip.Block):
     def __init__(self, **kw):
@@ -16,7 +17,7 @@ class BadInit(reip.Block):
 
     def init(self):
         time.sleep(0.01)
-        raise TypeError('youre not my dad !! :p')
+        raise CustomError('youre not my dad !! :p')
 
 
 class BadBlock(reip.Block):
@@ -25,7 +26,7 @@ class BadBlock(reip.Block):
 
     def process(self, meta):
         time.sleep(0.01)
-        raise TypeError('youre not my dad !! :p')
+        raise CustomError('youre not my dad !! :p')
 
 
 class BadFinish(reip.Block):
@@ -37,37 +38,40 @@ class BadFinish(reip.Block):
 
     def finish(self):
         time.sleep(0.01)
-        raise TypeError('youre not my dad !! :p')
+        raise CustomError('youre not my dad !! :p')
 
 
 class Task(reip.Task):
     def poke(self):
-        raise TypeError('go to your room !! >.<')
+        raise CustomError('go to your room !! >.<')
 
 def agg_processed(g):
     return g.processed if isinstance(g, reip.Block) else sum(agg_processed(b) for b in g.blocks)
 
 def _test_run_error(g, init=False):
-    with pytest.raises(TypeError):
+    with pytest.raises(CustomError):
         g.run()
+        print(g._except)
+        for b in g.blocks:
+            print(b._except)
     assert agg_processed(g) == 0
 
-    with pytest.raises(TypeError):
+    with pytest.raises(CustomError):
         with g.run_scope():
             time.sleep(0.02)
     assert agg_processed(g) == 0
 
     # if init:
-    #     with pytest.raises(TypeError):
+    #     with pytest.raises(CustomError):
     #         g.spawn()
     # else:
     #     g.spawn()
     # time.sleep(0.02)
-    # with pytest.raises(TypeError):
+    # with pytest.raises(CustomError):
     #     g.join()
     # assert agg_processed(g) == 0
 
-    with pytest.raises(TypeError):
+    with pytest.raises(CustomError):
         try:
             g.spawn()
         finally:

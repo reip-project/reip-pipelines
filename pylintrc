@@ -1,0 +1,2 @@
+[TYPECHECK]
+signature-mutators=reip.blocks.diskmonitor.Diskmonitor.deleter
