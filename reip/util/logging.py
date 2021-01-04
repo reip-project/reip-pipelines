@@ -35,6 +35,7 @@ def getLogger(block, level=DEFAULT_LEVEL, compact=True):
 
     log.setLevel(aslevel(DEFAULT_LEVEL if level is None else level))
     formatter = colorlog.ColoredFormatter(COMPACT_FORMAT if compact else MULTILINE_FORMAT)
+    formatter.converter = time.localtime
     return add_stdouterr(log, formatter=formatter, level=level)
 
 

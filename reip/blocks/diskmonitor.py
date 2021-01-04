@@ -24,13 +24,13 @@ import psutil
 
 
 class DiskMonitor(reip.Block):
-    def __init__(self, *root_dirs, deleter=None, threshold=0.95, padding=0.1, interval=60, **kw):
+    def __init__(self, root='/', deleter=None, threshold=0.95, padding=0.1, interval=60, **kw):
         self._deleter = deleter if callable(deleter) else self._default_deleter
-        self._root_dirs = root_dirs
+        self.root = root
         self.threshold = threshold
         self.padding = padding
         self._files = []
-        super().__init__(max_rate=1./interval, extra_kw=True, **kw)
+        super().__init__(n_inputs=0, max_rate=1./interval, extra_kw=True, **kw)
 
     def process(self, *files, meta):
         # initial usage check
@@ -52,12 +52,12 @@ class DiskMonitor(reip.Block):
             'usage_delta': start_usage - usage}
 
     def get_usage(self):
-        return reip.util.status.storage('/')
+        return reip.util.status.storage(self.root, literal_keys=True)[self.root]
 
     def get_files(self, *fs):
         return [
-            f for root in self._root_dirs
-            for f in glob.glob(os.path.join(root, *fs), recursive=True)
+            f #for root in self._root_dirs
+            for f in glob.glob(os.path.join(self.root, *fs), recursive=True)
         ]
 
     def delete_while_full(self, fs, chunksize=1, method='random'):
@@ -68,6 +68,7 @@ class DiskMonitor(reip.Block):
             fs = fs[::-1]
         elif method == 'oldest':
             pass
+        i = -chunksize
         for usage, i in zip(self.while_full(), range(0, len(fs), chunksize)):
             self.delete(fs[i:i+chunksize])
         return i + chunksize < len(fs)

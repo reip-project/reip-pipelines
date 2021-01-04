@@ -113,8 +113,8 @@ def wifi(wlan='wlan*', meta=None):
     iwc = ixconfig.Iwc().ifaces(wlan)
     wlan = max(iwc or [None])
     return ({
-        'wifi_quality': float(iwc[wlan].quality_ratio),
-        'wifi_strength': float(iwc[wlan].strength),
+        'wifi_quality': float(iwc[wlan]['quality_ratio']),
+        'wifi_strength': float(iwc[wlan]['strength']),
         'ap': netswitch.Wpa().ssid
     } if wlan else {})
 
@@ -172,16 +172,17 @@ def usb(meta=None, **devices):
     }
 
 
-DEFAULT_STORAGE_LOCATIONS = {'root': '/', 'tmp': '/tmp', 'varlog': '/var/log'}
+DEFAULT_STORAGE_LOCATIONS = ['/', '/tmp', '/var/log']
 
 @register_stats
-def storage(*poslocs, meta=None, **locs):
-    locs.update({p.replace('/', '') or 'root': p for p in poslocs})
-    locs = locs or DEFAULT_STORAGE_LOCATIONS
-    return {
-        '{}_usage'.format(k): psutil.disk_usage(path).percent
-        for k, path in locs.items()
-    }
+def storage(*poslocs, meta=None, literal_keys=False, **locs):
+    # e.g.: {'/': 0.95, '/var/log': 0.45} if literal_keys else {root_usage: 0.95, varlog_usage: 0.45}
+    poslocs = DEFAULT_STORAGE_LOCATIONS if not poslocs and not locs else poslocs
+    locs.update({p if literal_keys else p.replace('/', '') or 'root': p for p in poslocs})
+    if not literal_keys:
+        locs = {'{}_usage'.format(k): p for k, p in locs.items()}
+
+    return {k: psutil.disk_usage(path).percent/100. for k, path in locs.items()}
 
 
 def base(meta=None):
