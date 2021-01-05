@@ -42,10 +42,10 @@ def asblock(__func__=None, single_output=False, meta=True, context=False, self=F
     def asblock_converter(func):
         return type(func.__name__, (_BlockHelper,), {
             '__init__': reip.util.partial(
-                _BlockHelper.__init__, func, single_output=single_output, meta=meta,
-                context=context, _self=self, **kw)
+                _BlockHelper.__init__, _func=func, _single_output=single_output, _meta=meta,
+                _context=context, _self=self, **kw)
         })
-    return asblocsk_converter(__func__) if callable(__func__) else asblock_converter
+    return asblock_converter(__func__) if callable(__func__) else asblock_converter
 
 def asbasic(*a, **kw):
     return asblock(*a, single_output=True, meta=False, **kw)
@@ -92,11 +92,11 @@ def _wrap_context(func, context=False):
 
 
 class _BlockHelper(reip.Block):
-    def __init__(self, *a, func, single_output=False, context=False, meta=True, _self=False, **kw):
-        self.func = func
-        self.__single_output = single_output
-        self.__context = context
-        self.__meta = meta
+    def __init__(self, *a, _func, _single_output=False, _context=False, _meta=True, _self=False, **kw):
+        self.func = _func
+        self.__single_output = _single_output
+        self.__context = _context
+        self.__meta = _meta
         self.extra_posargs = (self,)+a if _self else a
         super().__init__(extra_kw=True, **kw)
 
