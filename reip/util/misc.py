@@ -83,8 +83,17 @@ def adjacent_file(file, *f):
 
 
 def fname(file):
-    '''Get file name. e.g. path/to/fileA.txt => fileA.'''
+    '''Get file name. e.g. path/to/fileA.txt => fileA'''
     return os.path.splitext(os.path.basename(file))[0]
+
+
+def write(fname, *lines, mode='r'):
+    '''write to file.'''
+    d = os.path.dirname(fname)
+    if d and not os.path.exists(d):
+        os.makedirs(d)
+    with open(os.path.expanduser(fname), mode) as f:
+        f.write('\n'.join(map(str, lines)))
 
 
 def as_list(x):

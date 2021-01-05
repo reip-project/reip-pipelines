@@ -46,23 +46,23 @@ def asblock(__func__=None, single_output=False, meta=True, context=False, self=F
             _self=self, **kw)
     return asblock_converter(__func__) if callable(__func__) else asblock_converter
 
-def asbasic(__func__, **kw):
-    return asblock(single_output=True, meta=False, **kw)(__func__)
+def asbasic(*a, **kw):
+    return asblock(*a, single_output=True, meta=False, **kw)
 
-def asmulti(__func__, **kw):
-    return asblock(single_output=False, meta=False, **kw)(__func__)
+def asmulti(*a, **kw):
+    return asblock(*a, single_output=False, meta=False, **kw)
 
-def asbasicmeta(__func__, **kw):
-    return asblock(single_output=True, meta=True, **kw)(__func__)
+def asbasicmeta(*a, **kw):
+    return asblock(*a, single_output=True, meta=True, **kw)
 
-def asmultimeta(__func__, **kw):
-    return asblock(single_output=False, meta=True, **kw)(__func__)
+def asmultimeta(*a, **kw):
+    return asblock(*a, single_output=False, meta=True, **kw)
 
-def ascontext(__func__, self=True, meta=True, single_output=False, **kw):
-    return asblock(context=True, self=self, meta=meta, single_output=single_output, **kw)(__func__)
+def ascontext(*a, self=True, meta=True, single_output=False, **kw):
+    return asblock(*a, context=True, self=self, meta=meta, single_output=single_output, **kw)
 
-def asbasiccontext(__func__, self=True, meta=False, single_output=True, **kw):
-    return asblock(context=True, self=self, meta=meta, single_output=single_output, **kw)(__func__)
+def asbasiccontext(*a, self=True, meta=False, single_output=True, **kw):
+    return asblock(*a, context=True, self=self, meta=meta, single_output=single_output, **kw)
 
 # internals
 
@@ -93,6 +93,7 @@ def _wrap_context(func, context=False):
 class _BlockHelper(reip.Block):
     def __init__(self, *a, func, single_output=False, context=False, meta=True, _self=False, **kw):
         self.func = func
+        self.__class__ = type(func.__name__, (self.__class__,), {})
         self.__single_output = single_output
         self.__context = context
         self.__meta = meta

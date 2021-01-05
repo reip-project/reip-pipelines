@@ -20,7 +20,6 @@ import os
 import random
 import glob
 import reip
-import psutil
 
 
 class DiskMonitor(reip.Block):
