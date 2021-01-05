@@ -40,6 +40,8 @@ def getLogger(block, level=DEFAULT_LEVEL, compact=True):
 
 
 def add_stdouterr(log, formatter=None, level='info', errlevel=logging.WARNING):
+    if getattr(log, '_has_stdouterr_', False):
+        return log
     # https://stackoverflow.com/questions/16061641/python-logging-split-between-stdout-and-stderr
     h_out = levelrange(logging.StreamHandler(sys.stdout), aslevel(level), errlevel)
     h_err = levelrange(logging.StreamHandler(sys.stderr), errlevel)
@@ -48,6 +50,7 @@ def add_stdouterr(log, formatter=None, level='info', errlevel=logging.WARNING):
         h_err.setFormatter(formatter)
     log.addHandler(h_out)
     log.addHandler(h_err)
+    log._has_stdouterr_ = True
     return log
 
 
