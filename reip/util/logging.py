@@ -24,18 +24,19 @@ DATE_FORMAT = "%m/%d/%y %H:%M:%S"
 DEFAULT_LEVEL = os.getenv('REIP_LOG_LEVEL') or 'info'
 
 
-def getLogger(block, level=DEFAULT_LEVEL, compact=True):
-    if isinstance(block, str):
-        log = logging.getLogger(block)
-    else:
-        log = logging.getLogger(block.name)
-        log.addFilter(InjectData(dict(
-            block=StrRep(block, 'short_str' if compact else None)
-        )))
+def getLogger(block, level=DEFAULT_LEVEL, compact=True, propagate=False):
+    is_block = not isinstance(block, str)
+    log = logging.getLogger(block.name if is_block else block)
+
     if getattr(log, '_is_configured_by_reip_', False):
         return log
     log._is_configured_by_reip_ = True
 
+    if is_block:
+        log.addFilter(InjectData(dict(
+            block=StrRep(block, 'short_str' if compact else None)
+        )))
+    log.propagate = propagate
     log.setLevel(aslevel(DEFAULT_LEVEL if level is None else level))
     formatter = colorlog.ColoredFormatter(COMPACT_FORMAT if compact else MULTILINE_FORMAT)
     formatter.converter = time.localtime
