@@ -40,11 +40,12 @@ from contextlib import contextmanager
 
 def asblock(__func__=None, single_output=False, meta=True, context=False, self=False, **kw):
     def asblock_converter(func):
-        return reip.util.partial(
-            _BlockHelper, func=func, __name__=func.__name__,
-            single_output=single_output, meta=meta, context=context,
-            _self=self, **kw)
-    return asblock_converter(__func__) if callable(__func__) else asblock_converter
+        return type(func.__name__, (_BlockHelper,), {
+            '__init__': reip.util.partial(
+                _BlockHelper.__init__, func, single_output=single_output, meta=meta,
+                context=context, _self=self, **kw)
+        })
+    return asblocsk_converter(__func__) if callable(__func__) else asblock_converter
 
 def asbasic(*a, **kw):
     return asblock(*a, single_output=True, meta=False, **kw)
@@ -93,7 +94,6 @@ def _wrap_context(func, context=False):
 class _BlockHelper(reip.Block):
     def __init__(self, *a, func, single_output=False, context=False, meta=True, _self=False, **kw):
         self.func = func
-        self.__class__ = type(func.__name__, (self.__class__,), {})
         self.__single_output = single_output
         self.__context = context
         self.__meta = meta
