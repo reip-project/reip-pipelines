@@ -80,7 +80,7 @@ class _AbstractUploadFile(BaseUpload):
         names = ', '.join(fn for fn, f in fileobjs.values())#files.keys())
         # self.log.debug("Uploading: {} to {}".format(names, url))
         response = self.sess.post(
-            url, files=fileobjs,
+            url, files={k: (os.path.basename(fn), f) for k, (fn, f) in fileobjs.items()},
             data=post_data or reip.util.resolve_call(self.data, files, meta=meta),
             timeout=self.timeout)
 
@@ -90,16 +90,16 @@ class _AbstractUploadFile(BaseUpload):
         speed = self.calc_size(files) / secs / 1024.0
         # handle output
         if response.ok:
-            self.log.debug('{} uploaded at {:.1f} Kb/s in {:.1f}s'.format(
-                list(files.values()), speed, secs))
+            self.log.debug('{} uploaded to {} at {:.1f} Kb/s in {:.1f}s'.format(
+                names, url, speed, secs))
             self.on_success(files, output)
         else:
-            self.log.error('Error when uploading to {}.\n{}'.format(url, output))
+            self.log.error('Error when uploading {} to {}.\n{}'.format(url, names, output))
             self.on_failure(files, output)
         return [output], {'upload_time': secs, 'upload_kbs': speed}
 
     def open_file(self, fname):
-        return os.path.basename(fname), open(fname, 'rb')
+        return fname, open(fname, 'rb')
 
     def calc_size(self, files):
         return sum(os.path.getsize(f) for f in files.values())
