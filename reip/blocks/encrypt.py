@@ -21,6 +21,7 @@ class TwoStageEncrypt(reip.Block):
         self.filename = str(filename)
         self.remove_files = remove_files
         self.public_key = rsa_key
+        self.gz = self.filename.endswith('.gz')
         if not os.path.isfile(self.public_key):
             if not create:
                 raise OSError('Public key "{}" not found.'.format(self.public_key))
@@ -55,7 +56,7 @@ class TwoStageEncrypt(reip.Block):
 
     def compress(self, files, out_file):
         # write tar
-        with tarfile.open(out_file, 'w') as tar:
+        with tarfile.open(out_file, 'w:gz' if self.gz else 'w') as tar:
             for f, data in files.items():
                 tar_addbytes(tar, f, data)
         return out_file
