@@ -1,3 +1,4 @@
+import glob
 import time
 import fnmatch
 import itertools
@@ -62,6 +63,39 @@ class Meta(reip.Block):
             k: v(meta) if callable(v) else v
             for k, v in self.meta.items()
         }
+
+
+
+class Glob(reip.Block):
+    def __init__(self, *paths, atonce=False, **kw):
+        self.paths = paths
+        self.atonce = atonce  # return all files at once
+        super().__init__(**kw)
+
+    def init(self):
+        self.last = set()
+
+    def process(self, meta=None):
+        fs = {f for p in self.paths for f in glob.glob(p)}
+        self.last, fs = fs, fs - self.last
+        if self.atonce:
+            yield [fs], {}
+        else:
+            for f in fs:
+                yield [f], {}
+
+# as an experiment:
+# @reip.helpers.asbasiccontext
+# def Glob(self, *paths, atonce=False):
+#     self.last = set()
+#     def process():
+#         fs = {f for p in paths for f in glob.glob(p)}
+#         self.last, fs = fs, fs - self.last
+#         if atonce:
+#             yield fs
+#         else:
+#             yield from fs
+#     yield process
 
 
 # class Dict(reip.Block):

@@ -3,7 +3,6 @@ import sys
 import time
 import logging
 import colorlog
-logging.Formatter.converter = time.localtime
 
 MULTILINE_FORMAT = (
     '%(log_color)s[%(levelname)s]%(reset)s %(thin)s%(asctime)s%(reset)s: '
@@ -25,8 +24,8 @@ DEFAULT_LEVEL = os.getenv('REIP_LOG_LEVEL') or 'info'
 
 
 def getLogger(block, level=DEFAULT_LEVEL, compact=True, propagate=False):
-    is_block = not isinstance(block, str)
-    log = logging.getLogger(block.name if is_block else block)
+    is_block = block is not None and not isinstance(block, str)
+    log = logging.getLogger(block.name if is_block else block or 'reip')
 
     if getattr(log, '_is_configured_by_reip_', False):
         return log
