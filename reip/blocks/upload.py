@@ -99,7 +99,7 @@ class _AbstractUploadFile(BaseUpload):
         return [output], {'upload_time': secs, 'upload_kbs': speed}
 
     def open_file(self, fname):
-        return fname, open(fname, 'rb')
+        return os.path.basename(fname), open(fname, 'rb')
 
     def calc_size(self, files):
         return sum(os.path.getsize(f) for f in files.values())
