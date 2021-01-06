@@ -69,7 +69,7 @@ class BaseUpload(reip.Block):
 
 
 class _AbstractUploadFile(BaseUpload):
-    
+
     def process(self, files, meta=None, post_data=None):
         # send request
         url = self.get_url()
@@ -102,7 +102,7 @@ class _AbstractUploadFile(BaseUpload):
         return fname, open(fname, 'rb')
 
     def calc_size(self, files):
-        return sum(os.path.getsize(f) for f in files.values()) 
+        return sum(os.path.getsize(f) for f in files.values())
 
     def on_success(self, files, output):
         pass
@@ -112,12 +112,17 @@ class _AbstractUploadFile(BaseUpload):
 
 
 class UploadFile(_AbstractUploadFile):
-    def __init__(self, *a, remove_on_success=True, **kw):
+    def __init__(self, *a, names=None, remove_on_success=True, **kw):
+        self.names = reip.util.as_list(names or ())
         self.remove_on_success = remove_on_success
         super().__init__(*a, **kw)
 
     def process(self, *fs, meta=None):
-        files = {os.path.basename(fname): fname for fname in fs}
+        files = {
+            reip.util.resolve_call(self.names[i], fname)
+            if i < len(self.names) else
+            os.path.basename(fname): fname
+            for i, fname in enumerate(fs)}
         data = reip.util.resolve_call(self.data, *fs, meta=meta)
         return super().process(files, post_data=data, meta=meta)
 
