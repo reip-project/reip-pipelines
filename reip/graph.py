@@ -37,9 +37,14 @@ class BaseContext:  # (metaclass=_MetaContext)
     parent_id, task_id = None, None
 
     def __init__(self, *blocks, name=None, graph=None):
+        if blocks and not name and isinstance(blocks[0], str):
+            name, blocks = blocks[0], blocks[1:]
         self.blocks = list(blocks)
         self.name = name or f'{self.__class__.__name__}_{id(self)}'
         self.parent_id, self.task_id = BaseContext.register_instance(self, graph)
+
+        for b in self.blocks:
+            self.register_instance(b, self)
 
     # global instance management
 
@@ -199,7 +204,7 @@ class Graph(BaseContext):
 
     @classmethod
     def detached(cls, *blocks, **kw):
-        return cls(*blocks, parent=None, **kw)
+        return cls(*blocks, graph=None, **kw)
 
     # run graph
 
