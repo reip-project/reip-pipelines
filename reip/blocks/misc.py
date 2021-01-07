@@ -67,8 +67,9 @@ class Meta(reip.Block):
 
 
 class Glob(reip.Block):
-    def __init__(self, *paths, atonce=False, **kw):
+    def __init__(self, *paths, recursive=True, atonce=False, **kw):
         self.paths = paths
+        self.recursive = recursive
         self.atonce = atonce  # return all files at once
         super().__init__(n_inputs=0, **kw)
 
@@ -76,7 +77,7 @@ class Glob(reip.Block):
         self.last = set()
 
     def process(self, meta=None):
-        fs = {f for p in self.paths for f in glob.glob(p)}
+        fs = {f for p in self.paths for f in glob.glob(p, recursive=self.recursive)}
         self.last, fs = fs, fs - self.last
         if self.atonce:
             yield [fs], {}
