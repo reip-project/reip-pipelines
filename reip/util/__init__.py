@@ -8,6 +8,7 @@ from . import logging
 from . import shell
 from . import func
 from . import iters
+from . import handlers
 # from . import remote
 from . import config
 # from .background_process import *

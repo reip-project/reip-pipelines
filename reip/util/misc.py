@@ -1,5 +1,6 @@
 import os
 import re
+import contextlib
 from functools import wraps
 import numpy as np
 
@@ -173,6 +174,13 @@ def matchmany(text, *patterns):
     return {
         k: v for m in (re.search(p, text) for p in patterns) if m
         for k, v in m.groupdict().items()}
+
+
+@contextlib.contextmanager
+def multicontext(*items):
+    '''Use a variable set of context managers as one.'''
+    with contextlib.ExitStack() as stack:
+        yield [stack.enter_context(x) for x in items]
 
 
 # @wraps(mergedict)

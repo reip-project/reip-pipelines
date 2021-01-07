@@ -75,7 +75,8 @@ class Block:
 
     def __init__(self, n_inputs=1, n_outputs=1, queue=1000, blocking=False,
                  max_rate=None, min_interval=None, max_processed=None, graph=None, name=None,
-                 source_strategy=all, extra_kw=False, log_level=None, **kw):
+                 source_strategy=all, extra_kw=False, log_level=None,
+                 handlers=None, modifiers=None, input_modifiers=None, **kw):
         self._except = remoteobj.LocalExcept(raises=True)
         self.name = name or f'{self.__class__.__name__}_{id(self)}'
         self.parent_id, self.task_id = reip.Graph.register_instance(self, graph)
@@ -92,6 +93,12 @@ class Block:
         self.set_block_sink_count(n_outputs)
         # used in Stream class. Can be all(), any() e.g. source_strategy=all
         self._source_strategy = source_strategy
+        # handlers are context managers that can do things like restart when a block is closing.
+        self.handlers = reip.util.as_list(handlers or [])
+        # modifiers are functions that can be used to alter the output of the block before they are
+        # sent to a sink
+        self.modifiers = reip.util.as_list(modifiers or [])
+        self.input_modifiers = reip.util.as_list(input_modifiers or [])
 
         if min_interval and max_rate:
             warnings.warn((
@@ -249,10 +256,8 @@ class Block:
         '''The main thread target function. Handles uncaught exceptions and
         generic Block context management.'''
         try:
-            with self._sw(), self._except(raises=False):
+            with self._sw(), self._except(raises=False), reip.util.multicontext(*self.handlers):
                 try:
-                    # profiler = pyinstrument.Profiler()
-                    # profiler.start()
                     self.log.debug(text.blue('Starting...'))
                     time.sleep(self._delay)
                     # create a stream from sources with a custom control loop
@@ -260,14 +265,19 @@ class Block:
                         self, name=self.name, _sw=self._sw,
                         strategy=self._source_strategy)
                     with self._stream:
+
                         # block initialization
+
                         with self._sw('init'), self._except('init'):
                             self.init()
                         self.ready = True
                         self.log.debug(text.green('Ready.'))
+
                         if _ready_flag is not None:
                             with self._sw('sleep'):
                                 _ready_flag.wait()
+
+                        # the loop
 
                         loop = reip.util.iters.throttled(
                             reip.util.iters.timed(reip.util.iters.loop(), duration),
@@ -280,7 +290,11 @@ class Block:
                             # process each input batch
                             with self._sw('process'), self._except('process'):
                                 buffers, meta = inputs
+                                for func in self.input_modifiers:
+                                    buffers, meta = func(*buffers, meta=meta)
                                 outputs = self.process(*buffers, meta=meta)
+                                for func in self.modifiers:
+                                    outputs = func(outputs)
                             # send each output batch to the sinks
                             with self._sw('sink'):
                                 self._send_to_sinks(outputs, meta)
@@ -289,17 +303,18 @@ class Block:
                     if self.controlling:
                         self.log.info(text.yellow('Interrupting'))
                 finally:
-                    # finish up and shut down block
+
+                    # finish up and shut down
+
                     self.log.debug(text.yellow('Finishing...'))
                     # run block finish
-                    with self._sw('finish'), self._except('finish', raises=False):
-                        self.finish()
-                    # propagate stream signals to sinks e.g. CLOSE
-                    if self._stream.signal is not None:
-                        self._send_sink_signal(self._stream.signal)
-                    # profiler.stop()
-                    # print(profiler.output_text(unicode=True, color=True))
-
+                    try:
+                        with self._sw('finish'), self._except('finish', raises=False):
+                            self.finish()
+                    finally:
+                        # propagate stream signals to sinks e.g. CLOSE
+                        if self._stream.signal is not None:
+                            self._send_sink_signal(self._stream.signal)
         finally:
             self.done = True
             self.log.debug(text.green('Done.'))

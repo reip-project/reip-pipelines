@@ -1,6 +1,7 @@
 import time
 import pytest
 import reip
+import reip.util.test
 
 
 def test_connections():
@@ -87,8 +88,23 @@ def test_init_errors_from_block_in_task():
     with reip.Graph() as g:
         with reip.Task() as t:
             reip.Block(max_processed=10)(reip.Block(), reip.Block())
-    with pytest.raises(RuntimeError, match='Expected \d+ sources'):
+    with pytest.raises(RuntimeError, match=r'Expected \d+ sources'):
         g.run()
+
+
+
+class A:
+    __enter__ = reip.util.test.method_count('__enter__')
+    __exit__ = reip.util.test.method_count('__exit__')
+
+def test_handlers():
+    with reip.Graph.detached() as g:
+        a = A()
+        b = reip.Block(handlers=a, max_processed=3, n_inputs=0)
+    g.run()
+    assert a.method_counts == {'__enter__': 1, '__exit__': 1}
+    g.run()
+    assert a.method_counts == {'__enter__': 2, '__exit__': 2}
 
 
 # class BlockPresence(reip.Block):
