@@ -70,7 +70,7 @@ class Glob(reip.Block):
     def __init__(self, *paths, atonce=False, **kw):
         self.paths = paths
         self.atonce = atonce  # return all files at once
-        super().__init__(**kw)
+        super().__init__(n_inputs=0, **kw)
 
     def init(self):
         self.last = set()
