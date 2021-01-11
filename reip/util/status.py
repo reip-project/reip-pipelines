@@ -182,7 +182,7 @@ def storage(*poslocs, meta=None, literal_keys=False, **locs):
     if not literal_keys:
         locs = {'{}_usage'.format(k): p for k, p in locs.items()}
 
-    return {k: psutil.disk_usage(path).percent/100. for k, path in locs.items()}
+    return {k: psutil.disk_usage(path).percent for k, path in locs.items()}
 
 
 def base(meta=None):
