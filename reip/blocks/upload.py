@@ -1,6 +1,7 @@
 import os
 import sys
 import json
+import numpy as np
 from random import choice
 import requests
 import reip
@@ -167,7 +168,17 @@ class UploadJSONAsFile(_AbstractUploadFile):
         return super().process({'file': status}, post_data=data, meta=meta)
 
     def open_file(self, status):
-        return self.FILENAME, json.dumps(status)
+        return self.FILENAME, json.dumps(status, cls=NumpyEncoder)
 
     def calc_size(self, files):
         return sum(sys.getsizeof(x) for x in files.values())
+
+
+class NumpyEncoder(json.JSONEncoder):
+    """ Special json encoder for numpy types """
+    def default(self, obj):
+        if isinstance(obj, np.generic):
+            return obj.item()
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return super().default(obj)
