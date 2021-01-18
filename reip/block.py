@@ -8,6 +8,9 @@ import reip
 from reip.stores import Producer
 from reip.util import text, Meta
 
+'''
+
+'''
 
 __all__ = ['Block']
 
@@ -93,7 +96,7 @@ class Block:
         self.set_block_sink_count(n_outputs)
         # used in Stream class. Can be all(), any() e.g. source_strategy=all
         self._source_strategy = source_strategy
-        # handlers are context managers that can do things like restart when a block is closing.
+        # handlers are wrapper functions that can do things like catch errors and restart when a block is closing.
         self.handlers = reip.util.as_list(handlers or [])
         # modifiers are functions that can be used to alter the output of the block before they are
         # sent to a sink
@@ -256,71 +259,78 @@ class Block:
         '''The main thread target function. Handles uncaught exceptions and
         generic Block context management.'''
         try:
-            with self._sw(), self._except(raises=False), reip.util.multicontext(*self.handlers):
-                try:
-                    self.log.debug(text.blue('Starting...'))
-                    time.sleep(self._delay)
-                    # create a stream from sources with a custom control loop
-                    self._stream = reip.Stream.from_block_sources(
-                        self, name=self.name, _sw=self._sw,
-                        strategy=self._source_strategy)
-                    with self._stream:
+            self.started = True
+            self.log.debug(text.blue('Starting...'))
+            time.sleep(self._delay)
 
-                        # block initialization
+            with self._sw(), self._except(raises=False):
+                # create a stream from sources with a custom control loop
+                self._stream = reip.Stream.from_block_sources(
+                    self, name=self.name, _sw=self._sw,
+                    strategy=self._source_strategy)
 
-                        with self._sw('init'), self._except('init'):
-                            self.init()
-                        self.ready = True
-                        self.log.debug(text.green('Ready.'))
-
-                        if _ready_flag is not None:
-                            with self._sw('sleep'):
-                                _ready_flag.wait()
-
-                        # the loop
-
-                        loop = reip.util.iters.throttled(
-                            reip.util.iters.timed(reip.util.iters.loop(), duration),
-                            self.max_rate, delay=self._delay)
-                        for _ in self._sw.iter(loop, 'sleep'):
-                            inputs = self._stream.get()
-                            if inputs is None:
-                                break
-
-                            # process each input batch
-                            with self._sw('process'), self._except('process'):
-                                buffers, meta = inputs
-                                for func in self.input_modifiers:
-                                    buffers, meta = func(*buffers, meta=meta)
-                                outputs = self.process(*buffers, meta=meta)
-                                for func in self.modifiers:
-                                    outputs = func(outputs)
-                            # send each output batch to the sinks
-                            with self._sw('sink'):
-                                self._send_to_sinks(outputs, meta)
-
-                except KeyboardInterrupt:
-                    if self.controlling:
-                        self.log.info(text.yellow('Interrupting'))
-                finally:
-
-                    # finish up and shut down
-
-                    self.log.debug(text.yellow('Finishing...'))
-                    # run block finish
-                    try:
-                        with self._sw('finish'), self._except('finish', raises=False):
-                            self.finish()
-                    finally:
-                        # propagate stream signals to sinks e.g. CLOSE
-                        if self._stream.signal is not None:
-                            self._send_sink_signal(self._stream.signal)
+                # this lets us wrap the block's run function with retry loops, error suppression and
+                # whatever else might be useful
+                run = reip.util.partial(self._main_run, _ready_flag=_ready_flag, duration=duration)
+                for wrapper in self.handlers[::-1]:
+                    run = reip.util.partial(wrapper, self, run)
+                run()
         finally:
-            self.done = True
-            self.log.debug(text.green('Done.'))
-            #pass
-            # if _ready_flag is None:
-            #     self.log.info(self.stats_summary())
+            try:
+                # propagate stream signals to sinks e.g. CLOSE
+                if self._stream.signal is not None:
+                    self._send_sink_signal(self._stream.signal)
+            finally:
+                self.done = True
+                self.started = False
+                self.log.debug(text.green('Done.'))
+
+
+    def _main_run(self, _ready_flag=None, duration=None):
+        try:
+            with self._stream:
+                # block initialization
+                with self._sw('init'): #, self._except('init')
+                    self.init()
+                self.ready = True
+                self.log.debug(text.green('Ready.'))
+
+                if _ready_flag is not None:
+                    with self._sw('sleep'):
+                        _ready_flag.wait()
+
+                # the loop
+                loop = reip.util.iters.throttled(
+                    reip.util.iters.timed(reip.util.iters.loop(), duration),
+                    self.max_rate, delay=self._delay)
+
+                for _ in self._sw.iter(loop, 'sleep'):
+                    inputs = self._stream.get()
+                    if inputs is None:
+                        break
+
+                    # process each input batch
+                    with self._sw('process'): #, self._except('process')
+                        buffers, meta = inputs
+                        for func in self.input_modifiers:
+                            buffers, meta = func(*buffers, meta=meta)
+                        outputs = self.process(*buffers, meta=meta)
+                        for func in self.modifiers:
+                            outputs = func(outputs)
+
+                    # send each output batch to the sinks
+                    with self._sw('sink'):
+                        self._send_to_sinks(outputs, meta)
+
+        except KeyboardInterrupt:
+            if self.controlling:
+                self.log.info(text.yellow('Interrupting'))
+        finally:
+            self.ready = False
+            # finish up and shut down
+            self.log.debug(text.yellow('Finishing...'))
+            with self._sw('finish'): # , self._except('finish', raises=False)
+                self.finish()
 
     def _send_to_sinks(self, outputs, meta_in=None):
         '''Send the outputs to the sink.'''
@@ -383,24 +393,30 @@ class Block:
 
     def spawn(self, wait=True, _controlling=True, _ready_flag=None):
         '''Spawn the block thread'''
-        self.controlling = _controlling
-        self.log.debug(text.blue('Spawning...'))
-        # print(self.summary())
+        try:
+            self.controlling = _controlling
+            self.log.debug(text.blue('Spawning...'))
+            # print(self.summary())
 
-        self._check_source_connections()
-        # spawn any sinks that need it
-        for s in self.sinks:
-            if hasattr(s, 'spawn'):
-                s.spawn()
-        self._reset_state()
-        self.resume()
-        self._thread = threading.Thread(target=self._main, kwargs={'_ready_flag': _ready_flag}, daemon=True)
-        self._thread.start()
+            self._check_source_connections()
+            # spawn any sinks that need it
+            for s in self.sinks:
+                if hasattr(s, 'spawn'):
+                    s.spawn()
+            self._reset_state()
+            self.resume()
+            self._thread = remoteobj.util.thread(self._main, _ready_flag=_ready_flag, daemon_=True, raises_=False)
+            # threading.Thread(target=self._main, kwargs={'_ready_flag': _ready_flag}, daemon=True)
+            self._thread.start()
 
-        if wait:
-            self.wait_until_ready()
-        if self.controlling:
-            self.raise_exception()
+            if wait:
+                self.wait_until_ready()
+            if self.controlling:
+                self.raise_exception()
+        finally:
+            # thread didn't start ??
+            if self._thread is None or not self._thread.is_alive():
+                self.done = True
 
     def _check_source_connections(self):
         '''Check if there are too many sources for this block.'''
@@ -511,6 +527,10 @@ class Block:
     @property
     def running(self):
         return self._stream.running if self._stream is not None else False
+
+    @property
+    def closed(self):
+        return self._stream.should_wait if self._stream is not None else True
 
     @property
     def terminated(self):

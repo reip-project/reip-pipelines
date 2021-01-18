@@ -35,3 +35,16 @@ def short_stack(match=None, file=False, sep=' << ', n=None):
         for f in inspect.stack()[1:][:n]
         if not match or match in f.filename
     )
+
+def funcstr(func, *a, **kw):
+    return '{}({})'.format(
+        func.__name__, ', '.join(
+            ['{!r}'.format(v) for v in a] +
+            ['{}={!r}'.format(k, v) for k, v in kw.items()]
+        ))
+
+def excline(e):
+    return '{}: {}'.format(type(e).__name__, e)
+
+def print_excline(e):
+    return print(excline)

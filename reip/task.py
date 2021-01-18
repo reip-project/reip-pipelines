@@ -47,11 +47,7 @@ class Task(reip.Graph):
                 except KeyboardInterrupt as e:
                     self.log.info(text.yellow('Interrupting'))
                 finally:
-                    self.log.debug(text.yellow('Joining'))
                     super().join(raise_exc=False)
-                    self.log.debug(text.green('Done'))
-                    # if _ready_flag is None:
-                    #     print(self.stats_summary())
         finally:
             _ = super().__export_state__()
             return _
@@ -60,7 +56,6 @@ class Task(reip.Graph):
 
     # process management
     def spawn(self, wait=True, _controlling=True, _ready_flag=None):
-        # self.log.debug(text.blue('Spawning'))
         if self._process is not None:  # only start once
             return
         self.controlling = _controlling
@@ -78,7 +73,8 @@ class Task(reip.Graph):
     def join(self, *a, timeout=10, raise_exc=True, **kw):
         if self._process is None:
             return
-        
+
+        self.log.debug(text.yellow('Joining'))
         self.remote.super.join(*a, raise_exc=False, _default=None, **kw)  # join children
         self._process.join(timeout=timeout, raises=False)
         self.__import_state__(self._process.result)
@@ -86,9 +82,8 @@ class Task(reip.Graph):
         self._process = None
         if raise_exc:
             self.raise_exception()
+        self.log.debug(text.green('Done'))
 
-    # def _pull_state(self):
-    #     self.__import_state__(self.__export_state__())
     def _pull_process_result(self):
         # NOTE: this is to update the state when the remote process has finished
         if self._process is not None:
@@ -127,7 +122,6 @@ class Task(reip.Graph):
 
     def __local_done(self):  # for when the remote process is not running
         self._pull_process_result()
-        #self.log.debug('local done {} {}'.format(super().done, self))
         return super().done
 
     def __local_error(self):  # for when the remote process is not running

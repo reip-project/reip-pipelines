@@ -1,28 +1,53 @@
 '''
 Manage a list of functions/context managers as if they are one.
 '''
-import contextlib
+import time
+import reip
 
 
-@contextlib.contextmanager
-def lineprofile():
-    import pyinstrument
-    prof = pyinstrument.Profiler()
-    prof.start()
-    yield
-    prof.stop()
-    print(prof.output_text(unicode=True, color=True))
-
-
-@contextlib.contextmanager
-def suppress(*excs):
+def lineprofile(block, run):
     try:
-        yield
-    except excs or (Exception,):
+        import pyinstrument
+        prof = pyinstrument.Profiler()
+        prof.start()
+        return run()
+    finally:
+        prof.stop()
+        print(prof.output_text(unicode=True, color=True))
+
+
+def reboot(block, run):
+    while True:
+        try:
+            return run()
+        except Exception as e:
+            block.log.error(reip.util.excline(e))
+
+
+def retry(n=None, sleep=None):
+    def retry(block, run):
+        for i in reip.util.iters.loop():
+            try:
+                return run()
+            except Exception as e:
+                if n and i == n-1:
+                    raise
+                block.log.error(reip.util.excline(e))
+                if sleep:
+                    time.sleep(sleep)
+            else:
+                break
+    return retry
+
+
+def suppress(block, run):
+    try:
+        return run()
+    except Exception:
         pass
 
-@contextlib.contextmanager
-def heartrate():
+
+def heartrate(block, run):
     import heartrate
     heartrate.trace(browser=True)
-    yield
+    return run()

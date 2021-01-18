@@ -49,7 +49,7 @@ def test_connections():
 
     # test missing sources
     with reip.Graph() as g:
-        output = reip.Block(max_processed=1)(*inputs, sink)
+        output = reip.Block(max_processed=1, log_level='debug')(*inputs, sink)
         output.sources[0] = None
     with pytest.raises(RuntimeError):
         g.run()
@@ -93,18 +93,31 @@ def test_init_errors_from_block_in_task():
 
 
 
+class ErrorBlock(reip.Block):
+    def process(self, meta=None):
+        raise RuntimeError()
+
 class A:
-    __enter__ = reip.util.test.method_count('__enter__')
-    __exit__ = reip.util.test.method_count('__exit__')
+    count = 0
+    def __call__(self, block, run):
+        self.count += 1
+        return run()
 
 def test_handlers():
     with reip.Graph.detached() as g:
         a = A()
         b = reip.Block(handlers=a, max_processed=3, n_inputs=0)
     g.run()
-    assert a.method_counts == {'__enter__': 1, '__exit__': 1}
+    assert a.count == 1
     g.run()
-    assert a.method_counts == {'__enter__': 2, '__exit__': 2}
+    assert a.count == 2
+
+    with reip.Graph.detached() as g:
+        a = A()
+        b = ErrorBlock(handlers=[reip.util.handlers.retry(3), a], n_inputs=0, log_level='debug')
+    with pytest.raises(RuntimeError):
+        g.run()
+    assert a.count == 3
 
 
 # class BlockPresence(reip.Block):
@@ -138,7 +151,8 @@ class StateTester(reip.Block):
     def __init__(self, *a, **kw):
         super().__init__(*a, n_inputs=None, **kw)
 
-    def _check_state(self, ready=True, running=True, done=False, terminated=False, error=None):
+    def _check_state(self, ready=True, running=True, done=False, terminated=False, started=True, error=None):
+        assert started is None or self.started == started
         assert ready is None or self.ready == ready
         assert running is None or self.running == running
         assert done is None or self.done == done
@@ -151,20 +165,22 @@ class StateTester(reip.Block):
     def init(self):
         self._check_state(ready=False)
 
-    def _do_init(self, *a, **kw):
-        super()._do_init(*a, **kw)
-        self._check_state()
+    # def _do_init(self, *a, **kw):
+    #     super()._do_init(*a, **kw)
+    #     self._check_state()
 
     def process(self, *xs, meta):
         self._check_state()
         return xs, meta
 
     def finish(self):
-        self._check_state()
+        self._check_state(ready=False)
 
-    def _do_finish(self, *a, **kw):
-        super()._do_finish(*a, **kw)
-        self._check_state(done=True)
+    def _main(self, *a, **kw):
+        try:
+            super()._main(*a, **kw)
+        finally:
+            self._check_state(ready=False, done=True)
 
 def test_basic_state():
     with reip.Graph() as g:
@@ -175,26 +191,26 @@ def test_basic_state():
 
 
 
-class ErrorStateTester(StateTester):
-    def process(self, meta):
-        raise RuntimeError()
-
-    def finish(self):
-        self._check_state(error=RuntimeError)
-        del self._except._groups['process']
-        self._except.last = None
-
-    def _do_finish(self, *a, **kw):
-        super()._do_finish(self, *a, **kw)
-        self._check_state(done=True, error=RuntimeError)
-
-
-def test_error_state():
-    with reip.Graph() as g:
-        tester = ErrorStateTester()
-    print(g)
-    for _ in range(5):
-        g.run(duration=0.1, raise_exc=True)
+# class ErrorStateTester(StateTester):
+#     def process(self, meta):
+#         raise RuntimeError()
+#
+#     def finish(self):
+#         self._check_state(error=RuntimeError)
+#         del self._except._groups['process']
+#         self._except.last = None
+#
+#     def _do_finish(self, *a, **kw):
+#         super()._do_finish(self, *a, **kw)
+#         self._check_state(done=True, error=RuntimeError)
+#
+#
+# def test_error_state():
+#     with reip.Graph() as g:
+#         tester = ErrorStateTester()
+#     print(g)
+#     for _ in range(5):
+#         g.run(duration=0.1, raise_exc=True)
 
 
 
@@ -215,11 +231,13 @@ class TerminateStateTester(StateTester):
         self.terminate()
 
     def finish(self):
-        self._check_state(terminated=True)
+        self._check_state(ready=False, terminated=True)
 
-    def _do_finish(self, *a, **kw):
-        reip.Block._do_finish(self, *a, **kw)
-        self._check_state(done=True, terminated=True)
+    def _main(self, *a, **kw):
+        try:
+            reip.Block._main(self, *a, **kw)
+        finally:
+            self._check_state(ready=False, done=True, terminated=True)
 
 def test_term_state():
     with reip.Graph() as g:
@@ -235,7 +253,7 @@ class PauseStateTester(StateTester):
         return [], meta
 
     def finish(self):
-        self._check_state(running=None)
+        self._check_state(ready=False, running=None)
 
 
 def test_pause_resume_state():

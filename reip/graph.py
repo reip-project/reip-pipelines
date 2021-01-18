@@ -241,7 +241,7 @@ class Graph(BaseContext):
     # _delay = 1
     def wait(self, duration=None):
         for _ in iters.timed(iters.sleep_loop(self._delay), duration):
-            if self.done or self.error:
+            if self.done:
                 return True
 
     def _reset_state(self):
@@ -263,7 +263,7 @@ class Graph(BaseContext):
 
     @property
     def done(self):
-        return all(b.done for b in self.blocks)
+        return any(b.done for b in self.blocks)
 
     @property
     def error(self):
@@ -287,7 +287,7 @@ class Graph(BaseContext):
                 _ready_flag.set()
 
     def wait_until_ready(self):
-        while not self.ready and not self.error and not self.done:
+        while not self.ready and not self.done:
             time.sleep(self._delay)
 
     def join(self, close=True, terminate=False, raise_exc=None, **kw):
