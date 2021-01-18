@@ -22,18 +22,18 @@ class Mic(reip.Block):
         self._q = reip.stores.Producer()
         self.sources[0] = self._q.gen_source()
 
-    def init(self):
-        '''Start pyaudio and start recording'''
-        for i in reip.util.iters.run_loop(interval=self.search_interval):
-            try:
-                self._init()
-                break
-            except Exception as e:
-                self.log.error('Microphone Init: ({}) {}'.format(e.__class__.__name__, e))
-                if i == 0:
-                    self.log.exception(e)
+    # def init(self):
+    #     '''Start pyaudio and start recording'''
+    #     for i in reip.util.iters.run_loop(interval=self.search_interval):
+    #         try:
+    #             self._init()
+    #             break
+    #         except Exception as e:
+    #             self.log.error('Microphone Init: ({}) {}'.format(e.__class__.__name__, e))
+    #             if i == 0:
+    #                 self.log.exception(e)
 
-    def _init(self):
+    def init(self):
         # initialize pyaudio
         device = find_device(self.device_name)
         self.log.info('Using audio device: {} - {}'.format(device['name'], device))
@@ -66,8 +66,9 @@ class Mic(reip.Block):
 
     def finish(self):
         '''Stop pyaudio'''
-        self._audio_stream.close()
-        self._audio_stream.stop()
+        if self._audio_stream is not None:
+            self._audio_stream.close()
+            self._audio_stream.stop()
         self._audio_stream = None
 
 
