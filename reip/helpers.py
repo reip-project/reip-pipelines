@@ -47,11 +47,26 @@ def asblock(__func__=None, single_output=False, meta=True, context=False, self=F
         })
     return asblock_converter(__func__) if callable(__func__) else asblock_converter
 
-def asbasic(*a, **kw):
-    return asblock(*a, single_output=True, meta=False, **kw)
+def asbasic(*a, n_inputs=None, meta=False, **kw):
+    '''Create a block using a process function that takes a single input and returns
+    a single output.
 
-def asmulti(*a, **kw):
-    return asblock(*a, single_output=False, meta=False, **kw)
+    Example:
+    >>> TimesN = reip.helpers.asbasic(lambda x, n=2: x * n)  # creates a block
+    >>> B.Increment(5).to(TimesN(6)).to(B.Debug())  # 0 6 12 18 24
+    '''
+    return asblock(*a, single_output=True, n_inputs=n_inputs, meta=meta, **kw)
+
+def asmulti(*a, n_inputs=None, meta=False, **kw):
+    '''Create a block using a process function that takes multiple inputs and returns
+    a multiple inputs.
+
+    Example:
+    >>> Sum = reip.helpers.asmulti((lambda *xs: [sum(xs)]), n_inputs=None)  # creates a block
+    >>> B.Increment(5).to(Sum(6)).to(B.Debug())  # 0 6 12 18 24
+    >>> out = Sum()(B.Increment(12), B.Increment(10, 22))
+    '''
+    return asblock(*a, single_output=False, meta=meta, n_inputs=n_inputs, **kw)
 
 def asbasicmeta(*a, **kw):
     return asblock(*a, single_output=True, meta=True, **kw)
