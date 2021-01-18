@@ -13,19 +13,19 @@ ROOT = os.path.dirname(__file__)
 def test_shell():
     # test basic
     o = shell.run('echo 10')
-    assert o == ('10\n', '', 'echo 10')
+    assert o == ('10\n', '', 0, 'echo 10')
 
     # test insert and quote
     o = shell.run('echo {}', '10 && echo 15')
-    assert o == ('10 && echo 15\n', '', "echo '10 && echo 15'")
+    assert o == ('10 && echo 15\n', '', 0, "echo '10 && echo 15'")
 
     # test insert without quote
     o = shell.run('echo {!r}', '10 && echo 15')
-    assert o == ('10\n15\n', '', 'echo 10 && echo 15')
+    assert o == ('10\n15\n', '', 0, 'echo 10 && echo 15')
 
     # test insert many
     o = shell.run('echo {} {b} {a}', 10, a=11, b=15)
-    assert o == ('10 15 11\n', '', 'echo 10 15 11')
+    assert o == ('10 15 11\n', '', 0, 'echo 10 15 11')
 
     # test insert many
     iface = None  # wlan0

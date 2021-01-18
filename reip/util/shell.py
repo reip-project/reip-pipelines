@@ -1,9 +1,10 @@
+import re
 import subprocess
 import shlex
 import collections
 import reip
 
-ShellResult = collections.namedtuple('ShellResult', 'out err cmd')
+ShellResult = collections.namedtuple('ShellResult', 'out err rc cmd')
 
 
 def run(cmd, *a, **kw):
@@ -43,7 +44,7 @@ def run(cmd, *a, **kw):
         cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         check=False, shell=True)
 
-    return ShellResult(r.stdout.decode('utf-8'), r.stderr.decode('utf-8'), cmd)
+    return ShellResult(r.stdout.decode('utf-8'), r.stderr.decode('utf-8'), r.returncode, cmd)
 
 
 def build(cmd, *a, **kw):
@@ -83,6 +84,39 @@ class ShellArg:
 
 
 # Misc Commands
+
+def shmatch(cmd, out=None, err=None, rc=None):
+    '''
+    >>> shmatch('piwatcher status', 'OK')
+    >>> shmatch('ifconfig wlan0', 'inet [.\d]+')
+    >>> shmatch('docker logs blah --tail 100', err='Error')
+    >>> shmatch('ls')  # true
+    >>> shmatch('ls', 'README')  # true
+    >>> shmatch('ls 1>&2', 'README')  # false
+    >>> shmatch('ls 1>&2', err='README')  # true
+    >>> shmatch('true')  # true
+    >>> shmatch('true', rc=1)  # false
+    >>> shmatch('false')  # false
+    >>> shmatch('false', rc=1)  # true
+
+    '''
+    result = run(cmd)
+    if out is None and err is None and rc is None:
+        rc = 0
+    return (
+        (rc is None or result.rc == rc) and
+        (out is None or doesmatch(result[0], out)) and
+        (err is None or doesmatch(result[1], err)) or False)
+
+def doesmatch(txt, pat=None):
+    if pat is None:
+        return False
+    if isinstance(pat, list):
+        return any(re.search(p, txt) for p in pat)
+    if isinstance(pat, dict):
+        return next(k for k, p in pat.items() if re.search(p, txt))
+    return bool(re.search(pat, txt))  # TODO: maybe return match(es)?
+
 
 def git(*cmd, root=None):
     '''Run a git command in the sonycnode repository.'''
