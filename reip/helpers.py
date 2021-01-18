@@ -38,9 +38,9 @@ import warnings
 from contextlib import contextmanager
 
 
-def asblock(__func__=None, single_output=False, n_inputs=None, meta=True, context=False, self=False, **kw):
+def asblock(__func__=None, single_output=False, n_inputs=None, meta=True, context=False, self=False, name=None, **kw):
     def asblock_converter(func):
-        return type(func.__name__, (_BlockHelper,), {
+        return type(name or func.__name__, (_BlockHelper,), {
             '__init__': reip.util.partial(
                 _BlockHelper.__init__, _func=func, _single_output=single_output, _meta=meta,
                 _context=context, _self=self, n_inputs=n_inputs, **kw)

@@ -183,12 +183,14 @@ class Block:
 
     # Graph definition
 
-    def __call__(self, *others, **kw):
+    def __call__(self, *others, index=None, **kw):
         '''Connect other block sinks to this blocks sources.
         If the blocks have multiple sinks, they will be passed as additional
         inputs.
         '''
-        j = 0
+        j = next(
+            (i for i, s in enumerate(self.sources) if s is None), len(self.sources)
+        ) if index is None else index
         for i, other in enumerate(others):
             # permit argument to be a block
             # permit argument to be a sink or a list of sinks

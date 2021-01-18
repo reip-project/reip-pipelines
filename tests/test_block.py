@@ -26,6 +26,15 @@ def test_connections():
     output(*inputs, sink)
     assert [s.source for s in output.sources] == all_sinks
 
+    # test that the sources were added correctly
+    output = reip.Block(n_inputs=0)
+    assert len(output.sources) == 0
+    for inp in inputs:
+        inp.to(output)
+    output(sink)
+    print([s.source for s in output.sources])
+    assert [s.source for s in output.sources] == all_sinks
+
     # test a restricted number of sources
     n = 3
     output = reip.Block(n_inputs=n)
