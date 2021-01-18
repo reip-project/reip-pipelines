@@ -38,16 +38,16 @@ import warnings
 from contextlib import contextmanager
 
 
-def asblock(__func__=None, single_output=False, meta=True, context=False, self=False, **kw):
+def asblock(__func__=None, single_output=False, n_inputs=None, meta=True, context=False, self=False, **kw):
     def asblock_converter(func):
         return type(func.__name__, (_BlockHelper,), {
             '__init__': reip.util.partial(
                 _BlockHelper.__init__, _func=func, _single_output=single_output, _meta=meta,
-                _context=context, _self=self, **kw)
+                _context=context, _self=self, n_inputs=n_inputs, **kw)
         })
     return asblock_converter(__func__) if callable(__func__) else asblock_converter
 
-def asbasic(*a, n_inputs=None, meta=False, **kw):
+def asbasic(*a, meta=False, **kw):
     '''Create a block using a process function that takes a single input and returns
     a single output.
 
@@ -55,7 +55,7 @@ def asbasic(*a, n_inputs=None, meta=False, **kw):
     >>> TimesN = reip.helpers.asbasic(lambda x, n=2: x * n)  # creates a block
     >>> B.Increment(5).to(TimesN(6)).to(B.Debug())  # 0 6 12 18 24
     '''
-    return asblock(*a, single_output=True, n_inputs=n_inputs, meta=meta, **kw)
+    return asblock(*a, single_output=True, meta=meta, **kw)
 
 def asmulti(*a, n_inputs=None, meta=False, **kw):
     '''Create a block using a process function that takes multiple inputs and returns
