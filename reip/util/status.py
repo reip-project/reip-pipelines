@@ -126,15 +126,21 @@ def cellular(cell_name='ppp0', cell_tty_commands='/dev/ttyUSB2', meta=None):
     return {}
 
 
-_IFC_MAP = {'ip': 'inet', 'mac': 'ether'}
-DEFAULT_IFCONFIG = {
-    'wlan0': _IFC_MAP,
-    'eth0': _IFC_MAP,
-    'tun0': {'ip': 'inet'},
-}
+_IP = {'ip': 'inet'}
+_IPMAC = {'ip': 'inet', 'mac': 'ether'}
+DEFAULT_IFCONFIG = {'wlan0': _IPMAC, 'eth0': _IPMAC, 'tun0': _IP}
+# DEFAULT_IFACES = ['wlan0', 'eth0', 'tun0']
+# IFACE_KEY_DEFAULTS = {'ip': 'inet', 'mac': 'ether'}
+
+# def from_defaults(defaults, a=None, default_keys=None, default_value=None, **kw):
+#     if default_keys and not a and not kw:
+#         a = default_keys
+#     return dict(
+#         ((k, defaults.get(k, default_value or k)) for k in a), **kw)
 
 @register_stats
-def network(cfg=DEFAULT_IFCONFIG, meta=None):
+def network(*a, meta=None, **kw):
+    cfg = dict(((k, DEFAULT_IFCONFIG.get(k, _IP)) for k in a), **kw) if a or kw else DEFAULT_IFCONFIG
     ifaces = ifcfg.interfaces()
     # wlan, tun, eth = (ifaces.get(i, {}) for i in ('wlan0', 'tun0', 'eth0'))
     return {
