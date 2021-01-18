@@ -10,6 +10,10 @@ def checkfile(f):
     return f if f and os.path.isfile(f) else None
 
 
+class UploadError(requests.exceptions.RequestException):
+    pass
+
+
 class BaseUpload(reip.Block):
     def __init__(self,
                  endpoint,
@@ -69,9 +73,16 @@ class BaseUpload(reip.Block):
 
 
 class _AbstractUploadFile(BaseUpload):
+    def __init__(self, *a, n_tries=4, retry_sleep=10, **kw):
+        super().__init__(*a, **kw)
+        self.n_tries = n_tries or None
+
+    # def init(self):
+    #     super().init()
+    #     self.failed_uploads = []
 
     def process(self, files, meta=None, post_data=None):
-        # send request
+        # prepare request
         url = self.get_url()
         fileobjs = {
             name: self.open_file(fname)
@@ -79,24 +90,37 @@ class _AbstractUploadFile(BaseUpload):
         }
         names = ', '.join(fn for fn, f in fileobjs.values())#files.keys())
         # self.log.debug("Uploading: {} to {}".format(names, url))
-        response = self.sess.post(
-            url, files={k: (os.path.basename(fn), f) for k, (fn, f) in fileobjs.items()},
-            data=post_data or reip.util.resolve_call(self.data, files, meta=meta),
-            timeout=self.timeout)
+
+        to_upload = {k: (os.path.basename(fn), f) for k, (fn, f) in fileobjs.items()}
+        if post_data is None:
+            post_data = reip.util.resolve_call(self.data, files, meta=meta)
+
+        # send request and possibly retry
+        for _ in reip.util.iters.loop(self.n_tries):
+            try:
+                response = self.sess.post(url, files=to_upload, data=post_data, timeout=self.timeout)
+                output = response.text
+
+                # check for non-200 error code
+                if not response.ok:
+                    raise UploadError('Error when uploading {} to {}.\n{}'.format(url, names, output))
+            except requests.exceptions.RequestException as e:
+                self.log.error(reip.util.excline(e))
+            else:
+                break
+        else:
+            self.on_failure(files, output)
+            return [output], {'error': True, 'status_code': response.status_code}  # XXX: what to return here ?
 
         # return response info
         secs = response.elapsed.total_seconds()
-        output = response.text
         speed = self.calc_size(files) / secs / 1024.0
-        # handle output
-        if response.ok:
-            self.log.debug('{} uploaded to {} at {:.1f} Kb/s in {:.1f}s'.format(
-                names, url, speed, secs))
-            self.on_success(files, output)
-        else:
-            self.log.error('Error when uploading {} to {}.\n{}'.format(url, names, output))
-            self.on_failure(files, output)
-        return [output], {'upload_time': secs, 'upload_kbs': speed}
+
+        self.log.debug('{} uploaded to {} at {:.1f} Kb/s in {:.1f}s'.format(
+            names, url, speed, secs))
+        self.on_success(files, output)
+
+        return [output], {'upload_time': secs, 'upload_kbs': speed, 'status_code': response.status_code}
 
     def open_file(self, fname):
         return fname, open(fname, 'rb')
@@ -147,15 +171,3 @@ class UploadJSONAsFile(_AbstractUploadFile):
 
     def calc_size(self, files):
         return sum(sys.getsizeof(x) for x in files.values())
-
-        # # return response info
-        # secs = response.elapsed.total_seconds()
-        # output = response.text
-        # speed = sys.getsizeof(status) / secs / 1024.0
-        # # handle output
-        # if response.ok:
-        #     self.log.debug('{} uploaded at {:.1f} Kb/s in {:.1f}s'.format(
-        #         name, speed, secs))
-        # else:
-        #     self.log.error('Error when uploading to {}.\n{}'.format(url, output))
-        # return [output], {'upload_time': secs, 'upload_kbs': speed}
