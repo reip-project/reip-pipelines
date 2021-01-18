@@ -69,6 +69,9 @@ def create_partial(__partial_func__, *a, __name__=None, **kw):
 def resolve_call(func, *a, **kw):
     return func(*a, **kw) if callable(func) else func
 
+def as_func(func):
+    return func if callable(func) else (lambda: func)
+
 
 def ensure_dir(fname):
     '''Make sure that the directory that this filename is in exists. Does nothing

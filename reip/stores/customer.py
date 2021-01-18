@@ -18,6 +18,13 @@ class Customer(Source):
     def __len__(self):
         return self.source.head.counter - self.cursor.counter
 
+    def next(self):
+        if len(self):
+            self.cursor.counter += 1
+
+    def _get(self):
+        return self.store.get(self.cursor.pos)
+
     @property
     def cursor(self):
         return self.source.readers[self.id]
@@ -25,15 +32,3 @@ class Customer(Source):
     @property
     def store(self):
         return self.source.stores[self.store_id]
-
-    def empty(self):
-        return self.source.head.counter == self.cursor.counter
-
-    def last(self):
-        return (self.source.head.counter - self.cursor.counter) <= 1
-
-    def next(self):
-        self.cursor.counter += 1
-
-    def _get(self):
-        return self.store.get(self.cursor.pos)

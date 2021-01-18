@@ -1,4 +1,5 @@
 import time
+import reip
 
 
 def skip_strategy(source):
@@ -86,12 +87,13 @@ class Source:
 
     _strategy = All
 
-    def __init__(self, strategy=All, skip=0):
+    def __init__(self, strategy=All, skip=0, default=None):
         self.strategy = strategy
         self.skip = skip
         self._skip_id = 0
         self.skipped = 0
         self._empty_delay = 1e-6
+        self._default = reip.util.as_func(default) if default is not None else default
 
     @property
     def strategy(self):
@@ -109,10 +111,11 @@ class Source:
         raise NotImplementedError
 
     def empty(self):
-        return not len(self)
+        return not len(self) and self._default is None
 
     def last(self):
-        return len(self) == 1
+        ln = len(self)
+        return ln == 1 or (not ln and self._default is not None)
 
     def next(self):
         raise NotImplementedError
@@ -133,6 +136,8 @@ class Source:
         return self.get_nowait()
 
     def get_nowait(self):
-        if self.empty():
+        if len(self) == 0:
+            if self._default is not None:
+                return self._default()
             return None
         return self._strategy_get(self)

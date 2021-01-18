@@ -43,78 +43,95 @@ def keyboard_interrupts(func):
         except KeyboardInterrupt as e:
             raise RuntimeError("interrupted - now you'll flipping show me. eat my shorts pytest.") from e
     return inner
+#
+# @pytest.mark.parametrize("task_id,throughput,CustomerCls,PointerCls,StoreCls", [
+#     (DEFAULT, None, reip.stores.Customer, reip.stores.Pointer, reip.stores.Store),
+#     (OTHER_ID, 'small', reip.stores.QueueCustomer, reip.stores.SharedPointer, reip.stores.QueueStore),
+#     (OTHER_ID, 'medium', reip.stores.QueueCustomer, reip.stores.SharedPointer, reip.stores.QueueStore),
+#     (OTHER_ID, 'large', reip.stores.Customer, reip.stores.SharedPointer, reip.stores.PlasmaStore),
+#     (OTHER_ID, None, reip.stores.QueueCustomer, reip.stores.SharedPointer, reip.stores.QueueStore),
+# ])
+# @pytest.mark.parametrize("data_func", [
+#     (str),
+#     (int),
+#     (float),
+#     (lambda x: [x]),
+#     (lambda x: {'adsf': x}),
+#     (lambda x: {x}),
+#     # (np.array),
+#     (lambda x: np.array([x])),
+#     # (lambda x, d=10: np.array([[x]*d]*d)),
+# ])
+# @keyboard_interrupts
+# def test_producer(task_id, throughput, CustomerCls, PointerCls, StoreCls, data_func, **kw):
+#     print(task_id, throughput, CustomerCls, PointerCls, StoreCls, data_func, **kw)
+#     # get sink
+#     sink = reip.stores.Producer(100, task_id=DEFAULT)
+#
+#     # get sources
+#     if throughput is not None:
+#         kw['throughput'] = throughput
+#     kw['task_id'] = task_id
+#     src0 = sink.gen_source(**kw)
+#     src1 = sink.gen_source(strategy=reip.Source.Skip, skip=1, **kw)
+#     src2 = sink.gen_source(strategy=reip.Source.Latest, **kw)
+#     srcs = [src0, src1, src2]
+#
+#     if CustomerCls is not None:
+#         assert all(isinstance(s, CustomerCls) for s in srcs)
+#     if PointerCls is not None:
+#         assert all(
+#             isinstance(s.cursor, PointerCls) and
+#             isinstance(s.source.head, PointerCls) and
+#             isinstance(s.source.tail, PointerCls)
+#             for s in srcs)
+#     if StoreCls is not None:
+#         assert all(isinstance(s.store, StoreCls) for s in srcs)
+#
+#     # convert sink data to expected source data
+#     get_expects = lambda all_expects: [
+#         all_expects,
+#         all_expects[1::2],
+#         all_expects[-1:]
+#     ]
+#
+#     # wrap run with a remote process/thread
+#     print('threaded', task_id is not sink.task_id)
+#
+#     sink.spawn()
+#
+#     # build queue inputs
+#     all_expects1 = [(data_func(i), {"buffer": i}) for i in range(10)]
+#     all_expects2 = [(data_func(i), {"buffer": i}) for i in range(40, 50)]
+#     # pre-load
+#     for x in all_expects1:
+#         sink.put(x)
+#
+#     # start remote process
+#     exps = [get_expects(all_expects1), get_expects(all_expects2)]
+#     with remoteobj.util.job(run, srcs, exps, threaded_=task_id == sink.task_id, timeout_=3) as p:
+#         # wait for srcs to catch up
+#         while srcs[-1].cursor.counter < sink.head.counter:
+#             time.sleep(1e-2)
+#             p.raise_any()
+#         # add second round of sources
+#         for x in all_expects2:
+#             sink.put(x)
+#     sink.join()
 
-@pytest.mark.parametrize("task_id,throughput,CustomerCls,PointerCls,StoreCls", [
-    (DEFAULT, None, reip.stores.Customer, reip.stores.Pointer, reip.stores.Store),
-    (OTHER_ID, 'small', reip.stores.QueueCustomer, reip.stores.SharedPointer, reip.stores.QueueStore),
-    (OTHER_ID, 'medium', reip.stores.QueueCustomer, reip.stores.SharedPointer, reip.stores.QueueStore),
-    (OTHER_ID, 'large', reip.stores.Customer, reip.stores.SharedPointer, reip.stores.PlasmaStore),
-    (OTHER_ID, None, reip.stores.QueueCustomer, reip.stores.SharedPointer, reip.stores.QueueStore),
-])
-@pytest.mark.parametrize("data_func", [
-    (str),
-    (int),
-    (float),
-    (lambda x: [x]),
-    (lambda x: {'adsf': x}),
-    (lambda x: {x}),
-    # (np.array),
-    (lambda x: np.array([x])),
-    # (lambda x, d=10: np.array([[x]*d]*d)),
-])
-@keyboard_interrupts
-def test_producer(task_id, throughput, CustomerCls, PointerCls, StoreCls, data_func, **kw):
-    print(task_id, throughput, CustomerCls, PointerCls, StoreCls, data_func, **kw)
-    # get sink
-    sink = reip.stores.Producer(100, task_id=DEFAULT)
 
-    # get sources
-    if throughput is not None:
-        kw['throughput'] = throughput
-    kw['task_id'] = task_id
-    src0 = sink.gen_source(**kw)
-    src1 = sink.gen_source(strategy=reip.Source.Skip, skip=1, **kw)
-    src2 = sink.gen_source(strategy=reip.Source.Latest, **kw)
-    srcs = [src0, src1, src2]
+def test_default_source():
+    sink = reip.stores.Producer(100)
 
-    if CustomerCls is not None:
-        assert all(isinstance(s, CustomerCls) for s in srcs)
-    if PointerCls is not None:
-        assert all(
-            isinstance(s.cursor, PointerCls) and
-            isinstance(s.source.head, PointerCls) and
-            isinstance(s.source.tail, PointerCls)
-            for s in srcs)
-    if StoreCls is not None:
-        assert all(isinstance(s.store, StoreCls) for s in srcs)
+    default = [[-1], {}]
+    src = sink.gen_source()
+    srcd = sink.gen_source(default=default)
 
-    # convert sink data to expected source data
-    get_expects = lambda all_expects: [
-        all_expects,
-        all_expects[1::2],
-        all_expects[-1:]
-    ]
+    xs = [([i], {}) for i in range(10)]
 
-    # wrap run with a remote process/thread
-    print('threaded', task_id is not sink.task_id)
-
-    sink.spawn()
-
-    # build queue inputs
-    all_expects1 = [(data_func(i), {"buffer": i}) for i in range(10)]
-    all_expects2 = [(data_func(i), {"buffer": i}) for i in range(40, 50)]
-    # pre-load
-    for x in all_expects1:
+    for x in xs:
         sink.put(x)
 
-    # start remote process
-    exps = [get_expects(all_expects1), get_expects(all_expects2)]
-    with remoteobj.util.job(run, srcs, exps, threaded_=task_id == sink.task_id, timeout_=3) as p:
-        # wait for srcs to catch up
-        while srcs[-1].cursor.counter < sink.head.counter:
-            time.sleep(1e-2)
-            p.raise_any()
-        # add second round of sources
-        for x in all_expects2:
-            sink.put(x)
-    sink.join()
+    N = len(xs) + 5
+    assert get_all_available(src, N) == xs
+    assert get_all_available(srcd, N) == xs + [default] * (N - len(xs))
