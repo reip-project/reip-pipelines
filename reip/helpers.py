@@ -38,6 +38,12 @@ import warnings
 from contextlib import contextmanager
 
 
+
+def asout(*values, meta=None):
+    return list(values), ({} if meta is None else meta)
+
+
+
 def asblock(__func__=None, single_output=False, n_inputs=None, meta=True, context=False, self=False, name=None, **kw):
     def asblock_converter(func):
         return type(name or func.__name__, (_BlockHelper,), {
