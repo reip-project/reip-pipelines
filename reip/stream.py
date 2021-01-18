@@ -41,14 +41,15 @@ class Stream:
 
 
     def __str__(self):
-        state = (
+        # srcs = ''.join(f'\n{s}' for s in self.sources)
+        return '<{}({}) {} available={}>'.format(
+            self.__class__.__name__, self.name,
             ' '.join((
                 'will-wait' * self.should_wait,
                 'terminated' * self.terminated))
-            or ('running' if self.running else 'paused'))
-
-        # srcs = ''.join(f'\n{s}' for s in self.sources)
-        return f'<{self.__class__.__name__}({self.name}) {state} available={[len(s) for s in self.sources]}>'
+            or ('running' if self.running else 'paused'),
+            [len(s) for s in self.sources],
+        )
 
     def get_loop(self, **kw):
         return (

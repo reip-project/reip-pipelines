@@ -292,9 +292,35 @@ def test_pause_resume_state():
 
 
 
+
+def test_extra_meta():
+    class A:
+        i = 0
+        def __call__(self, meta=None):
+            self.i += 1
+            return {'z': self.i}
+
+    with reip.Graph.detached() as g:
+        a = A()
+        block = reip.blocks.Increment(
+            max_processed=10,
+            extra_meta=[{'a': 1}, {'b': 2}, a, {'c': 12}]
+            )
+        out = block.output_stream()
+        assert block._extra_meta == [{'a': 1, 'b': 2}, a, {'c': 12}]
+    print(out)
+    g.run()
+    print(out)
+
+    metas = [dict(m) for m in list(out.nowait().meta)]
+    assert [dict(m) for m in metas] == [
+        {'a': 1, 'b': 2, 'c': 12, 'z': i+1} for i in range(block.max_processed)
+    ]
+
+
 def test_prints():
     # test too many sources
-    with reip.Graph() as g:
+    with reip.Graph.detached() as g:
         block = reip.Block(n_inputs=None)
     with g.run_scope():
         pass

@@ -78,7 +78,7 @@ class Block:
 
     def __init__(self, n_inputs=1, n_outputs=1, queue=1000, blocking=False,
                  max_rate=None, min_interval=None, max_processed=None, graph=None, name=None,
-                 source_strategy=all, extra_kw=False, log_level=None,
+                 source_strategy=all, extra_kw=False, extra_meta=None, log_level=None,
                  handlers=None, modifiers=None, input_modifiers=None, **kw):
         self._except = remoteobj.LocalExcept(raises=True)
         self.name = name or f'{self.__class__.__name__}_{id(self)}'
@@ -114,6 +114,16 @@ class Block:
             self.min_interval = min_interval
         self.max_processed = max_processed
         self._put_blocking = blocking
+
+        self._extra_meta = reip.util.as_list(extra_meta or [])
+        if self._extra_meta:
+            # this will flatten a list of dicts into a single dict. Since call=False,
+            # if there is a list of dictionaries and a function, any dictionaries
+            # before the function will be collapsed, and any after will be left.
+            # Calling again (without call=False), will evaluate fully and return
+            # the a flattened dict.
+            self._extra_meta = reip.util.mergedict(self._extra_meta, call=False)
+
         if extra_kw:
             self.extra_kw = kw
         elif kw:
@@ -312,6 +322,8 @@ class Block:
                     # process each input batch
                     with self._sw('process'): #, self._except('process')
                         buffers, meta = inputs
+                        if self._extra_meta:
+                            meta = reip.util.mergedict(meta, self._extra_meta, meta=meta)
                         for func in self.input_modifiers:
                             buffers, meta = func(*buffers, meta=meta)
                         outputs = self.process(*buffers, meta=meta)

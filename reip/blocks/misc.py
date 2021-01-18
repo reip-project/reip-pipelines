@@ -158,7 +158,7 @@ class Increment(Iterator):
             start, stop = 0, start
         super().__init__(
             range(start or 0, stop, step) if stop is not None else
-            itertools.count(start or 0, stop), **kw)
+            itertools.count(start or 0, step or 1), **kw)
 
 
 class Debug(reip.Block):

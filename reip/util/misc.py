@@ -161,11 +161,15 @@ def flatten(X, args=(), call=False, **kw):
 
 
 def mergedict(*dicts, args=(), call=True, **kw):
-    # if any(callable(d) for d in dicts):
-    #     return partial(_mergedicts, *dicts)
-    # return _mergedicts(*dicts)
+    return _merge(flatten(dicts, args=args, call=call, **kw), call=call)
+
+def _merge(flat, call=True):
     out = {}
-    for d in flatten(*dicts, *args, call=call, **kw):
+    for d in flat:
+        if not d:
+            continue
+        if not call and callable(d):
+            return ([out] if out else []) + [d] + as_list(_merge(flat, call=call))
         out.update(d)
     return out
 
