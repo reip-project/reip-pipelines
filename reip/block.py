@@ -325,7 +325,7 @@ class Block:
                     with self._sw('process'): #, self._except('process')
                         buffers, meta = inputs
                         if self._extra_meta:
-                            meta = reip.util.mergedict(meta, self._extra_meta, meta=meta)
+                            meta.maps += reip.util.flatten(self._extra_meta, call=True, meta=meta)
                         for func in self.input_modifiers:
                             buffers, meta = func(*buffers, meta=meta)
                         outputs = self.process(*buffers, meta=meta)
