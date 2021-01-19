@@ -34,7 +34,7 @@ def register_stats(func):
     @functools.wraps(func)
     def stats(*a, **kw):
         try:
-            return func(*a, **kw)
+            return func(*a, **kw) or {}
         except Exception as e:
             log.exception(e)
             log.error('Error getting {} status: ({}) {}'.format(
@@ -120,10 +120,8 @@ def wifi(wlan='wlan*', meta=None):
 
 
 @register_stats
-def cellular(cell_name='ppp0', cell_tty_commands='/dev/ttyUSB2', meta=None):
-    if os.path.exists('/sys/class/net/%s' % cell_name):
-        return {"cell_sig_stre": netswitch.cell.signal_strength(cell_tty_commands)}
-    return {}
+def cellular(cell_tty_commands='/dev/ttyUSB2', meta=None):
+    return {"cell_strength": netswitch.cell.signal_strength(cell_tty_commands)}
 
 
 _IP = {'ip': 'inet'}
