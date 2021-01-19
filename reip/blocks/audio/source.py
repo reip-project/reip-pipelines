@@ -1,4 +1,5 @@
 import time
+import re
 import queue
 import sounddevice as sd
 import numpy as np
@@ -82,7 +83,7 @@ def find_device(query, min_input=1, min_output=0, log=None):
             d for d in devices
             if d['max_input_channels'] >= min_input
             and d['max_output_channels'] >= min_output
-            and (query is None or query in d['name'])
+            and (query is None or re.search(query, d['name'], re.IGNORECASE))
         ))
     except StopIteration:
         raise OSError('No device found matching "{}" in {}.'.format(
