@@ -77,6 +77,7 @@ class _AbstractUploadFile(BaseUpload):
     def __init__(self, *a, n_tries=4, retry_sleep=10, **kw):
         super().__init__(*a, **kw)
         self.n_tries = n_tries or None
+        self.retry_sleep = retry_sleep
 
     # def init(self):
     #     super().init()
@@ -107,6 +108,7 @@ class _AbstractUploadFile(BaseUpload):
                     raise UploadError('Error when uploading {} to {}.\n{}'.format(url, names, output))
             except requests.exceptions.RequestException as e:
                 self.log.error(reip.util.excline(e))
+                time.sleep(self.retry_sleep)
             else:
                 break
         else:

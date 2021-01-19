@@ -71,6 +71,7 @@ class Mic(reip.Block):
             self._audio_stream.close()
             self._audio_stream.stop()
         self._audio_stream = None
+        self.device = None
 
 
 def find_device(query, min_input=1, min_output=0, log=None):
