@@ -23,6 +23,7 @@ import psutil
 import ifcfg
 import ixconfig
 import netswitch
+import netswitch.cell
 import reip
 import logging
 
