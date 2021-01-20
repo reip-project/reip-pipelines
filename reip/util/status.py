@@ -121,7 +121,10 @@ def wifi(wlan='wlan*', meta=None):
 
 @register_stats
 def cellular(cell_tty_commands='/dev/ttyUSB2', meta=None):
-    return {"cell_strength": netswitch.cell.signal_strength(cell_tty_commands)}
+    try:
+        return {"cell_strength": netswitch.cell.signal_strength(cell_tty_commands)}
+    except OSError:
+        return
 
 
 _IP = {'ip': 'inet'}
