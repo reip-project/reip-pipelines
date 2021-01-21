@@ -22,7 +22,8 @@ setuptools.setup(
         'remoteobj>=0.2.6',
         # 'pyarrow',
         # block packages
-        'watchdog', 'tflit>=0.0.13',
+        # 'watchdog', 
+        'tflit>=0.0.13',
         # status messages
         'psutil', 'ifcfg', 'ixconfig>=0.1.1', 'netswitch', 'requests',
     ],
