@@ -162,7 +162,8 @@ class Increment(Iterator):
 
 
 class Debug(reip.Block):
-    def __init__(self, message=None, level='debug', convert=None, value=False, summary=False, period=None, name=None, border=False, **kw):
+    def __init__(self, message=None, level='debug', convert=None, value=False, compact=False,
+                 summary=False, period=None, name=None, border=False, **kw):
         self.message = message or 'Debug'
         self.value = value
         self.period = period
@@ -171,6 +172,7 @@ class Debug(reip.Block):
         self._last_time = 0
         self.level = reip.util.logging.aslevel(level)
         self.convert = convert
+        self.compact = compact
         name = 'Debug-{}'.format(message.replace(" ", "-")) if message else None
         super().__init__(name=name, **kw)
 
@@ -186,12 +188,15 @@ class Debug(reip.Block):
         return type(x).__name__, x
 
     def _block_format(self, *xs, meta):
+        data = [self._block_line_format(x) for x in xs]
+
         return (text.block_text if self._border else text.b_)(
             text.blue(self.message),
-            'data:', *[
-                ('  ', i) + tuple(self._block_line_format(x))
-                for i, x in enumerate(xs)],
-            ('meta:', meta)
+            *(
+                (('data:', data, '||', 'meta:', meta),)
+                if self.compact else
+                ('data:', *[('  ',i)+tuple(d) for i,d in enumerate(data)], ('meta:', meta))
+            )
         )
 
     def process(self, *xs, meta=None):
