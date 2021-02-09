@@ -4,7 +4,7 @@ from reip.stores import Store, PlasmaStore, QueueStore, Pointer, Counter, HAS_PY
 
 
 class Producer(reip.Sink):
-    def __init__(self, size=1000, delete_rate=5, task_id=reip.UNSET, **kw):
+    def __init__(self, size=100, delete_rate=10, task_id=reip.UNSET, **kw):
         self.size = size + 1  # need extra slot because head == tail means empty
         self.delete_rate = delete_rate
         self.task_id = task_id
@@ -60,6 +60,7 @@ class Producer(reip.Sink):
 
             # delete items if there's enough
             if len(to_delete) > self.size / self.delete_rate:
+                # print("Trimming", len(to_delete))
                 for store in self.stores.values():
                     store.delete(to_delete)
                 self.tail.counter = new_value

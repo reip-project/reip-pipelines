@@ -69,20 +69,21 @@ class Block:
     '''
     _thread = None
     _stream = None
-    _delay = 1e-6
+    _delay = 1e-5
     parent_id, task_id = None, None
     started = ready = done = _terminated = False
     processed = 0
     controlling = False
     max_rate = None
 
-    def __init__(self, n_inputs=1, n_outputs=1, queue=1000, blocking=False,
+    def __init__(self, n_inputs=1, n_outputs=1, queue=100, blocking=False, print_summary=True,
                  max_rate=None, min_interval=None, max_processed=None, graph=None, name=None,
                  source_strategy=all, extra_kw=False, extra_meta=None, log_level=None,
                  handlers=None, modifiers=None, input_modifiers=None, **kw):
         self._except = remoteobj.LocalExcept(raises=True)
         self.name = name or f'{self.__class__.__name__}_{id(self)}'
         self.parent_id, self.task_id = reip.Graph.register_instance(self, graph)
+        self._print_summary = print_summary
 
         # sources and sinks
         # by default, a block takes a variable number of sources.
@@ -131,7 +132,7 @@ class Block:
                 self, len(kw), set(kw)))
 
         # block timer
-        self._sw = reip.util.Stopwatch(str(self))
+        self._sw = reip.util.Stopwatch(self.name)
         self.log = reip.util.logging.getLogger(self, level=log_level)
         # signals
         self._reset_state()
@@ -161,6 +162,8 @@ class Block:
         self._terminated = False
         # stats
         self.processed = 0
+        self.old_processed = 0
+        self.old_time = time.time()
         self._sw.reset()
         self._except.clear()
 
@@ -301,6 +304,7 @@ class Block:
     def _main_run(self, _ready_flag=None, duration=None):
         try:
             with self._stream:
+                self._sw.tick()  # offset time delay due to the reip initialization (e.g. plasma store warm-up)
                 # block initialization
                 with self._sw('init'): #, self._except('init')
                     self.init()
@@ -331,6 +335,11 @@ class Block:
                         outputs = self.process(*buffers, meta=meta)
                         for func in self.modifiers:
                             outputs = func(outputs)
+
+                    self.processed += 1
+                    # limit the number of blocks
+                    if self.max_processed and self.processed >= self.max_processed:
+                        self.close(propagate=True)
 
                     # send each output batch to the sinks
                     with self._sw('sink'):
@@ -385,10 +394,6 @@ class Block:
 
                 # increment sources
                 # self._stream.next()
-                self.processed += 1
-                # limit the number of blocks
-                if self.max_processed and self.processed >= self.max_processed:
-                    self.close(propagate=True)
         for src, sig in zip(self.sources, source_signals):
             if sig is reip.RETRY:
                 pass
@@ -473,6 +478,8 @@ class Block:
             self._thread.join(timeout=timeout)
         if (self.controlling if raise_exc is None else raise_exc):
             self.raise_exception()
+        if self._print_summary:  # print now or part of the stats will be lost if the block is used inside of Task
+            print(self.stats_summary())
 
     def raise_exception(self):
         self._except.raise_any()
@@ -591,19 +598,27 @@ class Block:
 
     def status(self):
         '''
-        e.g. `[Block_123412341 24,580 buffers, 1,230 x/s]`
+        e.g. `Block_123    +   2 buffers (2.09 x/s),   9 total (1.47 x/s avg),  sources=[1], sinks=[0]`
         '''
         n = self.processed
         total_time = self._sw.elapsed()
+        speed_avg = n / total_time
+
+        n_new = n - self.old_processed
+        speed_now = n_new / (time.time() - self.old_time)
+        self.old_processed, self.old_time = n, time.time()
+
         n_src = [len(s) for s in self.sources]
         n_snk = [len(s) for s in self.sinks]
-        return f'[{self.name} {n:,} buffers, {n / total_time:,.2f}x/s sources={n_src}, sinks={n_snk}]'
+
+        return f'{self.name}\t + {n_new:3} buffers ({speed_now:,.2f} x/s), {n:5} total ({speed_avg:,.2f} x/s avg),  sources={n_src}, sinks={n_snk}'
 
     def stats_summary(self):
         stats = self.stats()
-        return text.block_text(
+        # return text.block_text(
+        return text.b_(
             # block title
-            'Stats for {summary_banner}',
+            '\nStats for {summary_banner}',
             # any exception, if one was raised.
             text.red('({}) {}'.format(type(self._exception).__name__, self._exception))
             if self._exception else None,
@@ -611,12 +626,13 @@ class Block:
             'Processed {processed} buffers in {total_time:.2f} sec. ({speed:.2f} x/s)',
             'Dropped: {dropped}  Skipped: {skipped}  Left in Queue: in={n_in_sources} out={n_in_sinks}',
             # timing info
-            self._sw, ch=text.blue('*')).format(
+            # self._sw, ch=text.blue('*')).format(
+            self._sw).format(
                 summary_banner=text.red(self) if self.error else text.green(self),
                 **stats)
 
-    def print_stats(self):
-        print(self.stats_summary())
+    # def print_stats(self):
+    #     print(self.stats_summary())
 
 
 def prepare_output(outputs, input_meta=None, expected_length=None):

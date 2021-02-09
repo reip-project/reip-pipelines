@@ -32,7 +32,7 @@ class _ContextScope:
 
 
 class BaseContext:  # (metaclass=_MetaContext)
-    _delay = 1e-6
+    _delay = 1e-5
     _previous = False  # the previous default instance
     parent_id, task_id = None, None
 
@@ -208,9 +208,12 @@ class Graph(BaseContext):
 
     # run graph
 
-    def run(self, duration=None, **kw):
+    def run(self, duration=None, stats_interval=None, print_graph=True, **kw):
+        if print_graph:
+            print(self, "\n")
+
         with self.run_scope(**kw):
-            self.wait(duration)
+            self.wait(duration, stats_interval=stats_interval)
 
     @contextmanager
     def run_scope(self, wait=True, raise_exc=True):
@@ -239,10 +242,15 @@ class Graph(BaseContext):
                 #     print(self.stats_summary())
 
     # _delay = 1
-    def wait(self, duration=None):
+    def wait(self, duration=None, stats_interval=None):
+        t0 = time.time()
         for _ in iters.timed(iters.sleep_loop(self._delay), duration):
             if self.done:
                 return True
+            if stats_interval:
+                if time.time() - t0 > stats_interval:
+                    t0 = time.time()
+                    print(self.status())
 
     def _reset_state(self):
         self._except.clear()
@@ -355,7 +363,7 @@ class Graph(BaseContext):
         return text.b_(
             f'[{self.name}]',
             text.indent('\n'.join(
-                s for s in (b.status() for b in self.blocks) if s))
+                s for s in (b.status() for b in self.blocks) if s)), ""
         )
 
     def stats_summary(self):

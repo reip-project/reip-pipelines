@@ -1,4 +1,5 @@
 import os
+import time
 import numpy as np
 import pyarrow as pa
 import pyarrow.plasma as plasma
@@ -59,6 +60,14 @@ class PlasmaStore(BaseStore):
     def __init__(self, size, plasma_socket=None):
         self._plasma_socket_name = plasma_socket or get_plasma_path()
         self.client = plasma.connect(self._plasma_socket_name)
+
+        # First write can be very slow on platform like Jetson Nano
+        print("Connected to %s. Warming up..." % self._plasma_socket_name)
+        t0 = time.time()
+        ret = self.client.get(self.client.put("warm-up"))
+        assert (ret == "warm-up")
+        print("Warmed up in %.4f sec\n" % (time.time()- t0))
+
         self.ids = n_random_unique_object_ids(self.client, size)
         self.size = size
 
