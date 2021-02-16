@@ -83,7 +83,11 @@ class Stopwatch:
         self.notock(name)
 
     def elapsed(self, name=_BLANK):
-        return time.time() - self._ticks[name]
+        if name in self._ticks.keys():
+            return time.time() - self._ticks[name]
+        else:
+            print("Attention: No tick available right now for \"%s\"" % name)
+            return 1e+6
 
     def last(self, name=_BLANK):
         ts = self._stats[name]
@@ -124,9 +128,9 @@ class Stopwatch:
 
         name_width = max((len(k) for k in self._stats), default=0) + 2
         return ('Total {:.4f} sec in {}:\n'.format(total, self._title) if total else '') + (
-            ''.join(
+            '\n'.join(
             ('    ({percent:5.2f}%) - {name:<{name_width}} '
-             '(avg = {mean:.6f} ± {std:.6f}, n = {count:8,}) {total}\n').format(
+             '(avg = {mean:.6f} ± {std:.6f}, n = {count:8,}) {total}').format(
                 name=name, name_width=name_width,
                 total=reip.util.human_time(stats.sum),
                 percent=100. * stats.sum / total if total else 0,
