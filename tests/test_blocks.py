@@ -126,6 +126,16 @@ def test_separate():
     assert (a, b) == (list(range(10)), list(range(10, 15)))
 
 
+def test_gather():
+    N, group = 20, 5
+    with reip.Graph() as g:
+        out = B.Gather(group, reduce=sum)(B.Increment(N)).output_stream()
+    g.run()
+    x = list(out.data[0].nowait())
+    print(x)
+    assert x == [sum(range(i, i+group)) for i in range(0, N, group)]
+
+
 #########################
 # test blocks/archive.py
 #########################
@@ -152,11 +162,11 @@ def test_os(tmp_path):
     # delete file - see if emitted
     rel = str(tmp_path)
     with reip.Graph() as g:
-        globbed = B.Glob(os.path.join(rel, '**/*'), recursive=True).to(B.Results())
-        created = B.os_watch.Created(path=rel).to(B.Results())
-        modified = B.os_watch.Modified(path=rel).to(B.Results())
-        moved = B.os_watch.Moved(path=rel).to(B.Results())
-        deleted = B.os_watch.Deleted(path=rel).to(B.Results())
+        globbed = B.Glob(os.path.join(rel, '**/*'), recursive=True).output_stream().data[0].nowait()
+        created = B.os_watch.Created(path=rel).output_stream().data[0].nowait()
+        modified = B.os_watch.Modified(path=rel).output_stream().data[0].nowait()
+        moved = B.os_watch.Moved(path=rel).output_stream().data[0].nowait()
+        deleted = B.os_watch.Deleted(path=rel).output_stream().data[0].nowait()
 
     f_pat = str(tmp_path / 'test_file_{}.txt')
 
@@ -191,18 +201,23 @@ def test_os(tmp_path):
         # wait
         time.sleep(1)
 
-    print('globbed', globbed.results)
-    print('created', created.results)
-    print('modified', modified.results)
-    print('moved', moved.results)
-    print('deleted', deleted.results)
+    globbed = list(globbed)
+    created = list(created)
+    modified = list(modified)
+    moved = list(moved)
+    deleted = list(deleted)
+    print('globbed', globbed)
+    print('created', created)
+    print('modified', modified)
+    print('moved', moved)
+    print('deleted', deleted)
     print('fs', fs)
     print('fs_moved', fs_moved)
-    assert set(globbed.results) == set(fs) | set(fs_moved)
-    assert set(created.results) == set(fs)# | set(fs_moved)
-    assert set(modified.results) == set(fs) | {rel}
-    assert set(moved.results) == set(fs) #set(list(zip(fs, fs_moved)))
-    assert set(deleted.results) == set(fs_moved)
+    assert set(globbed) == set(fs) | set(fs_moved)
+    assert set(created) == set(fs)# | set(fs_moved)
+    assert set(modified) == set(fs) | {rel}
+    assert set(moved) == set(fs) #set(list(zip(fs, fs_moved)))
+    assert set(deleted) == set(fs_moved)
 
 #
 # def test_audio_features():
@@ -260,11 +275,12 @@ def test_shell():
     # run basic command and look at output
     n = 10
     with reip.Graph() as g:
-        outputs = B.Increment(n).to(B.Shell('echo {}')).to(B.Results())  # ; echo 16 >&2
+        out = B.Increment(n).to(B.Shell('echo {}')).output_stream()  # ; echo 16 >&2
     g.run()
 
-    assert len(outputs.results) == n
-    assert outputs.results == [str(x) for x in range(len(outputs.results))]
+    x = list(out.data[0].nowait())
+    assert len(x) == n
+    assert x == [str(i) for i in range(len(x))]
 
 
 # def test_streamer():
