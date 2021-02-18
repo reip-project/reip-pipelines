@@ -247,10 +247,9 @@ class Graph(BaseContext):
         for _ in iters.timed(iters.sleep_loop(self._delay), duration):
             if self.done:
                 return True
-            if stats_interval:
-                if time.time() - t0 > stats_interval:
-                    t0 = time.time()
-                    print(self.status())
+            if stats_interval and time.time() - t0 > stats_interval:
+                t0 = time.time()
+                print(self.status())
 
     def _reset_state(self):
         self._except.clear()

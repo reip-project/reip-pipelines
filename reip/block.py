@@ -71,12 +71,12 @@ class Block:
     _stream = None
     _delay = 1e-5
     parent_id, task_id = None, None
-    started = ready = done = _terminated = False
+    started = ready = done = closed = _terminated = False
     processed = 0
     controlling = False
     max_rate = None
 
-    def __init__(self, n_inputs=1, n_outputs=1, queue=100, blocking=False, print_summary=True,
+    def __init__(self, n_inputs=1, n_outputs=1, queue=100, blocking=False, print_summary=False,
                  max_rate=None, min_interval=None, max_processed=None, graph=None, name=None,
                  source_strategy=all, extra_kw=False, extra_meta=None, log_level=None,
                  handlers=None, modifiers=None, input_modifiers=None, **kw):
@@ -159,6 +159,7 @@ class Block:
         self.started = False
         self.ready = False
         self.done = False
+        self.closed = False
         self._terminated = False
         # stats
         self.processed = 0
@@ -275,6 +276,7 @@ class Block:
         generic Block context management.'''
         try:
             self.started = True
+            self.closed = False
             self.log.debug(text.blue('Starting...'))
             time.sleep(self._delay)
 
@@ -284,9 +286,10 @@ class Block:
                     self, name=self.name, _sw=self._sw,
                     strategy=self._source_strategy)
 
+                # self.__first_time = True
                 # this lets us wrap the block's run function with retry loops, error suppression and
                 # whatever else might be useful
-                run = reip.util.partial(self._main_run, _ready_flag=_ready_flag, duration=duration)
+                run = reip.util.partial(self.__main_run, _ready_flag=_ready_flag, duration=duration)
                 for wrapper in self.handlers[::-1]:
                     run = reip.util.partial(wrapper, self, run)
                 run()
@@ -298,10 +301,15 @@ class Block:
             finally:
                 self.done = True
                 self.started = False
+                self.closed = True
                 self.log.debug(text.green('Done.'))
 
 
-    def _main_run(self, _ready_flag=None, duration=None):
+    def __main_run(self, _ready_flag=None, duration=None):
+        # # This is to return from a retry loop that doesn't want to close
+        # if not self.__first_time and self.closed:
+        #     return
+        # self.__first_time = False
         try:
             with self._stream:
                 self._sw.tick()  # offset time delay due to the reip initialization (e.g. plasma store warm-up)
@@ -336,14 +344,9 @@ class Block:
                         for func in self.modifiers:
                             outputs = func(outputs)
 
-                    self.processed += 1
-                    # limit the number of blocks
-                    if self.max_processed and self.processed >= self.max_processed:
-                        self.close(propagate=True)
-
                     # send each output batch to the sinks
                     with self._sw('sink'):
-                        self._send_to_sinks(outputs, meta)
+                        self.__send_to_sinks(outputs, meta)
 
         except KeyboardInterrupt:
             if self.controlling:
@@ -355,7 +358,7 @@ class Block:
             with self._sw('finish'): # , self._except('finish', raises=False)
                 self.finish()
 
-    def _send_to_sinks(self, outputs, meta_in=None):
+    def __send_to_sinks(self, outputs, meta_in=None):
         '''Send the outputs to the sink.'''
         source_signals = [None]*len(self.sources)
         # retry all sources
@@ -372,6 +375,11 @@ class Block:
             #     self._stream.next()
             # increment sources and send outputs
             else:
+                self.processed += 1
+                # limit the number of blocks
+                if self.max_processed and self.processed >= self.max_processed:
+                    self.close(propagate=True)
+
                 # detect signals meant for the source
                 if self.sources:
                     if outs is not None and any(any(t.check(o) for t in reip.SOURCE_TOKENS) for o in outs):
@@ -531,6 +539,7 @@ class Block:
     def close(self, propagate=False):
         if self._stream is not None:
             self._stream.close()
+        self.closed = True
         if propagate:
             self._send_sink_signal(reip.CLOSE)
 
@@ -549,9 +558,9 @@ class Block:
     def running(self):
         return self._stream.running if self._stream is not None else False
 
-    @property
-    def closed(self):
-        return self._stream.should_wait if self._stream is not None else True
+    # @property
+    # def closed(self):
+    #     return self._stream.should_wait if self._stream is not None else True
 
     @property
     def terminated(self):
@@ -578,8 +587,8 @@ class Block:
             'speed': self.processed / total_time if total_time else 0,
             'dropped': [getattr(s, "dropped", None) for s in self.sinks],
             'skipped': [getattr(s, "skipped", None) for s in self.sources],
-            'n_in_sources': [len(s) for s in self.sources],
-            'n_in_sinks': [len(s) for s in self.sinks],
+            'n_in_sources': [len(s) if s is not None else None for s in self.sources],
+            'n_in_sinks': [len(s) if s is not None else None for s in self.sinks],
             'sw': self._sw,
             'exception': self._exception,
             'all_exceptions': self._except._groups,

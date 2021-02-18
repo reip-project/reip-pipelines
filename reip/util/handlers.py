@@ -17,7 +17,7 @@ def lineprofile(block, run):
 
 
 def reboot(block, run):
-    while True:
+    while not block.closed:
         try:
             return run()
         except Exception as e:
