@@ -27,7 +27,8 @@ class BaseUpload(reip.Block):
                  client_pass=None,
                  crlfile=None,
                  timeout=60,
-                 verify=True, **kw):
+                 verify=True,
+                 sess=None, **kw):
         """Data Uploader.
 
         Args:
@@ -49,11 +50,12 @@ class BaseUpload(reip.Block):
         self.client_key = checkfile(client_key)
         self.client_pass = client_pass or None
         self.crlfile = checkfile(crlfile)
+        self._given_sess = sess
         super().__init__(**kw)
 
     sess = None
     def init(self):
-        self.sess = requests.Session()
+        self.sess = self._given_sess or requests.Session()
         self.sess.protocol = 'http'
         if self.verify:
             self.sess.protocol = 'https'
