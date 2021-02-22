@@ -112,6 +112,7 @@ class Stream:
     def _get(self):
         with self._sw('source'):
             inputs = [s.get_nowait() for s in self.sources]
+            # print(inputs)
 
             if inputs and all(reip.CLOSE.check(x) for x, meta in inputs):
                 self.signal = reip.CLOSE  # block will send to sinks
@@ -267,9 +268,17 @@ class Stream:
 
 def prepare_input(inputs):
     '''Take the inputs from multiple sources and prepare to be passed to block.process.'''
-    bufs, meta = zip(*inputs) if inputs else ((), ())
-    return (
-        # XXX: ... is a sentinel for empty outputs - how should we handle them here??
-        #      if there's a blank in the middle
-        [b for bs in bufs for b in reip.util.as_list(bs) if b is not reip.BLANK],
-        reip.util.Meta({}, *meta[::-1]))
+    bufs = [buf for buf, meta in inputs] if inputs else ()
+    metas = [meta for buf, meta in inputs] if inputs else []
+    if len(metas) == 1:
+        metas = metas[0]
+    elif len(metas) == 0:
+        metas = {}
+    return bufs, metas
+
+    # bufs, meta = zip(*inputs) if inputs else ((), ())
+    # return (
+    #     # XXX: ... is a sentinel for empty outputs - how should we handle them here??
+    #     #      if there's a blank in the middle
+    #     [b for bs in bufs for b in reip.util.as_list(bs) if b is not reip.BLANK],
+    #     reip.util.Meta({}, *meta[::-1]))

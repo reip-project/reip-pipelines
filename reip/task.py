@@ -6,7 +6,7 @@ from reip.util import iters, text
 
 class Task(reip.Graph):
     _process = None
-    _delay = 1e-4
+    _delay = 1e-3
 
     def __init__(self, *blocks, graph=None, **kw):
         super().__init__(*blocks, graph=graph, **kw)

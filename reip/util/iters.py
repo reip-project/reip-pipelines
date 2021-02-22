@@ -3,7 +3,7 @@ import itertools
 import numpy as np
 
 
-def run_loop(duration=None, rate=None, interval=None, n=None, delay=1e-6):
+def run_loop(duration=None, rate=None, interval=None, n=None, delay=1e-5):
     loop_ = sleep_loop(delay) if delay else loop()
     return throttled(
         timed(limit(loop_, n), duration=duration),
@@ -15,7 +15,7 @@ def loop(i=0):
         yield i
         i += 1
 
-def sleep_loop(delay=1e-6):
+def sleep_loop(delay=1e-5):
     for _ in loop():
         yield _
         time.sleep(delay)
@@ -39,7 +39,7 @@ def timed(it=None, duration=None, error=False):
         yield x
 
 
-def throttled(it=None, rate=None, interval=None, delay=1e-6, initial=None):
+def throttled(it=None, rate=None, interval=None, delay=1e-5, initial=None):
     '''Throttle a loop to take '''
     if initial:
         time.sleep(initial)
@@ -62,7 +62,7 @@ def throttled(it=None, rate=None, interval=None, delay=1e-6, initial=None):
         t1 = time.time()
 
 
-def thread_sleep(it, delay=1e-6):
+def thread_sleep(it, delay=1e-5):
     if not delay:
         yield from it
         return

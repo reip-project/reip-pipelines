@@ -69,7 +69,7 @@ class Block:
     '''
     _thread = None
     _stream = None
-    _delay = 1e-5
+    _delay = 1e-4
     parent_id, task_id = None, None
     started = ready = done = _terminated = False
     processed = 0
@@ -78,7 +78,7 @@ class Block:
 
     def __init__(self, n_inputs=1, n_outputs=1, queue=100, blocking=False, print_summary=True,
                  max_rate=None, min_interval=None, max_processed=None, graph=None, name=None,
-                 source_strategy=all, extra_kw=False, extra_meta=None, log_level=None,
+                 source_strategy=all, extra_kw=True, extra_meta=None, log_level=None,
                  handlers=None, modifiers=None, input_modifiers=None, **kw):
         self._except = remoteobj.LocalExcept(raises=True)
         self.name = name or f'{self.__class__.__name__}_{id(self)}'
@@ -127,6 +127,8 @@ class Block:
 
         if extra_kw:
             self.extra_kw = kw
+            for key, value in kw.items():
+                setattr(self, key, value)
         elif kw:
             raise TypeError('{} received {} unexpected keyword arguments: {}.'.format(
                 self, len(kw), set(kw)))
@@ -168,7 +170,7 @@ class Block:
         self._except.clear()
 
     def __repr__(self):
-        return '[Block({}): ({}/{} in, {} out; {} processed) - {}]'.format(
+        return 'Block({}): ({}/{} in, {} out; {} processed) - {}'.format(
             self.name, sum(s is not None for s in self.sources),
             '?' if self.n_expected_sources is None else self.n_expected_sources,
             len(self.sinks), self.processed,
@@ -312,13 +314,15 @@ class Block:
                 self.log.debug(text.green('Ready.'))
 
                 if _ready_flag is not None:
-                    with self._sw('sleep'):
+                    with self._sw('wait'):
                         _ready_flag.wait()
 
                 # the loop
                 loop = reip.util.iters.throttled(
                     reip.util.iters.timed(reip.util.iters.loop(), duration),
                     self.max_rate, delay=self._delay)
+
+                self.old_time = time.time()  # offset self.init() time delay for proper immediate speed calculation
 
                 for _ in self._sw.iter(loop, 'sleep'):
                     inputs = self._stream.get()
@@ -328,6 +332,7 @@ class Block:
                     # process each input batch
                     with self._sw('process'): #, self._except('process')
                         buffers, meta = inputs
+
                         if self._extra_meta:
                             meta.maps += reip.util.flatten(self._extra_meta, call=True, meta=meta)
                         for func in self.input_modifiers:
@@ -571,11 +576,14 @@ class Block:
 
     def stats(self):
         total_time = self._sw.stats().sum if '' in self._sw else 0
+        init_time = self._sw.stats("init").sum if 'init' in self._sw else 0
+        finish_time = self._sw.stats("finish").sum if 'finish' in self._sw else 0
+
         return {
             'name': self.name,
             'total_time': total_time,
             'processed': self.processed,
-            'speed': self.processed / total_time if total_time else 0,
+            'speed': self.processed / (total_time - init_time - finish_time) if total_time else 0,
             'dropped': [getattr(s, "dropped", None) for s in self.sinks],
             'skipped': [getattr(s, "skipped", None) for s in self.sources],
             'n_in_sources': [len(s) for s in self.sources],
@@ -602,7 +610,8 @@ class Block:
         '''
         n = self.processed
         total_time = self._sw.elapsed()
-        speed_avg = n / total_time
+        init_time = self._sw.stats("init").sum if 'init' in self._sw else 0
+        speed_avg = n / (total_time - init_time)
 
         n_new = n - self.old_processed
         speed_now = n_new / (time.time() - self.old_time)
@@ -653,5 +662,8 @@ def prepare_output(outputs, input_meta=None, expected_length=None):
         bufs.extend((reip.BLANK,) * max(0, expected_length - len(bufs)))
 
     if input_meta:  # merge meta as a new layer
-        meta = Meta(meta, input_meta)
+        if isinstance(meta, Meta):  # only the user did not wish to override it
+            meta = Meta(meta, input_meta)
+        else:
+            meta = Meta(meta)
     return bufs, meta or Meta()
