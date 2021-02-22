@@ -3,6 +3,10 @@ import numpy as np
 import librosa
 
 
+def dbmean(X):
+    return 10*np.log10(np.mean(10**(X/10)))
+
+
 def as_power_of_2(x):
     return int(2 ** np.floor(np.log2(x)))
 

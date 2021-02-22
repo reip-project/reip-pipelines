@@ -19,10 +19,10 @@ setuptools.setup(
         'fire', 'colorlog',
         # core packages
         'numpy',
-        'remoteobj>=0.2.6',
+        'remoteobj>=0.3.1',
         # 'pyarrow',
         # block packages
-        # 'watchdog', 
+        # 'watchdog',
         'tflit>=0.0.13',
         # status messages
         'psutil', 'ifcfg', 'ixconfig>=0.1.1', 'netswitch', 'requests',

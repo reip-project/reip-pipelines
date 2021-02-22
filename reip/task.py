@@ -137,6 +137,9 @@ class Task(reip.Graph):
     def resume(self):
         return self.remote.super.resume()
 
+    def close(self):
+        return self.remote.super.close(_default=None)
+
     def terminate(self):
         return self.remote.super.terminate(_default=None)
 

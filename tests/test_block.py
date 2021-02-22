@@ -335,4 +335,4 @@ def test_prints():
         pass
     block.status()
     block.summary()
-    block.print_stats()
+    block.stats_summary()

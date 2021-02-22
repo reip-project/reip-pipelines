@@ -263,3 +263,30 @@ class Separate(reip.Block):
                 out[i] = x
                 break
         return out, meta
+
+
+class Gather(reip.Block):
+    def __init__(self, size=None, reduce=None, squeeze=True, **kw):
+        self.size = size
+        self.reduce = reduce
+        self.squeeze = squeeze
+        super().__init__(**kw)
+
+    def init(self):
+        self.items = []
+
+    def _should_fire(self):
+        return len(self.items) >= self.size
+
+    def process(self, *xs, meta=None):
+        if self.squeeze and len(xs) == 1:
+            xs = xs[0]
+        self.items.append(xs)
+        if self._should_fire():
+            items, self.items = self.items, []
+            if self.reduce:
+                items = self.reduce(items)
+            return [items], meta
+
+    def finish(self):
+        self.items = None

@@ -108,16 +108,17 @@ def git(meta=None, root=None):
 
 # network
 
-
 @register_stats
 def wifi(wlan='wlan*', meta=None):
     iwc = ixconfig.Iwc().ifaces(wlan)
-    wlan = max(iwc or [None])
+    if not iwc:
+        return
+    wlan = iwc[max(iwc)]
     return ({
-        'wifi_quality': float(iwc[wlan]['quality_ratio']),
-        'wifi_strength': float(iwc[wlan]['strength']),
+        'wifi_quality': float(wlan['quality_ratio']) if 'quality_ratio' in wlan else None,
+        'wifi_strength': float(wlan['strength']) if 'strength' in wlan else None,
         'ap': netswitch.Wpa().ssid
-    } if wlan else {})
+    })
 
 
 @register_stats

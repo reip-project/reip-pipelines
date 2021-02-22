@@ -44,13 +44,16 @@ def getLogger(block, level=DEFAULT_LEVEL, compact=True, propagate=False):
 
 def add_stdouterr(log, formatter=None, level='info', errlevel=logging.WARNING):
     # https://stackoverflow.com/questions/16061641/python-logging-split-between-stdout-and-stderr
-    h_out = levelrange(logging.StreamHandler(sys.stdout), aslevel(level), errlevel)
-    h_err = levelrange(logging.StreamHandler(sys.stderr), errlevel)
+    add_filehandle(log, sys.stdout, level, errlevel, formatter=formatter)
+    add_filehandle(log, sys.stderr, errlevel, formatter=formatter)
+    return log
+
+
+def add_filehandle(log, file, minlevel=None, maxlevel=None, formatter=None):
+    hand = levelrange(logging.StreamHandler(file), aslevel(minlevel), aslevel(maxlevel))
     if formatter is not None:
-        h_out.setFormatter(formatter)
-        h_err.setFormatter(formatter)
-    log.addHandler(h_out)
-    log.addHandler(h_err)
+        hand.setFormatter(formatter)
+    log.addHandler(hand)
     return log
 
 

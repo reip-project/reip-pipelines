@@ -247,11 +247,11 @@ class Graph(BaseContext):
         for _ in iters.timed(iters.sleep_loop(self._delay), duration):
             if self.done:
                 return True
-            if stats_interval:
-                if time.time() - t > stats_interval:
-                    t = time.time()
-                    status = self.status()
-                    print("Status after %.3f sec:\n%s" % (time.time() - t0, status[status.find("\n")+1:]))
+
+            if stats_interval and time.time() - t > stats_interval:
+                t = time.time()
+                status = self.status()
+                print("Status after %.3f sec:\n%s" % (time.time() - t0, status[status.find("\n")+1:]))
 
     def _reset_state(self):
         self._except.clear()
