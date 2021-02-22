@@ -389,6 +389,12 @@ class Block:
             #     self._stream.next()
             # increment sources and send outputs
             else:
+                # See self.__main_run()
+                # self.processed += 1
+                # # limit the number of blocks
+                # if self.max_processed and self.processed >= self.max_processed:
+                #     self.close(propagate=True)
+
                 # detect signals meant for the source
                 if self.sources:
                     if outs is not None and any(any(t.check(o) for t in reip.SOURCE_TOKENS) for o in outs):
