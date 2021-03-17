@@ -129,6 +129,8 @@ class _BlockHelper(reip.Block):
         # context should yield the process function.
         try:
             process = self._ctx.__enter__()
+            if not callable(process):
+                raise ValueError("The process function returned by {} is not callable ({})".format(self.func.__name__, process))
         except StopIteration as e:
             raise RuntimeError('Block context function did not yield.') from e
         self._process = wrap_process(single_output=self.__single_output, meta=self.__meta)(process)

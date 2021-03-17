@@ -1,3 +1,4 @@
+import sys
 import time
 import threading
 import warnings
@@ -294,6 +295,12 @@ class Block:
                     run = reip.util.partial(wrapper, self, run)
                 run()
         finally:
+            for grp, excs in self._except._groups.items():
+                for e in excs:
+                    self.log.error('Error during {} - {}'.format(grp or 'run', reip.util.excline(e)))
+            exc = sys.exc_info()
+            if exc and exc[1]:
+                self.log.error(reip.util.excline(exc[1]))
             try:
                 # propagate stream signals to sinks e.g. CLOSE
                 if self._stream.signal is not None:

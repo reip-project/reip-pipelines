@@ -20,7 +20,7 @@ class BaseUpload(reip.Block):
     def __init__(self, endpoint, servers=None, method='post', data=None,
                  cacert=None, client_cert=None,
                  client_key=None, client_pass=None, crlfile=None,
-                 timeout=60, verify=True, n_tries=5, retry_sleep=15,
+                 timeout=10, verify=True, n_tries=5, retry_sleep=15,
                  sess=None, **kw):
         """Data Uploader.
 
@@ -84,7 +84,7 @@ class BaseUpload(reip.Block):
                 if not response.ok:
                     raise UploadError('Error when uploading {} to {}.\n{}'.format(
                         datastr, url, response.text))
-            except requests.exceptions.RequestException as e:
+            except Exception as e:
                 self.log.error(reip.util.excline(e))
                 # exit if we've failed too many times
                 if i >= self.n_tries-1:
@@ -92,7 +92,6 @@ class BaseUpload(reip.Block):
                     self.on_failure(response, url, **kw)
                     raise e
 
-                time.sleep(self.retry_sleep)
             else:
                 # return response info
                 secs = response.elapsed.total_seconds()
@@ -137,7 +136,7 @@ class _AbstractUploadFile(BaseUpload):
         return fname, open(fname, 'rb')
 
     def calc_size(self, files, **kw):
-        return sum(os.path.getsize(f) for f in files.values())
+        return sum(os.path.getsize(f.name) if hasattr(f, 'name') else sys.getsizeof(f) for _, f in files.values())
 
 
 class UploadFile(_AbstractUploadFile):
@@ -182,8 +181,10 @@ class UploadJSON(BaseUpload):
     def process(self, *data, meta=None):
         status = {k: v for d in data for k, v in d.items()}
         try:
-            data = reip.util.resolve_call(self.data, status, meta=meta) or {}
-            response, secs, speed = self.request(json=dict(data, **status))
+            data = dict(reip.util.resolve_call(self.data, status, meta=meta) or {}, **status)
+            response, secs, speed = self.request(
+                data=json.dumps(data, cls=NumpyEncoder), 
+                headers={'Content-Type': 'application/json'})
             return [response], {'upload_time': secs, 'upload_kbs': speed, 'status_code': response.status_code}
         except Exception as e:
             return
