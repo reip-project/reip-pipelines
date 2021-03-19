@@ -113,13 +113,13 @@ class Stream:
         with self._sw('source'):
             inputs = [s.get_nowait() for s in self.sources]
 
-            if inputs and all(reip.CLOSE.check(x) for x, meta in inputs):
+            if inputs and all(reip.CLOSE.check(x[0]) for x in inputs if x is not None):
                 self.signal = reip.CLOSE  # block will send to sinks
                 self.next()
                 self.close()
                 return
 
-            if inputs and any(reip.TERMINATE.check(x) for x, meta in inputs):
+            if inputs and any(reip.TERMINATE.check(x[0]) for x in inputs if x is not None):
                 self.signal = reip.TERMINATE  # block will send to sinks
                 self.next()
                 self.terminate()
