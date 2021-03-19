@@ -30,8 +30,8 @@ def test_connections():
     output = reip.Block(n_inputs=0)
     assert len(output.sources) == 0
     for inp in inputs:
-        inp.to(output)
-    output(sink)
+        inp.to(output, index=-1)
+    output(sink, index=-1)
     print([s.source for s in output.sources])
     assert [s.source for s in output.sources] == all_sinks
 
