@@ -75,6 +75,7 @@ class BaseUpload(reip.Block):
         # setup
         url = self.get_url()
         datastr = self.data_str(**kw)
+        #print('request', kw)
         # retry request until it succeeds
         for i in reip.util.iters.loop():
             try:
@@ -120,7 +121,7 @@ class _AbstractUploadFile(BaseUpload):
         try:
             response, secs, speed = self.request(
                 files=self.as_file_dict(files),
-                json=data or reip.util.resolve_call(self.data, files, meta=meta))
+                data=data or reip.util.resolve_call(self.data, files, meta=meta))
             return [response], {'upload_time': secs, 'upload_kbs': speed, 'status_code': response.status_code}
         except Exception as e:
             return

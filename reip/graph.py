@@ -32,7 +32,7 @@ class _ContextScope:
 
 
 class BaseContext:  # (metaclass=_MetaContext)
-    _delay = 1e-5
+    _delay = 1e-3
     _previous = False  # the previous default instance
     parent_id, task_id = None, None
 
@@ -185,8 +185,8 @@ class BaseContext:  # (metaclass=_MetaContext)
 # import blessed
 
 class Graph(BaseContext):
-    _delay = 1e-4
-    _main_delay = 1e-4#0.1
+    _delay = 1e-3
+    _main_delay = 1e-3#0.1
     controlling = None
 
     def __init__(self, *blocks, **kw):
@@ -195,7 +195,7 @@ class Graph(BaseContext):
         self._except = remoteobj.LocalExcept()
 
     def __repr__(self):
-        return '[~{}({}) ({} children) {}~]'.format(
+        return '{}({}), {} children:{}\n'.format(
             self.__class__.__name__, self.name, len(self.blocks),
             ''.join('\n' + text.indent(b) for b in self.blocks))
 
@@ -208,9 +208,9 @@ class Graph(BaseContext):
 
     # run graph
 
-    def run(self, duration=None, stats_interval=None, print_graph=True, **kw):
+    def run(self, duration=None, stats_interval=1, print_graph=True, **kw):
         if print_graph:
-            print(self, "\n")
+            print("\nStarting:", self, "\n")
 
         with self.run_scope(**kw):
             self.wait(duration, stats_interval=stats_interval)
@@ -243,13 +243,15 @@ class Graph(BaseContext):
 
     # _delay = 1
     def wait(self, duration=None, stats_interval=None):
-        t0 = time.time()
+        t, t0 = time.time(), time.time()
         for _ in iters.timed(iters.sleep_loop(self._delay), duration):
             if self.done:
                 return True
-            if stats_interval and time.time() - t0 > stats_interval:
-                t0 = time.time()
-                print(self.status())
+
+            if stats_interval and time.time() - t > stats_interval:
+                t = time.time()
+                status = self.status()
+                print("Status after %.3f sec:\n%s" % (time.time() - t0, status[status.find("\n")+1:]))
 
     def _reset_state(self):
         self._except.clear()
@@ -280,8 +282,8 @@ class Graph(BaseContext):
     _ready_flag = None
     def spawn(self, wait=True, _controlling=True, _ready_flag=None, **kw):
         self.controlling = _controlling
-        # if self.controlling:
-        #     self._ready_flag = _ready_flag = mp.Event()
+        if self.controlling:
+            self._ready_flag = _ready_flag = mp.Event()
 
         for block in self.blocks:
             block.spawn(wait=False, _controlling=False, _ready_flag=_ready_flag, **kw)
