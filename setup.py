@@ -31,7 +31,7 @@ setuptools.setup(
         # 'status': ['psutil', 'ixconfig', 'netswitch'],
         'audio': ['sounddevice', 'librosa'],
         'video': ['opencv-python'],  # already installed on Jetson by default
-        'encrypt': ['pycrypto'],
+        'encrypt': ['pycryptodome'],
         'vis': ['matplotlib'],
         'docs': ['sphinx!=1.3.1', 'sphinx_theme', 'sphinx-gallery'],
     },

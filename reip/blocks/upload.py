@@ -20,7 +20,7 @@ class BaseUpload(reip.Block):
     def __init__(self, endpoint, servers=None, method='post', data=None,
                  cacert=None, client_cert=None,
                  client_key=None, client_pass=None, crlfile=None,
-                 timeout=10, verify=True, n_tries=5, retry_sleep=15,
+                 timeout=20, verify=True, n_tries=5, retry_sleep=15,
                  sess=None, **kw):
         """Data Uploader.
 
