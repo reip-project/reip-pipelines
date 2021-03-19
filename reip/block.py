@@ -16,6 +16,11 @@ __all__ = ['Block']
 
 
 class _BlockSinkView:
+    '''This is so that we can select a subview of a block's sinks. This is similar
+    in principal to numpy views. The alternative is to store the state on the original
+    object, but that would have unintended consequences if someone tried to create two
+    different views from the same block.
+    '''
     def __init__(self, block, idx):
         self._block = block
         self._index = idx
@@ -146,7 +151,7 @@ class Block:
         self.max_rate = 1. / value if value is not None else value
 
     def set_block_source_count(self, n):
-        # NOTE: if n is None, no resize will happen
+        # NOTE: if n is -1, no resize will happen
         self.sources = reip.util.resize_list(self.sources, n, None)
 
     def set_block_sink_count(self, n):
@@ -171,7 +176,7 @@ class Block:
     def __repr__(self):
         return '[Block({}): ({}/{} in, {} out; {} processed) - {}]'.format(
             self.name, sum(s is not None for s in self.sources),
-            '?' if self.n_expected_sources is None else self.n_expected_sources,
+            self.n_expected_sources,
             len(self.sinks), self.processed,
             self.block_state_name)
 
@@ -187,14 +192,14 @@ class Block:
 
     # Graph definition
 
-    def __call__(self, *others, index=None, **kw):
+    def __call__(self, *others, index=0, **kw):
         '''Connect other block sinks to this blocks sources.
         If the blocks have multiple sinks, they will be passed as additional
         inputs.
         '''
         j = next(
             (i for i, s in enumerate(self.sources) if s is None), len(self.sources)
-        ) if index is None else index
+        ) if index == -1 else index
         for i, other in enumerate(others):
             # permit argument to be a block
             # permit argument to be a sink or a list of sinks
@@ -453,7 +458,7 @@ class Block:
             raise RuntimeError(f"Sources {disconnected} in {self} not connected.")
 
         # check for exact source count
-        if (self.n_expected_sources is not None
+        if (self.n_expected_sources is not None and self.n_expected_sources != -1
                 and len(self.sources) != self.n_expected_sources):
             raise RuntimeError(
                 f'Expected {self.n_expected_sources} sources '
@@ -461,7 +466,7 @@ class Block:
 
     def remove_extra_sources(self, n=None):
         n = n or self.n_expected_sources
-        if n is not None:
+        if n is not None and n is not -1:
             self.sources = self.sources[:n]
 
     def wait_until_ready(self):

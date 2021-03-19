@@ -20,12 +20,14 @@ def resize_list(lst, length, value=None):
     >>> assert resize_list(x, 5, 10) == [1, 2, 10, 10, 10]
     >>> assert resize_list(x, 4, lambda: x[0]) == [1, 2, 1, 1]  # some callable
     '''
+    if length is None or length == -1 or len(lst) == length:
+        return lst
     return (
         lst + [
             value() if callable(value) else value
             for i in range(max(0, length - len(lst)))
         ]
-    )[:length] if length is not None and len(lst) != length else lst
+    )[:length]
 
 
 def decorator(__func__=None, **kw):
