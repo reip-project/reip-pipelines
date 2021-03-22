@@ -274,7 +274,7 @@ def prepare_input(inputs):
         metas = metas[0]
     elif len(metas) == 0:
         metas = {}
-    return bufs, metas
+    return bufs, reip.Meta(metas)
 
     # bufs, meta = zip(*inputs) if inputs else ((), ())
     # return (

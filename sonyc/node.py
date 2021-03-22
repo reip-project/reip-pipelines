@@ -240,9 +240,9 @@ def _chk(func):
 
 def test():
     with reip.Graph() as graph:
-        B.dummy.Array((3, 3), max_rate=2, max_processed=10).to(B.Debug('adsf'))
+        B.dummy.Array((3, 3), max_rate=2, max_generated=10).to(B.Debug('adsf'))
         with reip.Task():
-            x = B.dummy.Array((3, 3), max_rate=2, max_processed=10).to(B.Debug('adsf2')).output_stream()
+            x = B.dummy.Array((3, 3), max_rate=2, max_generated=10).to(B.Debug('adsf2')).output_stream()
     # reip.run()
     with graph.run_scope():
         for _ in reip.util.iters.throttled(interval=3):

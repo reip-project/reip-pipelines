@@ -58,7 +58,7 @@ def test_connections():
 
     # test missing sources
     with reip.Graph() as g:
-        output = reip.Block(max_processed=1, log_level='debug')(*inputs, sink)
+        output = reip.Block(max_generated=1, log_level='debug')(*inputs, sink)
         output.sources[0] = None
     with pytest.raises(RuntimeError):
         g.run()
@@ -84,11 +84,11 @@ class Constants(reip.Block):
 
 def test_process_function_returns():
     with reip.Graph() as g:
-        out = Constant(5, max_processed=10).output_stream()
+        out = Constant(5, max_generated=10).output_stream()
     g.run()
     assert list(out.data[0].nowait()) == [5]*10
     with reip.Graph() as g:
-        out = Constants([5, 6], max_processed=10).output_stream()
+        out = Constants([5, 6], max_generated=10).output_stream()
     g.run()
     assert list(out.data[0].nowait()) == [5, 6]*5
 
@@ -96,7 +96,7 @@ def test_process_function_returns():
 def test_init_errors_from_block_in_task():
     with reip.Graph() as g:
         with reip.Task() as t:
-            reip.Block(max_processed=10)(reip.Block(), reip.Block())
+            reip.Block(max_generated=10)(reip.Block(), reip.Block())
     with pytest.raises(RuntimeError, match=r'Expected \d+ sources'):
         g.run()
 
@@ -104,9 +104,11 @@ def test_init_errors_from_block_in_task():
 
 class ErrorBlock(reip.Block):
     def process(self, meta=None):
+        print('hi')
         raise RuntimeError()
 
-class A:
+
+class Count:
     count = 0
     def __call__(self, block, run):
         self.count += 1
@@ -114,19 +116,22 @@ class A:
 
 def test_handlers():
     with reip.Graph.detached() as g:
-        a = A()
-        b = reip.Block(handlers=a, max_processed=3, n_inputs=0)
+        count = Count()
+        b = reip.Block(handlers=count, max_generated=3, n_inputs=0)
     g.run()
-    assert a.count == 1
+    assert count.count == 1
     g.run()
-    assert a.count == 2
+    assert count.count == 2
 
     with reip.Graph.detached() as g:
-        a = A()
-        b = ErrorBlock(handlers=[reip.util.handlers.retry(3), a], n_inputs=0, log_level='debug')
+        count = Count()
+        b = ErrorBlock(handlers=[reip.util.handlers.retry(3), count], n_inputs=0, log_level='debug')
     with pytest.raises(RuntimeError):
-        g.run()
-    assert a.count == 3
+        try:
+            g.run()
+        finally:
+            print(g._except)
+    assert count.count == 3
 
 
 # class BlockPresence(reip.Block):
@@ -312,7 +317,7 @@ def test_extra_meta():
     with reip.Graph.detached() as g:
         a = A()
         block = reip.blocks.Increment(
-            max_processed=10,
+            max_generated=10,
             extra_meta=[{'a': 1}, {'b': 2}, a, {'c': 12}]
             )
         out = block.output_stream()
@@ -323,7 +328,7 @@ def test_extra_meta():
 
     metas = [dict(m) for m in list(out.nowait().meta)]
     assert [dict(m) for m in metas] == [
-        {'a': 1, 'b': 2, 'c': 12, 'z': i+1} for i in range(block.max_processed)
+        {'a': 1, 'b': 2, 'c': 12, 'z': i+1} for i in range(block.max_generated)
     ]
 
 

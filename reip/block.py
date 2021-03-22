@@ -76,13 +76,15 @@ class Block:
     _stream = None
     _delay = 1e-4
     parent_id, task_id = None, None
-    started = ready = done = closed = _terminated = False
+    started = ready = done = closed = terminated = False
+    __signal = None
     processed = 0
     controlling = False
     max_rate = None
+    __MAX_RATE_CHUNK = 0.4
 
     def __init__(self, n_inputs=1, n_outputs=1, queue=100, blocking=False, print_summary=True,
-                 max_rate=None, min_interval=None, max_processed=None, graph=None, name=None,
+                 max_rate=None, min_interval=None, max_processed=None, max_generated=None, graph=None, name=None,
                  source_strategy=all, extra_kw=True, extra_meta=None, log_level=None,
                  handlers=None, modifiers=None, input_modifiers=None, **kw):
         self._except = remoteobj.LocalExcept(raises=True)
@@ -119,6 +121,7 @@ class Block:
         if min_interval:
             self.min_interval = min_interval
         self.max_processed = max_processed
+        self.max_generated = max_generated
         self._put_blocking = blocking
 
         self._extra_meta = reip.util.as_list(extra_meta or [])
@@ -167,8 +170,10 @@ class Block:
         self.ready = False
         self.done = False
         self.closed = False
-        self._terminated = False
+        self.terminated = False
+        self.__signal = None
         # stats
+        self.generated = 0
         self.processed = 0
         self.old_processed = 0
         self.old_time = time.time()
@@ -199,9 +204,10 @@ class Block:
         If the blocks have multiple sinks, they will be passed as additional
         inputs.
         '''
-        j = next(
-            (i for i, s in enumerate(self.sources) if s is None), len(self.sources)
-        ) if index == -1 else index
+        if index == -1:
+            index = next(
+                (i for i, s in enumerate(self.sources) if s is None),
+                len(self.sources))
         for i, other in enumerate(others):
             # permit argument to be a block
             # permit argument to be a sink or a list of sinks
@@ -214,13 +220,13 @@ class Block:
 
             if sinks:
                 # make sure the list is long enough
-                self.set_block_source_count(j + len(sinks))
+                self.set_block_source_count(index + len(sinks))
 
                 # create and add the source
-                for j, sink in enumerate(sinks, j):
-                    self.sources[j] = sink.gen_source(
+                for index, sink in enumerate(sinks, index):
+                    self.sources[index] = sink.gen_source(
                         task_id=self.task_id, **kw)
-                j += 1  # need to increment cursor so we don't repeat last index
+                index += 1  # need to increment cursor so we don't repeat last index
         return self
 
     def to(self, *others, squeeze=True, **kw):
@@ -288,11 +294,6 @@ class Block:
             time.sleep(self._delay)
 
             with self._sw(), self._except(raises=False):
-                # create a stream from sources with a custom control loop
-                self._stream = reip.Stream.from_block_sources(
-                    self, name=self.name, _sw=self._sw,
-                    strategy=self._source_strategy)
-
                 # self.__first_time = True
                 # this lets us wrap the block's run function with retry loops, error suppression and
                 # whatever else might be useful
@@ -303,8 +304,8 @@ class Block:
         finally:
             try:
                 # propagate stream signals to sinks e.g. CLOSE
-                if self._stream.signal is not None:
-                    self._send_sink_signal(self._stream.signal)
+                if self.__signal is not None:
+                    self._send_sink_signal(self.__signal)
             finally:
                 self.done = True
                 self.started = False
@@ -318,54 +319,99 @@ class Block:
         #     return
         # self.__first_time = False
         try:
-            with self._stream:
-                self._sw.tick()  # offset time delay due to the reip initialization (e.g. plasma store warm-up)
-                # block initialization
-                with self._sw('init'): #, self._except('init')
-                    self.init()
-                self.ready = True
-                self.log.debug(text.green('Ready.'))
+            self._sw.tick()  # offset time delay due to the reip initialization (e.g. plasma store warm-up)
+            # block initialization
+            with self._sw('init'): #, self._except('init')
+                self.init()
+            self.terminated = False
+            self.closed = False
+            self.ready = True
+            self.log.debug(text.green('Ready.'))
 
-                if _ready_flag is not None:
-                    with self._sw('wait'):
-                        _ready_flag.wait()
+            if _ready_flag is not None:
+                with self._sw('sleep'):
+                    _ready_flag.wait()
 
-                # the loop
-                loop = reip.util.iters.throttled(
-                    reip.util.iters.timed(reip.util.iters.loop(), duration),
-                    self.max_rate, delay=self._delay)
+            #  old_time offset self.init() time delay for proper immediate speed calculation
+            self.old_time = t_last = t0 = time.time()
+            sleep_amt = 0
+            while True:
+                time.sleep(self._delay)
+                if self.done or self.closed or self.terminated:
+                    break
+                # max duration
+                if duration and time.time() - t0 >= duration:
+                    self.close()
+                    break
+                # throttle
+                if self.max_rate:
+                    # NOTE: sleep in chunks so that if we have a really high
+                    #       interval (e.g. run once per hour), then we don't
+                    #       have to wait an hour to shut down
+                    if not sleep_amt:
+                        ti = time.time()
+                        sleep_amt = max(0, self.max_rate - (ti - t_last))
+                        t_last = ti
+                    sleep_amt_prev, sleep_amt = sleep_amt, max(
+                        0, sleep_amt - self.__MAX_RATE_CHUNK)
+                    dt = sleep_amt_prev - sleep_amt
+                    if dt:
+                        time.sleep(dt)
+                    if sleep_amt:
+                        continue
+                # play pause
+                if not self.running:
+                    continue
+                # check source availability
+                if self.sources and not self._source_strategy(
+                        not s.empty() for s in self.sources):
+                    continue
 
-                self.old_time = time.time()  # offset self.init() time delay for proper immediate speed calculation
-
-                for _ in self._sw.iter(loop, 'sleep'):
-                    inputs = self._stream.get()
-                    if inputs is None:
+                with self._sw('source'):
+                    inputs = [s.get_nowait() for s in self.sources]
+                    # check inputs
+                    recv_close = False
+                    for inp, source in zip(inputs, self.sources):
+                        for data in inputs:
+                            if data is None:
+                                continue
+                            x, meta = data
+                            if reip.CLOSE.check(x):  # XXX: how to handle - wait for all to close?
+                                source.next()
+                                self.close()
+                                recv_close = True
+                            if reip.TERMINATE.check(x):
+                                source.next()
+                                self.terminate()
+                                recv_close = True
+                    if recv_close:
                         break
 
-                    # process each input batch
-                    with self._sw('process'): #, self._except('process')
-                        buffers, meta = inputs
+                    inputs = prepare_input(inputs)
 
-                        if self._extra_meta:
-                            meta.maps += reip.util.flatten(self._extra_meta, call=True, meta=meta)
-                        for func in self.input_modifiers:
-                            buffers, meta = func(*buffers, meta=meta)
-                        outputs = self.process(*buffers, meta=meta)
-                        for func in self.modifiers:
-                            outputs = func(outputs)
+                # process each input batch
+                with self._sw('process'), self._except('process'): #
+                    # prepare inputs
+                    buffers, meta = inputs
+                    if self._extra_meta:
+                        meta.maps += reip.util.flatten(self._extra_meta, call=True, meta=meta)
+                    for func in self.input_modifiers:
+                        buffers, meta = func(*buffers, meta=meta)
 
-                    # This block of code needs to be here or else self.processed is not counting calls to self.process() function
-                    # but buffers generated by current block and thus self.processed will be zero or inacurate in a number of cases:
-                    # (i) black hole block that is only consuming data, (ii) data source block that has a buitin buffer bundling/grouping capabilities
-                    # We can always add another self.generated counter if we need/want to
-                    self.processed += 1
-                    # limit the number of blocks
-                    if self.max_processed and self.processed >= self.max_processed:
-                        self.close(propagate=True)
+                    # process and get outputs
+                    outputs = self.process(*buffers, meta=meta)
+                    for func in self.modifiers:
+                        outputs = func(outputs)
 
-                    # send each output batch to the sinks
-                    with self._sw('sink'):
-                        self.__send_to_sinks(outputs, meta)
+                # count the number of buffers received and processed
+                self.processed += 1
+                # limit the number of buffers
+                if self.max_processed and self.processed >= self.max_processed:
+                    self.close(propagate=True)
+
+                # send each output batch to the sinks
+                with self._sw('sink'):
+                    self.__send_to_sinks(outputs, meta)
 
         except KeyboardInterrupt:
             if self.controlling:
@@ -391,15 +437,8 @@ class Block:
             # increment sources but don't have any outputs to send
             elif outs is None:
                 pass
-            #     self._stream.next()
             # increment sources and send outputs
             else:
-                # See self.__main_run()
-                # self.processed += 1
-                # # limit the number of blocks
-                # if self.max_processed and self.processed >= self.max_processed:
-                #     self.close(propagate=True)
-
                 # detect signals meant for the source
                 if self.sources:
                     if outs is not None and any(any(t.check(o) for t in reip.SOURCE_TOKENS) for o in outs):
@@ -420,8 +459,12 @@ class Block:
                     if sink is not None:
                         sink.put((out, meta), self._put_blocking)
 
-                # increment sources
-                # self._stream.next()
+                # count the number of buffers generated
+                self.generated += 1
+                # limit the number of buffers
+                if self.max_generated and self.generated >= self.max_generated:
+                    self.close(propagate=True)
+
         for src, sig in zip(self.sources, source_signals):
             if sig is reip.RETRY:
                 pass
@@ -530,9 +573,6 @@ class Block:
             'started': self.started, 'ready': self.ready,
             'done': self.done, #'error': self.error,
             'terminated': self.terminated,
-            # '_stream.terminated': self._stream.terminated,
-            # '_stream.should_wait': self._stream.should_wait,
-            # '_stream.running': self._stream.running,
             '_except': self._except,
         }
 
@@ -549,47 +589,24 @@ class Block:
     # State management
 
     def pause(self):
-        if self._stream is not None:
-            self._stream.pause()
+        self.running = False
 
     def resume(self):
-        if self._stream is not None:
-            self._stream.resume()
+        self.running = True
 
     def close(self, propagate=False):
-        if self._stream is not None:
-            self._stream.close()
         self.closed = True
         if propagate:
             self._send_sink_signal(reip.CLOSE)
 
     def terminate(self, propagate=False):
-        if self._stream is not None:
-            self._stream.terminate()
+        self.terminated = True
         if propagate:
             self._send_sink_signal(reip.TERMINATE)
 
     @property
     def error(self):
         return self._exception is not None
-
-    # XXX: this is temporary. idk how to elegantly handle this
-    @property
-    def running(self):
-        return self._stream.running if self._stream is not None else False
-
-    # @property
-    # def closed(self):
-    #     return self._stream.should_wait if self._stream is not None else True
-
-    @property
-    def terminated(self):
-        return self._terminated or (self._stream.terminated if self._stream is not None else False)
-
-    @terminated.setter
-    def terminated(self, value):
-        self._terminated = value
-
 
     # debug
 
@@ -666,6 +683,16 @@ class Block:
 
     # def print_stats(self):
     #     print(self.stats_summary())
+
+def prepare_input(inputs):
+    '''Take the inputs from multiple sources and prepare to be passed to block.process.'''
+    bufs = [buf for buf, meta in inputs] if inputs else ()
+    metas = [meta for buf, meta in inputs] if inputs else []
+    if len(metas) == 1:
+        metas = metas[0]
+    elif len(metas) == 0:
+        metas = {}
+    return bufs, reip.Meta(metas)
 
 
 def prepare_output(outputs, input_meta=None, expected_length=None):

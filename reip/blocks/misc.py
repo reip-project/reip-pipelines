@@ -18,7 +18,7 @@ class Iterator(reip.Block):
     def process(self, meta=None):
         try:
             x = next(self.iterator)
-            return [x], {}
+            return [x], meta
         except StopIteration:
             return reip.CLOSE
 
@@ -37,20 +37,20 @@ class Interval(reip.Block):
             self._did_init = True
         else:
             time.sleep(self.seconds)
-        return [None], {'time': time.time()}
+        return [None], reip.Meta({'time': time.time()})
 
 
 class ControlledDelay(reip.Block):
     '''Add system time to metadata.'''
     def process(self, x, meta=None):
         time.sleep(x)
-        return [None], {'time': time.time()}
+        return [None], reip.Meta({'time': time.time()})
 
 
 class Time(reip.Block):
     '''Add system time to metadata.'''
     def process(self, x, meta=None):
-        return [x], {'time': time.time()}
+        return [x], reip.Meta({'time': time.time()})
 
 
 class Meta(reip.Block):
@@ -59,10 +59,10 @@ class Meta(reip.Block):
         self.meta = meta or {}
         super().__init__(*a, **kw)
     def process(self, x, meta=None):
-        return [x], {
+        return [x], reip.Meta({
             k: v(meta) if callable(v) else v
             for k, v in self.meta.items()
-        }
+        })
 
 
 
@@ -80,10 +80,10 @@ class Glob(reip.Block):
         fs = {f for p in self.paths for f in glob.glob(p, recursive=self.recursive)}
         self.last, fs = fs, fs - self.last
         if self.atonce:
-            yield [fs], {}
+            yield [fs], meta
         else:
             for f in fs:
-                yield [f], {}
+                yield [f], meta
 
 # as an experiment:
 # @reip.helpers.asbasiccontext
@@ -130,7 +130,7 @@ class AsDict(reip.Block):
                 k: meta[k] for k in meta
                 if any(fnmatch.fnmatch(k, p) for p in self.meta_keys)
             })
-        return [data], {}
+        return [data], meta
 
 
 class Sleep(reip.Block):

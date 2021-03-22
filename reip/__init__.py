@@ -7,7 +7,7 @@ import time
 from .constants import *
 from . import exceptions
 from . import util
-from .util import status
+from .util import status, Meta
 
 from .interface import *
 from . import stores
@@ -18,7 +18,7 @@ from .graph import *
 from .task import *
 Graph._initialize_default_graph()
 from .helpers import *
-from .blocks import *
+from . import blocks
 
 def run(*a, **kw):
     default_graph().run(*a, **kw)

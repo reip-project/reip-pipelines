@@ -34,7 +34,7 @@ class Csv(reip.Block):
             writer.writerow(list(x))
             self.writer.increment(1)
         self.writer.get(meta)
-        return self.writer.output_closed_file()
+        return self.writer.output_closed_file(meta)
 
     def finish(self):
         self.writer.close()

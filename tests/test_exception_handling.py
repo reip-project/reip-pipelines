@@ -45,8 +45,8 @@ class Task(reip.Task):
     def poke(self):
         raise CustomError('go to your room !! >.<')
 
-def agg_processed(g):
-    return g.processed if isinstance(g, reip.Block) else sum(agg_processed(b) for b in g.blocks)
+def agg_generated_count(g):
+    return g.generated if isinstance(g, reip.Block) else sum(agg_generated_count(b) for b in g.blocks)
 
 def _test_run_error(g, init=False):
     with pytest.raises(CustomError):
@@ -54,12 +54,12 @@ def _test_run_error(g, init=False):
         print(g._except)
         for b in g.blocks:
             print(b._except)
-    assert agg_processed(g) == 0
+    assert agg_generated_count(g) == 0
 
     with pytest.raises(CustomError):
         with g.run_scope():
             time.sleep(0.02)
-    assert agg_processed(g) == 0
+    assert agg_generated_count(g) == 0
 
     # if init:
     #     with pytest.raises(CustomError):
@@ -69,7 +69,7 @@ def _test_run_error(g, init=False):
     # time.sleep(0.02)
     # with pytest.raises(CustomError):
     #     g.join()
-    # assert agg_processed(g) == 0
+    # assert agg_generated_count(g) == 0
 
     with pytest.raises(CustomError):
         try:
@@ -77,7 +77,7 @@ def _test_run_error(g, init=False):
         finally:
             time.sleep(0.02)
             g.join()
-    assert agg_processed(g) == 0
+    assert agg_generated_count(g) == 0
 
 
 blk_param = lambda: pytest.mark.parametrize("Block,test_func", [
@@ -89,23 +89,23 @@ blk_param = lambda: pytest.mark.parametrize("Block,test_func", [
 @blk_param()
 def test_block_error_in_graph(Block, test_func):
     with reip.Graph() as g:
-        Block(max_processed=10)
+        Block(max_generated=10)
     test_func(g)
 
 @blk_param()
 def test_block_error_in_task(Block, test_func):
     with reip.Task() as g:
-        Block(max_processed=10)
+        Block(max_generated=10)
     test_func(g)
 
 @blk_param()
 def test_block_error_in_task_in_graph(Block, test_func):
     with reip.Graph() as g:
         with reip.Task():
-            Block(max_processed=10)
+            Block(max_generated=10)
     test_func(g)
 
 @blk_param()
 def test_block_error_solo(Block, test_func):
-    b = Block(max_processed=10, graph=None)
+    b = Block(max_generated=10, graph=None)
     test_func(b)

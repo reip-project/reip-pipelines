@@ -25,7 +25,7 @@ class CycledWriter:
 
     def output_closed_file(self, meta=None):
         if self._closed_files:
-            return [self._closed_files.popleft()], meta or {}
+            return [self._closed_files.popleft()], meta
 
     def close(self):
         if self._writer is not None:

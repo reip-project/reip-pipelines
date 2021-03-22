@@ -26,8 +26,12 @@ class Meta(ChainMap):
 def flatten_maps(*metas, filter=False):
     '''Flatten nested chain maps.'''
     for m in metas:
+        if m is None:
+            continue
         if isinstance(m, ChainMap):
             yield from flatten_maps(*m.maps, filter=filter)
+        elif isinstance(m, list):
+            yield from flatten_maps(*m, filter=filter)
         elif not filter or m:
             yield m
 
