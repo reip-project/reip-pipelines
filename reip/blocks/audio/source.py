@@ -62,7 +62,7 @@ class Mic(reip.Block):
         if not self._is_float:
             pcm = pcm / float(np.iinfo(pcm.dtype).max)
         if self.mono is not None:
-            pcm = pcm[:,self.mono]
+            pcm = np.ascontiguousarray(pcm[:,self.mono])
         return [pcm], {'sr': self.sr}
 
     def finish(self):

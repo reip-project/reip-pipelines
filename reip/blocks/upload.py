@@ -126,7 +126,7 @@ class _AbstractUploadFile(BaseUpload):
             return
 
     def as_file_dict(self, files):
-        fileobjs = {name: self.open_file(fname) for name, fname in files.items()}
+        fileobjs = {name: self.open_file(fname) for name, fname in (files.items() if isinstance(files, dict) else files)}
         return {k: (os.path.basename(fn), f) for k, (fn, f) in fileobjs.items()}
 
     def data_str(self, files, **kw):
@@ -146,13 +146,13 @@ class UploadFile(_AbstractUploadFile):
         super().__init__(*a, **kw)
 
     def process(self, *fs, meta=None):
-        return super().process({
-                reip.util.resolve_call(self.names[i], fname)
-                if i < len(self.names) else
-                os.path.basename(os.path.dirname(fname))
-                or os.path.basename(fname): fname
+        return super().process([
+                (reip.util.resolve_call(self.names[i], fname)
+                 if i < len(self.names) else
+                 os.path.basename(os.path.dirname(fname))
+                 or os.path.basename(fname), fname)
                 for i, fname in enumerate(fs)
-            }, data=reip.util.resolve_call(self.data, *fs, meta=meta))
+            ], data=reip.util.resolve_call(self.data, *fs, meta=meta))
 
     def on_success(self, resp, url, files, **kw):
         if self.remove_on_success: # delete file
