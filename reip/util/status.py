@@ -115,7 +115,7 @@ def wifi(wlan='wlan*', meta=None):
         return
     wlan = iwc[max(iwc)]
     return ({
-        'wifi_quality': float(wlan['quality_ratio']) if 'quality_ratio' in wlan else None,
+        'wifi_quality': float(wlan['quality_ratio'])*100 if 'quality_ratio' in wlan else None,
         'wifi_strength': float(wlan['strength']) if 'strength' in wlan else None,
         'ap': netswitch.Wpa().ssid
     })

@@ -17,11 +17,12 @@ class TwoStageEncrypt(reip.Block):
     #PADDING = b'{'
     BLOCK_SIZE = 32
 
-    def __init__(self, filename, rsa_key, remove_files=False, **kw):
+    def __init__(self, filename, rsa_key, remove_files=False, extra_files=None, **kw):
         super().__init__(**kw)
         self.filename = str(filename)
         self.remove_files = remove_files
         self.gz = self.filename.endswith('.gz')
+        self.extra_files = extra_files
 
         if os.path.isfile(rsa_key):
             with open(rsa_key, 'r') as f:
@@ -43,8 +44,12 @@ class TwoStageEncrypt(reip.Block):
         with open(file, 'rb') as f:
             enc_message = f.read()
 
-        compressed = self.compress(
-            self.encrypt(enc_message, os.path.basename(file)), fname)
+        enc = self.encrypt(enc_message, os.path.basename(file))
+
+        extra_files = reip.util.resolve_call(self.extra_files, file, meta=meta) or {}
+        enc.update(extra_files)
+
+        compressed = self.compress(enc, fname)
         self.maybe_remove_files(file)
         return [compressed], {}
 

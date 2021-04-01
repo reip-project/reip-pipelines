@@ -204,7 +204,7 @@ class Graph(BaseContext):
 
     @classmethod
     def detached(cls, *blocks, **kw):
-        return cls(*blocks, graph=None, **kw)
+        return cls(*blocks, graph=False, **kw)
 
     # run graph
 

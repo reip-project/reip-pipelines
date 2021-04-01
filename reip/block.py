@@ -300,7 +300,8 @@ class Block:
                     self.log.error('Error during {} - {}'.format(grp or 'run', reip.util.excline(e)))
             exc = sys.exc_info()
             if exc and exc[1]:
-                self.log.error(reip.util.excline(exc[1]))
+                self.log.exception(exc[1])
+                #self.log.error(reip.util.excline(exc[1]))
             try:
                 # propagate stream signals to sinks e.g. CLOSE
                 if self._stream.signal is not None:

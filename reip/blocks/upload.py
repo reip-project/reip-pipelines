@@ -17,6 +17,7 @@ class UploadError(requests.exceptions.RequestException):
 
 
 class BaseUpload(reip.Block):
+    Session = requests.Session
     def __init__(self, endpoint, servers=None, method='post', data=None,
                  cacert=None, client_cert=None,
                  client_key=None, client_pass=None, crlfile=None,
@@ -51,7 +52,7 @@ class BaseUpload(reip.Block):
 
     sess = None
     def init(self):
-        self.sess = self._given_sess or requests.Session()
+        self.sess = self._given_sess or self.Session()
         self.sess.protocol = 'http'
         if self.verify:
             self.sess.protocol = 'https'
@@ -96,7 +97,7 @@ class BaseUpload(reip.Block):
                 # return response info
                 secs = response.elapsed.total_seconds()
                 speed = self.calc_size(**kw) / secs / 1024.0
-                self.log.debug('{} uploaded to {} at {:.1f} Kb/s in {:.1f}s'.format(
+                self.log.info('{} uploaded to {} at {:.1f} Kb/s in {:.1f}s'.format(
                     datastr, url, speed, secs))
 
                 self.on_success(response, url, **kw)
@@ -115,14 +116,30 @@ class BaseUpload(reip.Block):
         pass
 
 
-class _AbstractUploadFile(BaseUpload):
-    def process(self, files, meta=None, data=None):
+class UploadFile(BaseUpload):
+    def __init__(self, *a, names=None, remove_on_success=True, **kw):
+        self.names = reip.util.as_list(names or ())
+        self.remove_on_success = remove_on_success
+        super().__init__(*a, **kw)
+
+    def process(self, *fs, meta=None):
         try:
+            files = [
+                (reip.util.resolve_call(self.names[i], fname)
+                 if i < len(self.names) else
+                 os.path.basename(os.path.dirname(fname))
+                 or os.path.basename(fname), fname)
+                for i, fname in enumerate(fs)
+            ]
+
             response, secs, speed = self.request(
                 files=self.as_file_dict(files),
-                data=data or reip.util.resolve_call(self.data, files, meta=meta))
+                data=reip.util.resolve_call(self.data, files, meta=meta))
+            self.on_file_success(*fs)
+
             return [response], {'upload_time': secs, 'upload_kbs': speed, 'status_code': response.status_code}
         except Exception as e:
+            self.log.exception(e)
             return
 
     def as_file_dict(self, files):
@@ -138,41 +155,48 @@ class _AbstractUploadFile(BaseUpload):
     def calc_size(self, files, **kw):
         return sum(os.path.getsize(f.name) if hasattr(f, 'name') else sys.getsizeof(f) for _, f in files.values())
 
-
-class UploadFile(_AbstractUploadFile):
-    def __init__(self, *a, names=None, remove_on_success=True, **kw):
-        self.names = reip.util.as_list(names or ())
-        self.remove_on_success = remove_on_success
-        super().__init__(*a, **kw)
-
-    def process(self, *fs, meta=None):
-        return super().process([
-                (reip.util.resolve_call(self.names[i], fname)
-                 if i < len(self.names) else
-                 os.path.basename(os.path.dirname(fname))
-                 or os.path.basename(fname), fname)
-                for i, fname in enumerate(fs)
-            ], data=reip.util.resolve_call(self.data, *fs, meta=meta))
-
-    def on_success(self, resp, url, files, **kw):
+    def on_file_success(self, *files):
         if self.remove_on_success: # delete file
-            for f in files.values():
+            for f in files:
                 os.remove(f)
 
 
+# class UploadFile(_AbstractUploadFile):
+#    def __init__(self, *a, names=None, remove_on_success=True, **kw):
+#         self.names = reip.util.as_list(names or ())
+#         self.remove_on_success = remove_on_success
+#         super().__init__(*a, **kw)
+# 
+#     def process(self, *fs, meta=None):
+#         return super().process([
+#                 (reip.util.resolve_call(self.names[i], fname)
+#                  if i < len(self.names) else
+#                  os.path.basename(os.path.dirname(fname))
+#                  or os.path.basename(fname), fname)
+#                 for i, fname in enumerate(fs)
+#             ], data=reip.util.resolve_call(self.data, *fs, meta=meta))
 
-class UploadJSONAsFile(_AbstractUploadFile):
-    FILENAME = 'status.json'
-    def process(self, *data, meta=None):
-        status = {k: v for d in data for k, v in d.items()}
-        data = reip.util.resolve_call(self.data, status, meta=meta)
-        return super().process({'file': status}, meta=meta, data=data)
+#     def on_success(self, resp, url, files, **kw):
+#         if self.remove_on_success: # delete file
+#             for f in files.values():
+#                 if isinstance(f, tuple):
+#                     f = f[0]
+#                 os.remove(f)
 
-    def open_file(self, status):
-        return self.FILENAME, json.dumps(status, cls=NumpyEncoder)
 
-    def calc_size(self, files):
-        return sum(sys.getsizeof(x) for x in files.values())
+
+#class UploadJSONAsFile(_AbstractUploadFile):
+#    FILENAME = 'status.json'
+#    def process(self, *data, meta=None):
+#        status = {k: v for d in data for k, v in d.items()}
+#        data = reip.util.resolve_call(self.data, status, meta=meta)
+#        return super().process({'file': status}, meta=meta, data=data)
+#
+#    def open_file(self, status):
+#        return self.FILENAME, json.dumps(status, cls=NumpyEncoder)
+#
+#    def calc_size(self, files):
+#        return sum(sys.getsizeof(x) for x in files.values())
 
 
 

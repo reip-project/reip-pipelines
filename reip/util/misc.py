@@ -1,5 +1,6 @@
 import os
 import re
+import time
 import contextlib
 from functools import wraps
 import numpy as np
@@ -9,6 +10,45 @@ def always(*a, **kw):
 
 def never(*a, **kw):
     return False
+
+def min_rate(rate, strategy=all, fail_rate=None, fail_count=1):
+    '''A source strategy for blocks that will fire once every x seconds even if there's no inputs.
+    Useful to handle null cases and prevent hanging.
+    
+    Arguments:
+        rate (float): the minimum time in seconds to wait.
+        strategy (callable): the source strategy to use.
+        fail_count (int): the number of times for the source 
+            strategy to fail before switching from rate to 
+            fail_rate.
+        fail_rate (float): the minimum time in seconds to wait
+            after `strategy` has failed `fail_count` times.
+            This lets you give more tolerance when a block isn't outputting,
+            but don't want to hold up downstream blocks if a previous 
+            block isn't firing.
+    '''
+    fail_rate = fail_rate or rate
+    def func(*a, **kw):
+        dt = time.time() - (func.t_last or time.time())
+        func.t_last += dt
+        
+        # check if it passed
+        passed = strategy(*a, **kw)
+        if passed:
+           func.fail_count = 0
+           return True
+
+        # otherwise check if we're over the min rate
+        func.fail_count += 1
+        rate_ = fail_rate if fail_count and func.fail_count > fail_count else rate
+        return dt >= rate_
+    func.t_last = 0
+    func.fail_count = 0
+
+    def clear():
+        func.t_last = 0
+    func.clear = clear
+    return func
 
 
 def resize_list(lst, length, value=None):
@@ -91,7 +131,7 @@ def fname(file):
     return os.path.splitext(os.path.basename(file))[0]
 
 
-def write(fname, *lines, mode='r'):
+def fwrite(fname, *lines, mode='w'):
     '''write to file.'''
     d = os.path.dirname(fname)
     if d and not os.path.exists(d):
@@ -188,6 +228,8 @@ def multicontext(*items):
     '''Use a variable set of context managers as one.'''
     with contextlib.ExitStack() as stack:
         yield [stack.enter_context(x) for x in items]
+
+
 
 
 # @wraps(mergedict)

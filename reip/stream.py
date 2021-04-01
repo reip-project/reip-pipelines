@@ -113,13 +113,13 @@ class Stream:
         with self._sw('source'):
             inputs = [s.get_nowait() for s in self.sources]
 
-            if inputs and all(reip.CLOSE.check(x) for x, meta in inputs):
+            if inputs and all(x is not None and reip.CLOSE.check(x[0]) for x in inputs):
                 self.signal = reip.CLOSE  # block will send to sinks
                 self.next()
                 self.close()
                 return
 
-            if inputs and any(reip.TERMINATE.check(x) for x, meta in inputs):
+            if inputs and any(x is not None and reip.TERMINATE.check(x[0]) for x in inputs):
                 self.signal = reip.TERMINATE  # block will send to sinks
                 self.next()
                 self.terminate()
@@ -267,7 +267,7 @@ class Stream:
 
 def prepare_input(inputs):
     '''Take the inputs from multiple sources and prepare to be passed to block.process.'''
-    bufs, meta = zip(*inputs) if inputs else ((), ())
+    bufs, meta = list(zip(*(x if x is not None else (None, {}) for x in inputs))) or ((), ())
     return (
         # XXX: ... is a sentinel for empty outputs - how should we handle them here??
         #      if there's a blank in the middle

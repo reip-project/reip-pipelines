@@ -23,7 +23,7 @@ import reip
 
 
 class DiskMonitor(reip.Block):
-    def __init__(self, root='/', deleter=None, threshold=0.95, padding=0.1, interval=60, **kw):
+    def __init__(self, root='/', deleter=None, threshold=0.95, padding=0.1, interval=15, **kw):
         self._deleter = deleter if callable(deleter) else self._default_deleter
         self.root = root
         self.threshold = threshold
