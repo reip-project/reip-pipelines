@@ -233,35 +233,35 @@ def test_os(tmp_path):
 #     pass
 
 
-def test_encrypt(tmp_path):
-    # create file
-    # encrypt file
-    # decrypt file
-    # check if file is the same
-    f_out = tmp_path / 'testfile{}.txt'
-    content = 'some content {} !!!'
-    rsa_key = tmp_path / 'rsa.pem'
+# def test_encrypt(tmp_path):
+#     # create file
+#     # encrypt file
+#     # decrypt file
+#     # check if file is the same
+#     f_out = tmp_path / 'testfile{}.txt'
+#     content = 'some content {} !!!'
+#     rsa_key = tmp_path / 'rsa.pem'
 
-    with reip.Graph() as g:
-        inc = B.Increment(10, max_rate=10)
-        txtfile = B.dummy.TextFile(content, f_out)(inc)
-        encrypted = B.encrypt.TwoStageEncrypt(
-            tmp_path / 'encrypted/{name}.enc.tar.gz', rsa_key)(txtfile)
-        decrypted = B.encrypt.TwoStageDecrypt(
-            tmp_path / 'decrypted/{name}.txt',
-            B.encrypt.public2private(rsa_key))(encrypted)
+#     with reip.Graph() as g:
+#         inc = B.Increment(10, max_rate=10)
+#         txtfile = B.dummy.TextFile(content, f_out)(inc)
+#         encrypted = B.encrypt.TwoStageEncrypt(
+#             tmp_path / 'encrypted/{name}.enc.tar.gz', rsa_key)(txtfile)
+#         decrypted = B.encrypt.TwoStageDecrypt(
+#             tmp_path / 'decrypted/{name}.txt',
+#             B.encrypt.public2private(rsa_key))(encrypted)
 
-    with g.run_scope():
-        inp = txtfile.output_stream()
-        out = decrypted.output_stream()
-        with inp, out:
-            for ((fin,), m_in), ((fout,), m_out) in zip(inp, out):
-                with open(fin, 'r') as f:
-                    in_content = f.read()
-                with open(fout, 'r') as f:
-                    out_content = f.read()
-                assert in_content == out_content
-                print(fin, fout, in_content, out_content)
+#     with g.run_scope():
+#         inp = txtfile.output_stream()
+#         out = decrypted.output_stream()
+#         with inp, out:
+#             for ((fin,), m_in), ((fout,), m_out) in zip(inp, out):
+#                 with open(fin, 'r') as f:
+#                     in_content = f.read()
+#                 with open(fout, 'r') as f:
+#                     out_content = f.read()
+#                 assert in_content == out_content
+#                 print(fin, fout, in_content, out_content)
 
 
 # def test_buffer():
