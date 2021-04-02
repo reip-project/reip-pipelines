@@ -88,7 +88,7 @@ class Block:
                  source_strategy=all, extra_kw=True, extra_meta=None, log_level=None,
                  handlers=None, modifiers=None, input_modifiers=None, **kw):
         self._except = remoteobj.LocalExcept(raises=True)
-        self.name = name or f'{self.__class__.__name__}_{id(self)}'
+        self.name = reip.auto_name(self, name=name)
         self.parent_id, self.task_id = reip.Graph.register_instance(self, graph)
         self._print_summary = print_summary
 
@@ -686,8 +686,7 @@ class Block:
 
 def prepare_input(inputs):
     '''Take the inputs from multiple sources and prepare to be passed to block.process.'''
-    bufs = [buf for buf, meta in inputs] if inputs else ()
-    metas = [meta for buf, meta in inputs] if inputs else []
+    bufs, metas = tuple(zip(*([buf if buf is not None else (None, {}) for buf in inputs]))) or ((), ())
     if len(metas) == 1:
         metas = metas[0]
     elif len(metas) == 0:

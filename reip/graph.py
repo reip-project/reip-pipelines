@@ -24,6 +24,19 @@ def top_graph():
     return _ContextScope.top
 
 
+_NAMESPACES_IDX = {}
+def auto_name(block, *attrs, name=None, ns=None):
+    '''Generate an auto-incrementing name.'''
+    # create a name from the block attributes
+    name = name or block.__class__.__name__
+    name = name + ''.join('_'+str(x) for x in attrs)
+    # get the count, based on some namespace. add count to name if above 1
+    namespace = _NAMESPACES_IDX[ns] = _NAMESPACES_IDX.get(ns) or {}
+    count = namespace[name] = namespace.get(name, -1) + 1
+    return '{}-{:02.0f}'.format(name, count) if count else name
+
+
+
 class _ContextScope:
     top = None
     default = None
@@ -40,7 +53,7 @@ class BaseContext:  # (metaclass=_MetaContext)
         if blocks and not name and isinstance(blocks[0], str):
             name, blocks = blocks[0], blocks[1:]
         self.blocks = list(blocks)
-        self.name = name or f'{self.__class__.__name__}_{id(self)}'
+        self.name = auto_name(self, name=name)
         self.parent_id, self.task_id = BaseContext.register_instance(self, graph)
 
         for b in self.blocks:
@@ -141,6 +154,10 @@ class BaseContext:  # (metaclass=_MetaContext)
         return parent.name, task_id or parent.task_id
 
     @classmethod
+    def detached(cls, *blocks, **kw):
+        return cls(*blocks, graph=False, **kw)
+
+    @classmethod
     def get_object(cls, id, require=True):
         '''Get an instance using its name. If the instance '''
         obj = _ContextScope.all_instances.get(id) if id is not None else None
@@ -201,10 +218,6 @@ class Graph(BaseContext):
 
     def __bool__(self):
         return not (self.done or self.error)
-
-    @classmethod
-    def detached(cls, *blocks, **kw):
-        return cls(*blocks, graph=None, **kw)
 
     # run graph
 
