@@ -306,6 +306,31 @@ def test_pause_resume_state():
 
 
 
+def test_extra_kw():
+    class Block1(reip.Block):
+        EXTRA_KW = True
+        KW_TO_ATTRS = True
+        a = 10
+        b = 11
+
+    class Block2(Block1):
+        b = 14
+        c = 15
+
+    b1 = Block1(a=50, b=51, c=52)
+    b2 = Block2(a=50, b=51, c=52)
+
+    assert b1.a == 50
+    assert b1.b == 51
+    assert not hasattr(b1, 'c')
+    assert b2.a == 50
+    assert b2.b == 51
+    assert b2.c == 52
+
+    assert b1.extra_kw == {'c': 52}
+    assert b2.extra_kw == {}
+
+
 
 def test_extra_meta():
     class A:

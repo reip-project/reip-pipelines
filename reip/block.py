@@ -73,6 +73,8 @@ class Block:
         name ()
     '''
     USE_META_CLASS = True
+    KW_TO_ATTRS = False
+    EXTRA_KW = False
     _thread = None
     _stream = None
     _delay = 1e-4
@@ -86,7 +88,7 @@ class Block:
 
     def __init__(self, n_inputs=1, n_outputs=1, queue=100, blocking=False, print_summary=True,
                  max_rate=None, min_interval=None, max_processed=None, max_generated=None, graph=None, name=None,
-                 source_strategy=all, extra_kw=True, extra_meta=None, log_level=None,
+                 source_strategy=all, extra_kw=None, kw_to_attrs=None, extra_meta=None, log_level=None,
                  handlers=None, modifiers=None, input_modifiers=None, **kw):
         self._except = remoteobj.LocalExcept(raises=True)
         self.name = reip.auto_name(self, name=name)
@@ -134,10 +136,22 @@ class Block:
             # the a flattened dict.
             self._extra_meta = reip.util.mergedict(self._extra_meta, call=False)
 
-        if extra_kw:
+        # write keyword arguments to the class if they are defined on the class
+        # but not on the base Block class. 
+        if kw_to_attrs is not None:
+            self.KW_TO_ATTRS = kw_to_attrs
+        if self.KW_TO_ATTRS:
+            avail_attrs = attrdiff(Block, self.__class__)
+            for k in avail_attrs:
+                if k in kw:
+                    setattr(self, k, kw.pop(k))
+
+        # optionally capture extra kwargs which can be transparently passed down to 
+        # another function (e.g. `self.do_something(buffer, **self.kw)`)
+        if extra_kw is not None:
+            self.EXTRA_KW = extra_kw
+        if self.EXTRA_KW:
             self.extra_kw = kw
-            for key, value in kw.items():
-                setattr(self, key, value)
         elif kw:
             raise TypeError('{} received {} unexpected keyword arguments: {}.'.format(
                 self, len(kw), set(kw)))
@@ -719,3 +733,16 @@ def prepare_output(outputs, input_meta=None, expected_length=None, as_meta=True)
     if as_meta and not isinstance(meta, Meta):
         meta = Meta(meta)
     return bufs, meta
+
+
+
+def attrdiff(base_cls, cls, funcs=False):
+    attrs = dict()
+    i = cls.__mro__.index(base_cls)
+    for cls_i in cls.__mro__[:i][::-1]:
+        for k, v in cls_i.__dict__.items():
+            if (not k.startswith('_') and 
+                    k not in base_cls.__dict__ and 
+                    (funcs or not callable(v))):
+                attrs[k] = v
+    return attrs
