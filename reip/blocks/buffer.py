@@ -1,8 +1,31 @@
 import time
 import queue
+import collections
 import warnings
 import numpy as np
 import reip
+
+
+class Pool(reip.Block):
+    itemClass = collections.deque
+    def __init__(self, n_items=10, *a, n_inputs=None, n_outputs=None, **kw):
+        self.n_items = n_items
+        super().__init__(*a, n_inputs=n_inputs, n_outputs=n_outputs, **kw)
+
+    def init(self):
+        self.items = self.itemClass()
+
+    def pool(self, items):
+        if len(items) > self.n_items:
+            xs, meta = zip(*self.q)
+            return list(zip(*xs)), meta[0]
+
+    def process(self, *xs, meta=None):
+        self.items.append((xs, meta))
+        out = self.pool(self.items)
+        if out is not None:
+            self.items.clear()
+            return out
 
 
 class Rebuffer(reip.Block):

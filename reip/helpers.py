@@ -137,4 +137,6 @@ class _BlockHelper(reip.Block):
         return self._process(*xs, meta=meta)
 
     def finish(self):
-        self._ctx.__exit__(*sys.exc_info())
+        if self._ctx is not None:
+            self._ctx.__exit__(*sys.exc_info())
+        self._ctx = None
