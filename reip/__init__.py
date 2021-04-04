@@ -23,6 +23,8 @@ from . import blocks
 def yurii_mode():
     '''Any configurations that can be made to put things the way Yurii likes them.'''
     reip.Block.USE_META_CLASS = False  # NOTE: not well tested yet
+    reip.Block.KW_TO_ATTRS = True  # extra keywords get set as attributes
+    # reip.Block.EXTRA_KW = True
 
 def run(*a, **kw):
     default_graph().run(*a, **kw)
