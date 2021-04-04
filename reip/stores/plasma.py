@@ -79,7 +79,7 @@ class PlasmaStore(BaseStore):
         return len(self.client.list())
 
     def put(self, data, meta=None, id=None):
-        return save_both(self.client, data, meta or {}, id=self.ids[id])
+        return save_both(self.client, data, {} if meta is None else meta, id=self.ids[id])
 
     def get(self, id):
         if not self._refreshed:

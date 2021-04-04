@@ -35,20 +35,20 @@ def test_shell():
     assert not o.err
 
 
-def test_meta():
-    maps = [{'a': 5}, {'b': 6}]
-    meta = util.Meta({}, *maps)
-    # check flat
-    assert dict(meta) == {'a': 5, 'b': 6}
-    # check update
-    meta['c'] = 7
-    assert dict(meta) == {'a': 5, 'b': 6, 'c': 7}
-    assert meta.maps == [{'c': 7}, {'a': 5}, {'b': 6}]
+# def test_meta():
+#     maps = [{'a': 5}, {'b': 6}]
+#     meta = util.Meta({}, *maps)
+#     # check flat
+#     assert dict(meta) == {'a': 5, 'b': 6}
+#     # check update
+#     meta['c'] = 7
+#     assert dict(meta) == {'a': 5, 'b': 6, 'c': 7}
+#     assert meta.maps == [{'c': 7}, {'a': 5}, {'b': 6}]
 
-    # check merging and removing duplicates
-    meta2 = util.Meta({'d': 8}, meta, meta)
-    assert len(meta2.maps) == len(meta.maps) + 1
-    assert meta2.maps == [{'d': 8}, {'c': 7}, {'a': 5}, {'b': 6}]
+#     # check merging and removing duplicates
+#     meta2 = util.Meta({'d': 8}, meta, meta)
+#     assert len(meta2.maps) == len(meta.maps) + 1
+#     assert meta2.maps == [{'d': 8}, {'c': 7}, {'a': 5}, {'b': 6}]
 
 
 def test_iters():

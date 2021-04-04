@@ -68,7 +68,7 @@ class Producer(reip.Sink):
     def _put(self, buffer):
         '''Send data to stores.'''
         data, meta = buffer
-        meta = meta or {}
+        meta = {} if meta is None else meta
         for store in self.stores.values():
             store.put(data, meta, id=self.head.pos)
         self.head.counter += 1

@@ -72,6 +72,7 @@ class Block:
         graph (reip.Graph, reip.Task, or False): the graph instance to be added to.
         name ()
     '''
+    USE_META_CLASS = True
     _thread = None
     _stream = None
     _delay = 1e-4
@@ -149,7 +150,7 @@ class Block:
 
     @property
     def min_interval(self):
-        return self.max_rate
+        return 1 / self.max_rate
 
     @min_interval.setter
     def min_interval(self, value):
@@ -387,14 +388,11 @@ class Block:
                     if recv_close:
                         break
 
-                    inputs = prepare_input(inputs)
+                    buffers, meta = prepare_input(inputs, self._extra_meta, Block.USE_META_CLASS)  # TODO: put in proper config
 
                 # process each input batch
                 with self._sw('process'), self._except('process'): #
                     # prepare inputs
-                    buffers, meta = inputs
-                    if self._extra_meta:
-                        meta.maps += reip.util.flatten(self._extra_meta, call=True, meta=meta)
                     for func in self.input_modifiers:
                         buffers, meta = func(*buffers, meta=meta)
 
@@ -411,7 +409,7 @@ class Block:
 
                 # send each output batch to the sinks
                 with self._sw('sink'):
-                    self.__send_to_sinks(outputs, meta)
+                    self.__send_to_sinks(outputs)
 
         except KeyboardInterrupt:
             if self.controlling:
@@ -423,7 +421,7 @@ class Block:
             with self._sw('finish'): # , self._except('finish', raises=False)
                 self.finish()
 
-    def __send_to_sinks(self, outputs, meta_in=None):
+    def __send_to_sinks(self, outputs):
         '''Send the outputs to the sink.'''
         source_signals = [None]*len(self.sources)
         # retry all sources
@@ -453,7 +451,7 @@ class Block:
                         continue
 
                 # convert outputs to a consistent format
-                outs, meta = prepare_output(outs, input_meta=meta_in)
+                outs, meta = prepare_output(outs, as_meta=Block.USE_META_CLASS)
                 # pass to sinks
                 for sink, out in zip(self.sinks, outs):
                     if sink is not None:
@@ -684,17 +682,22 @@ class Block:
     # def print_stats(self):
     #     print(self.stats_summary())
 
-def prepare_input(inputs):
+def prepare_input(inputs, extra_meta=None, as_meta=True):
     '''Take the inputs from multiple sources and prepare to be passed to block.process.'''
     bufs, metas = tuple(zip(*([buf if buf is not None else (None, {}) for buf in inputs]))) or ((), ())
-    if len(metas) == 1:
-        metas = metas[0]
-    elif len(metas) == 0:
-        metas = {}
-    return bufs, reip.Meta(metas)
+
+    if as_meta:
+        metas = reip.Meta(inputs=metas)
+        if extra_meta is not None:
+            metas.extend(reip.util.flatten(extra_meta, call=True, meta=metas))
+    else:
+        metas = metas or {}
+        if len(metas) == 1:
+            metas = metas[0]
+    return bufs, metas
 
 
-def prepare_output(outputs, input_meta=None, expected_length=None):
+def prepare_output(outputs, input_meta=None, expected_length=None, as_meta=True):
     '''Take the inputs from block.process and prepare to be passed to block.sinks.'''
     if not outputs:
         return (), {}
@@ -711,9 +714,8 @@ def prepare_output(outputs, input_meta=None, expected_length=None):
     if expected_length:  # pad outputs with blank values
         bufs.extend((reip.BLANK,) * max(0, expected_length - len(bufs)))
 
-    if input_meta:  # merge meta as a new layer
-        if isinstance(meta, Meta):  # only the user did not wish to override it
-            meta = Meta(meta, input_meta)
-        else:
-            meta = Meta(meta)
-    return bufs, meta or Meta()
+    if meta is None:
+        meta = Meta() if as_meta else {}
+    if as_meta and not isinstance(meta, Meta):
+        meta = Meta(meta)
+    return bufs, meta

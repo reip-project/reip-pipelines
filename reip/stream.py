@@ -266,19 +266,15 @@ class Stream:
         return stream
 
 
-def prepare_input(inputs):
+def prepare_input(inputs, as_meta=True):
     '''Take the inputs from multiple sources and prepare to be passed to block.process.'''
-    bufs = [buf for buf, meta in inputs] if inputs else ()
-    metas = [meta for buf, meta in inputs] if inputs else []
-    if len(metas) == 1:
-        metas = metas[0]
-    elif len(metas) == 0:
-        metas = {}
-    return bufs, reip.Meta(metas)
+    bufs, metas = tuple(zip(*([buf if buf is not None else (None, {}) for buf in inputs]))) or ((), ())
+    bufs = list(bufs)
 
-    # bufs, meta = zip(*inputs) if inputs else ((), ())
-    # return (
-    #     # XXX: ... is a sentinel for empty outputs - how should we handle them here??
-    #     #      if there's a blank in the middle
-    #     [b for bs in bufs for b in reip.util.as_list(bs) if b is not reip.BLANK],
-    #     reip.util.Meta({}, *meta[::-1]))
+    if as_meta:
+        metas = reip.Meta(inputs=metas)
+    else:
+        metas = metas or {}
+        if len(metas) == 1:
+            metas = metas[0]
+    return bufs, metas
