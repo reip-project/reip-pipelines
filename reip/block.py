@@ -270,6 +270,12 @@ class Block:
     def init(self):
         '''Initialize the block.'''
 
+    def sources_available(self):
+        '''Check the sources to determine if we should call process.'''
+        # NOTE: 
+        return not self.sources or self._source_strategy(
+            not s.empty() for s in self.sources)
+
     def process(self, *xs, meta=None):
         '''Process data.'''
         return xs, meta
@@ -378,8 +384,7 @@ class Block:
                 if not self.running:
                     continue
                 # check source availability
-                if self.sources and not self._source_strategy(
-                        not s.empty() for s in self.sources):
+                if not self.sources_available():
                     continue
 
                 with self._sw('source'):
