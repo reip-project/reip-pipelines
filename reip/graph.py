@@ -28,7 +28,7 @@ _NAMESPACES_IDX = {}
 def auto_name(block, *attrs, name=None, ns=None):
     '''Generate an auto-incrementing name.'''
     # create a name from the block attributes
-    name = name or block.__class__.__name__
+    name = name or text.pascal2kebab(block.__class__.__name__)  # MyClass -> my-class
     name = name + ''.join('_'+str(x) for x in attrs)
     # get the count, based on some namespace. add count to name if above 1
     namespace = _NAMESPACES_IDX[ns] = _NAMESPACES_IDX.get(ns) or {}
