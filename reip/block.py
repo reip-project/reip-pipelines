@@ -72,19 +72,27 @@ class Block:
         graph (reip.Graph, reip.Task, or False): the graph instance to be added to.
         name ()
     '''
+    # Enable/Disable use of the Meta Class.
+    # The Meta class is available to allow for organized and easily traceable metadata throughout a pipeline
     USE_META_CLASS = True
+    # Enable/Disable storing extra keywords to any defined (non-callable) attribute of a Block subclass.
     KW_TO_ATTRS = False
+    # Enable/Disable storing extra keywords in a dictionary at `self.extra_kw`.
     EXTRA_KW = False
     _thread = None
-    _stream = None
     _delay = 1e-4
     parent_id, task_id = None, None
     started = ready = done = closed = terminated = False
     __signal = None
     processed = 0
+    generated = 0
     controlling = False
     max_rate = None
-    __MAX_RATE_CHUNK = 0.4
+
+    # When max_rate is really low (e.g. fire once every 5 mins), if the block were to just sleep for 5 mins,
+    # it would take up to 5 mins to realize that everything else is trying to shutdown.
+    # So instead we sleep in shorter chunks so we can periodically check the state of the block.
+    __MAX_RATE_CHUNK = 0.4 # seconds - how long we should sleep for at a time. - TODO: what's the best value here?
 
     def __init__(self, n_inputs=1, n_outputs=1, queue=100, blocking=False, print_summary=True,
                  max_rate=None, min_interval=None, max_processed=None, max_generated=None, graph=None, name=None,
@@ -117,7 +125,7 @@ class Block:
         if min_interval and max_rate:
             warnings.warn((
                 'Both max_rate ({}) and min_interval ({}) are set, but are '
-                'mutually exclusive (max_rate=1/min_interval). min_interval will'
+                'mutually exclusive (max_rate=1. / min_interval). min_interval will'
                 'be used.').format(max_rate, min_interval))
         if max_rate:
             self.max_rate = max_rate
@@ -428,7 +436,7 @@ class Block:
 
                 # send each output batch to the sinks
                 with self._sw('sink'):
-                    self.__send_to_sinks(outputs)
+                    self.__send_to_sinks(outputs, meta)
 
         except KeyboardInterrupt:
             if self.controlling:
@@ -440,7 +448,7 @@ class Block:
             with self._sw('finish'): # , self._except('finish', raises=False)
                 self.finish()
 
-    def __send_to_sinks(self, outputs):
+    def __send_to_sinks(self, outputs, input_meta):
         '''Send the outputs to the sink.'''
         source_signals = [None]*len(self.sources)
         # retry all sources
@@ -470,7 +478,7 @@ class Block:
                         continue
 
                 # convert outputs to a consistent format
-                outs, meta = prepare_output(outs, as_meta=Block.USE_META_CLASS)
+                outs, meta = prepare_output(outs, input_meta, as_meta=Block.USE_META_CLASS)
                 # pass to sinks
                 for sink, out in zip(self.sinks, outs):
                     if sink is not None:
@@ -736,7 +744,7 @@ def prepare_output(outputs, input_meta=None, expected_length=None, as_meta=True)
     if meta is None:
         meta = Meta() if as_meta else {}
     if as_meta and not isinstance(meta, Meta):
-        meta = Meta(meta)
+        meta = Meta(meta, input_meta.inputs)
     return bufs, meta
 
 
