@@ -51,6 +51,8 @@ class DiskMonitor(reip.Block):
             'usage_delta': start_usage - usage}
 
     def get_usage(self):
+        if not os.path.isfile(self.root):
+            return 0
         return reip.util.status.storage(self.root, literal_keys=True)[self.root] / 100.
 
     def get_files(self, *fs):

@@ -43,7 +43,8 @@ class Task(reip.Graph):
                         if super().done or super().error:
                             break
                         self.remote.process_requests()
-
+                except Exception as e:
+                    self.log.exception(e)
                 except KeyboardInterrupt as e:
                     self.log.info(text.yellow('Interrupting'))
                 finally:

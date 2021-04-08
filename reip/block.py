@@ -627,8 +627,9 @@ class Block:
 
         n_src = [len(s) for s in self.sources]
         n_snk = [len(s) for s in self.sinks]
+        dropped = [getattr(s, "dropped", None) for s in self.sinks]
 
-        return f'{self.name}\t + {n_new:3} buffers ({speed_now:,.2f} x/s), {n:5} total ({speed_avg:,.2f} x/s avg),  sources={n_src}, sinks={n_snk}'
+        return f'{self.name}\t + {n_new:3} buffers ({speed_now:,.2f} x/s), {n:5} total ({speed_avg:,.2f} x/s avg),  sources={n_src}, sinks={n_snk} dropped={dropped}'
 
     def stats_summary(self):
         stats = self.stats()

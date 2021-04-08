@@ -39,7 +39,7 @@ class TwoStageEncrypt(reip.Block):
             default: current dir
         '''
         fname = reip.util.ensure_dir(self.filename.format(
-            name=reip.util.fname(file), **meta))
+            name=reip.util.fname(file), fname=os.path.basename(file), **meta))
 
         with open(file, 'rb') as f:
             enc_message = f.read()

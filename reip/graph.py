@@ -359,10 +359,12 @@ class Graph(BaseContext):
         return '\n'.join(s for s in (b.summary() for b in self.blocks) if s)
 
     def status(self):
+        clsname = self.__class__.__name__
+        clsname = '({})'.format(clsname) if clsname != 'Graph' else ''
         return text.b_(
-            f'[{self.name}]',
+            f'[{self.name}{clsname}]',
             text.indent('\n'.join(
-                s for s in (b.status() for b in self.blocks) if s)), ""
+                s for s in (b.status() for b in self.blocks) if s)),
         )
 
     def stats_summary(self):

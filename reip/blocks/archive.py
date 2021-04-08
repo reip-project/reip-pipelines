@@ -7,7 +7,7 @@ import reip
 
 
 class Tar(reip.Block):
-    def __init__(self, filename='{time}.tar', remove_files=False, extra_files=None, gz=None, **kw):
+    def __init__(self, filename='{fname}.tar', remove_files=False, extra_files=None, gz=None, **kw):
         '''Store files in a .tar/.targz file.
         
         Arguments:
@@ -26,7 +26,8 @@ class Tar(reip.Block):
 
     def process(self, *files, meta):
         # get filename
-        fname = self.filename.format(**meta)
+        fname = self.filename.format(
+            fname=os.path.basename(files[0]) if files else None, **meta)
         os.makedirs(os.path.dirname(fname), exist_ok=True)
 
         extra_files = dict(self.extra_files(*files, meta=meta) or {}) if callable(self.extra_files) else {}
@@ -41,7 +42,10 @@ class Tar(reip.Block):
                 os.remove(f)
         return [fname], {}
 
-TarGz = Tar
+
+class TarGz(Tar):
+    def __init__(self, filename='{fname}.tar.gz', *a, **kw):
+        super().__init__(filename, *a, **kw)
 
 
 def tar_addbytes(tar, f, data):
