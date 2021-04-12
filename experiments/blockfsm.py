@@ -1,3 +1,7 @@
+'''This is where I'm experimenting with state machine mechanics in the context of a block.
+
+I'm starting with a striped down version that doesn't handle connections or anything atm.
+'''
 import time
 import reip
 import remoteobj
@@ -7,7 +11,7 @@ from reip.util import text
 class ReipControl(BaseException):
     pass
 
-class BlockExit(ReipControl):
+class WorkerExit(ReipControl):
     pass
 
 
@@ -27,15 +31,13 @@ class Block:
                     'ready': {
                         'waiting': {},
                         'processing': {},
-                        'paused': {}
+                        'paused': {},
                     },
                     'closing': {},
                 },
                 'needs_reconfigure': {},
             },
-            'done': {
-                'terminated': {},
-            },
+            'done': {None: {'terminated': {}}},
         })
         self.throttler = Throttler(max_rate)
         self._should_process = should_process
@@ -50,11 +52,8 @@ class Block:
         self.sources = []
         self.sinks = []
 
-    def short_str(self):
-        return '[B({})[{}/{}]{}]'.format(self.name, len(self.sources), len(self.sinks), self.state)
-
     def __str__(self):
-        return self.short_str()
+        return '[B({})[{}/{}]{}]'.format(self.name, len(self.sources), len(self.sinks), self.state)
 
 
     # User Interface
@@ -64,7 +63,6 @@ class Block:
 
     def sources_available(self):
         '''Check the sources to determine if we should call process.'''
-        # NOTE: this serves the same purpose as `_should_process` but is easy for subclassing
         return not self.sources or self._should_process(
             not s.empty() for s in self.sources)
 
@@ -75,7 +73,7 @@ class Block:
     def finish(self):
         '''Cleanup.'''
 
-
+    # internal state lifecycle
 
     def __reset_state(self):
         self.state.reset()
@@ -87,7 +85,11 @@ class Block:
             self.__reset_state()
             self.__thread_main()
         finally:
-            pass
+            # NOTE: I don't know the best way to handle setting terminated.
+            #       because when we get here, done is enabled, but terminated 
+            #       is still disabled in a high potential state.
+            #       right now, I have 
+            self.state.done()
 
     def __thread_main(self):
         try:
@@ -97,17 +99,20 @@ class Block:
                         self.log.info(self.state)
                         if not self.state.configured:
                             self.__reconfigure()
-                        self.__run()
+                        assert self.state.configured
+                        self.__run_configured()
                     
-                except BlockExit:
+                except WorkerExit:
                     pass
+                finally:
+                    self.state.configured.off()
         finally:
-            self.state.configured.off()
+            pass
 
     def __reconfigure(self):
         self.state.configured()
 
-    def __run(self):
+    def __run_configured(self):
         try:
             with self.state.initializing:
                 self.init()
@@ -126,15 +131,15 @@ class Block:
                     if not self.sources_available():
                         self.state.waiting()
                         continue
-                    self.state.waiting.off()
+                    self.state.waiting = False
 
                     # good to go!
                     with self.state.processing:
                         # get inputs
                         with self._sw('source'):
                             inputs = self.__read_sources()
-                            if not self.state.processing:
-                                break
+                            if not self.state.processing:  # check if we exited based on the inputs
+                                continue
                             buffers, meta = inputs
 
                         # process each input batch
@@ -169,7 +174,7 @@ class Block:
                 if reip.TERMINATE.check(x):
                     source.next()
                     self.terminate()
-                    return
+                    recv_close = True
         if recv_close:
             return
 
@@ -202,26 +207,16 @@ class Block:
             elif outs == reip.TERMINATE:
                 self.terminate()
                 break
-            # increment sources but don't have any outputs to send
-            elif outs is None:
+            elif outs is None:  # next
                 pass
-            # increment sources and send outputs
             else:
-                # detect signals meant for the source
-                if self.sources:
-                    if outs is not None and any(any(t.check(o) for t in reip.SOURCE_TOKENS) for o in outs):
-                        # check signal values
-                        if len(outputs) > len(self.sources):
-                            raise RuntimeError(
-                                'Too many signals for sources in {}. Got {}, expected a maximum of {}.'.format(
-                                    self, len(outputs), len(self.sources)))
-                        for i, o in enumerate(outs):
-                            if o is not None:
-                                source_signals[i] = o
-                        continue
-
                 # convert outputs to a consistent format
-                outs = prepare_output(outs, input_meta, as_meta=Block.USE_META_CLASS)
+                outs, signals = prepare_output(outs, input_meta, n_sources=len(self.sources), as_meta=Block.USE_META_CLASS)
+                # detect signals meant for the source
+                if self.sources and signals:
+                    for i, signal in enumerate(signals):
+                        if signal is not None:
+                            source_signals[i] = signal
                 # pass to sinks
                 for sink, (out, meta) in zip(self.sinks, outs):
                     if sink is not None:
@@ -252,8 +247,16 @@ class Block:
 
     def terminate(self, propagate=True):
         self.state.done.request()
+        self.state.terminated()
         if propagate:
             self.__send_sink_signal(reip.TERMINATE)
+
+    def pause(self):
+        self.state.paused(True)
+
+    def resume(self):
+        self.state.paused(False)
+
 
 
 
@@ -274,37 +277,51 @@ def prepare_input(inputs, extra_meta=None, as_meta=True):
     return bufs, metas
 
 
-def prepare_output(outputs, input_meta=None, expected_length=None, as_meta=True):
-    '''Take the inputs from block.process and prepare to be passed to block.sinks.'''
+def prepare_output(outputs, input_meta=None, n_sources=None, as_meta=True):
+    '''Take the inputs from block.process and prepare to be passed to block.sinks.
+    
+    >>> x, meta
+    >>> x, meta, [reip.RETRY]
+    >>> (x, meta), [reip.RETRY]
+    >>> [(x, meta), (x2, meta)], [reip.RETRY]
+    '''
+    # NOTE: this function uses the updated, "correct", output format where each output has its own meta object.
+    source_signals = None
     if not outputs:
-        return (), {}
+        return [((), {})], source_signals
 
-    bufs, meta = None, None
-    if isinstance(outputs, tuple):
-        if len(outputs) == 2:
-            bufs, meta = outputs
-    elif isinstance(outputs, (Meta, dict)):
-        meta = outputs
+    if isinstance(outputs, (list, tuple)):
+        # detect source signals
+        global_signal = isinstance(outputs[-1], (reip.Token, str))
+        if global_signal or any(isinstance(out, (reip.Token, str)) for out in outputs[-1]):
+            source_signals = outputs[-1]
+            outputs = outputs[:-1]
+            if n_sources is not None:
+                if global_signal:
+                    source_signals = [source_signals] * n_sources
+                elif len(source_signals) > n_sources:
+                    raise RuntimeError('Too many signals for sources. Got {}, expected ≤{}.'.format(len(source_signals), n_sources))
+        # detect single output shorthand
+        if len(outputs) >= 2 and isinstance(outputs[1], (dict, Meta)):
+            outputs = [outputs]
 
-    bufs = list(bufs) if bufs else []
-
-    if expected_length:  # pad outputs with blank values
-        bufs.extend((reip.BLANK,) * max(0, expected_length - len(bufs)))
-
-    if meta is None:
-        meta = Meta() if as_meta else {}
-    if as_meta and not isinstance(meta, Meta):
-        meta = Meta(meta, input_meta.inputs)
-    return bufs, meta
+    # normalize metadata
+    outs = []
+    for x, meta in outputs:
+        if meta is None:
+            meta = Meta() if as_meta else {}
+        if as_meta and not isinstance(meta, Meta):
+            meta = Meta(meta, input_meta.inputs)
+        outs.append((x, meta))
+    return outs, source_signals
 
 
 
 
 class Throttler:
-    __MAX_RATE_CHUNK = 0.4
-
-    def __init__(self, max_rate=None):
+    def __init__(self, max_rate=None, rate_chunk=0.4):
         self.max_rate = None
+        self.rate_chunk = rate_chunk
 
     def __enter__(self):
         self.t_last = time.time()
@@ -326,7 +343,7 @@ class Throttler:
                 sleep_amt = self.sleep_amt = max(0, self.max_rate - (ti - self.t_last))
                 self.t_last = ti
             # sleep for the next chunk
-            sleep_amt_prev, sleep_amt = sleep_amt, max(0, sleep_amt - self.__MAX_RATE_CHUNK)
+            sleep_amt_prev, sleep_amt = sleep_amt, max(0, sleep_amt - self.rate_chunk)
             dt = sleep_amt_prev - sleep_amt
             if dt:
                 time.sleep(dt)
@@ -344,7 +361,7 @@ class MyBlock(Block):
         self.log.info(self.i)
         if self.i > 10:
             # raise ValueError
-            self.close()
+            self.terminate()
 
 
 if __name__ == '__main__':
@@ -364,8 +381,14 @@ if __name__ == '__main__':
         if state == 'terminated' and value == False:
             reip.util.print_stack()
             1/0
+        if block.state.done and state == 'spawned' and value:
+            reip.util.print_stack()
+
+        # if value == False:
+        #     reip.util.print_stack()
         # if not block.state.ready:
-        block.log.info('{} - changed to {}'.format(state, value))
+        block.log.info('{} -> {}'.format(state, value))
+        print(block.state.treeview(), flush=True)
     print(block)
 
     block._Block__spawned()

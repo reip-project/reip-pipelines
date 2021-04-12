@@ -77,7 +77,7 @@ def minlevel(debug=False):
 class StrRep:
     '''Wrapping an object to provide an alternative string representation.'''
     def __init__(self, obj, method=None, *a, **kw):
-        self._str = getattr(obj, method or '__str__')
+        self._str = getattr(obj, method or '__str__', None) or getattr(obj, '__str__')
         self.a, self.kw = a, kw
 
     def __str__(self):

@@ -1,23 +1,50 @@
 #%%
 import functools
+import reip
 
+class InvalidTransition(RuntimeError):
+    pass
 
 class State:
-    '''A single state that can be used as a boolean and context manager.'''
-    def __init__(self, name, default=False):
+    '''A single state that can be used as a boolean and context manager.
+    
+    You can request a state which will set the "potential" of the current state 
+    (representing whether a state wants to be on or off)
+    and all other states between the two state to either low or high depending 
+    on what is needed to get to the requested state.
+    TODO: should update potential as we are moving towards the requested state
+          because sometimes we will move away from the requested state 
+          (e.g. states.done.request(), then we do with states.closing)
+    >>> states.running.request()  # request on (can pass True)
+    >>> states.running.request(False)  # request off
+
+    What using potential lets us do:
+    >>> with states.configured:
+    ...     while states.configured:
+    ...         ...
+    This will run the while loop until we have exited or want to exit the "configured" state.
+    But the actual state changes are still handled by the context manager (seen by doing `states.running.value`).
+    This lets you distinguish between "is the state actually finished?" or "is it still finishing? why does it say it is done, but it's hanging??"
+    '''
+    def __init__(self, name, default=False, parents=None, children=None):
         self._callbacks = {'before': [], 'after': [], 'request': []}
         self.name = name
         self.default = default
         self.value = default
         self.potential = 0
+        # used in states model object - given default values for convenience/robustness
+        self._parents = () if parents is None else parents
+        self._children = set() if children is None else children
+        self._tracked = False
 
     def __repr__(self):
         return '<State {}>'.format(self)
 
     def __str__(self):
         return '({}{}{})'.format(
-            '✔' if self.value else '✘', self.name, 
-            '+' if self.potential > 0 else '-' if self.potential < 0 else '') # '↑' if self.potential > 0 else '↓' if self.potential < 0 else ''
+            '✔' if self.value else '✘',
+            '+' if self.potential > 0 else '-' if self.potential < 0 else '',
+            self.name)
 
     def __hash__(self):
         '''Can be used in place of a name for dict lookups.'''
@@ -27,24 +54,20 @@ class State:
         '''Are we and should we be in a positive state? If false, either we're not in the state or we're trying to exit the state.'''
         return bool(self.potential > 0 or (self.value and self.potential == 0))
 
-    @property
-    def current(self):
-        '''The current value of the state.'''
-        return bool(self.value)
-
     def __eq__(self, other):
         '''Comparisons are done based on value, unless you're comparing with a string (which compares with the name).'''
         me = self.name if isinstance(other, str) else self.value
         other = other.value if isinstance(other, State) else other
         return me == other
 
-    def __call__(self, value=True, notify=None):
+    def __call__(self, value=True, notify=None, **kw):
         '''Set the state value.'''
         changed = self.value != value
+
         notify = changed if notify is None else notify  # by default, only do callback if the value changed.
         if notify:  # trigger callbacks for before change
-            for func in self._callbacks['before']:
-                func(self, value)
+            for callback_before in self._callbacks['before']:
+                callback_before(self, value, **kw)
 
         if changed:
             if self.potential and bool(value) * 2 - 1 == self.potential:  # check if we met potential
@@ -52,18 +75,19 @@ class State:
             self.value = value
 
         if notify:  # trigger callbacks for after change
-            for func in self._callbacks['after']:
-                func(self, value)
+            for callback_after in self._callbacks['after']:
+                callback_after(self, value, **kw)
         return self
 
-    def request(self, value=True, notify=None):
+    def request(self, value=True, notify=None, **kw):
         '''Request a state change.'''
         changed = self.value != value
         self.potential = 0 if not changed else 1 if value else -1
+ 
         notify = changed if notify is None else notify
         if notify:  # trigger callbacks for request
-            for func in self._callbacks['request']:
-                func(self, value)
+            for callback_request in self._callbacks['request']:
+                callback_request(self, value, **kw)
         return self
 
     def __enter__(self):
@@ -87,7 +111,16 @@ class State:
         return self(self.default)
 
     def add_callback(self, name=None, func=None):
-        '''Add callback functions to be called during the state's lifecycle.'''
+        '''Add callback functions to be called during the state's lifecycle.
+        
+        Examples:
+        >>> @state.add_callback
+        >>> def log(state, value): 
+        ...     print(state, value)
+        >>> state.add_callback('before', lambda state, value: print(state, value))
+        >>> state.add_callback('request', print)
+        >>> state.add_callback(print)  # defaults to 'after'
+        '''
         def add_cb(func, name=None):
             self._callbacks[name or 'after'].append(func)
             return func
@@ -112,14 +145,22 @@ class States:
     '''A hierarchical state model.'''
     def __init__(self, tree):
         self._states = {}
+        # having a root null state simplifies things
+        self.null = State(None)
         self.define(tree)
+        # self._exit_stack = []
+        # self._enter_stack = []
 
     def __str__(self):
-        return '({})'.format('+'.join(
-            str(state) for name, state in self._states.items() if state.current) or '- null -')
+        return '[{}]'.format('|'.join(
+            str(state) for name, state in self._states.items() if state.value) or 'null')
+
+    def treeview(self):
+        '''Dumps a nested yaml-like view of the state tree.'''
+        return _treeview_yml(self._states, self.null._children)
 
     def define(self, tree, *root, tracked=True):
-        '''Define states.
+        '''Define nested states.
         
         Arguments:
             tree (dict): a nested dictionary where the keys represent the state names and the 
@@ -130,15 +171,20 @@ class States:
                 are other independent states like that.
         '''
         for key, children in tree.items():
-            if key is not None and key not in self._states:
-                state = self._states[key] = State(key)
-                state._parents = root
-                state._children = set(children)
-                if tracked:
-                    state.add_callback('request', self._on_state_update_request)
-                    state.add_callback('before', self._on_state_update)
+            if key is not None:
+                if key not in self._states:
+                    state = self._states[key] = State(key, parents=root)
+                    if tracked:
+                        state.add_callback('request', self._on_state_update_request)
+                        state.add_callback('before', self._on_state_update)
+                        state._tracked = True
+                # add as child in parent state
+                child_set = (self._states[root[-1]] if root else self.null)._children
+                child_set.add(key)
+
             if children:
-                self.define(children, *root, key, tracked=tracked and key is not None)
+                root_k = root + (key,) if key is not None else root
+                self.define(children, *root_k, tracked=tracked and key is not None)
 
     def __getitem__(self, key):
         '''Get a state by name.'''
@@ -169,18 +215,43 @@ class States:
             self._states[name](value)
         return self
 
+    def update_nested(self, value, *names):
+        '''Recursively update all child states - can be used to turn off all child states.'''
+        for name in names:
+            state = self._states[name]
+            state(value)
+            self.update_nested(value, *state._children)
+
+    def transition(self, state):
+        '''Transition from the current state to a target state.'''
+        if state is None:
+            state = self.null
+        if not isinstance(state, State):
+            state = self._states[state]
+
+        state, remove, add = self._get_transition(self._current, state, value, **kw)
+        for k in remove:
+            self._states[k](False, tracked=False)
+        for k in add:
+            self._states[k](True, tracked=False)
+
+    # def to_desired(self):
+    #     '''Transition to the desired state called by state.request().'''
+    #     if self._desired is not None:
+    #         self.transition(self._desired)
+
     _desired = None
     _current = None
     _updating = False
     _requesting = False
-    def _on_state_update_request(self, state, value):
+    def _on_state_update_request(self, state, value, tracked=True, **kw):
         '''Track state update requests. Requests updates for all of the other states between the current state and the desired state.'''
-        if self._requesting:  # prevent recursion
-                return
+        if self._requesting or not tracked:  # prevent recursion
+            return
         try:
             self._requesting = True
 
-            state, remove, add = self._get_transition(self._current, state, value)
+            state, remove, add = self._get_transition(self._current, state, value, **kw)
             for k in remove:
                 self._states[k].request(False)
             for k in add:
@@ -189,34 +260,68 @@ class States:
         finally:
             self._requesting = False
 
-    def _on_state_update(self, state, value):
-        '''Track state updates. Updates all of the other states between the current state and the desired state.'''
-        if self._updating:  # prevent recursion
+    def _on_state_update(self, state, value, tracked=True, auto_transition=False, **kw):
+        '''Track state updates. This makes sure that a state transition is valid.'''
+        if self._updating or not tracked:  # prevent recursion
             return
         try:
             self._updating = True
+            current = self._current
+            if current is None:
+                current = self.null
 
-            state, remove, add = self._get_transition(self._current, state, value)
-            for k in remove:
-                self._states[k](False)
-            for k in add:
-                self._states[k](True)
-            self._current = state
+            state = self._check_state_transition(current, state, value, **kw)
+            self._current = state if state is not self.null else None
+
             if value and self._desired is not None and state.name == self._desired.name:
                 self._desired = None
         finally:
             self._updating = False
 
-    def _get_transition(self, start, state, value):
-        '''Get the states to add remove to get from one state to another.'''
-        add, remove = (), ()
-        stack = start._parents + (start.name,) if start is not None else ()
-        parents = state._parents if state is not None else ()
-        if value:  # state enabled, disable/enable any states that are not shared between the two
-            i = next((i for i, (k1, k2) in enumerate(zip(stack, parents)) if k1 != k2), min(len(stack), len(parents)))
-            remove, add = stack[i:][::-1], parents[i:]
-        elif start is not None and state is not None and start.name == state.name:
-            state = next((s for s in (self._states[k] for k in parents[::-1]) if s), None)
+    def _check_state_transition(self, start, state, value, **kw):
+        '''Check that a transition between two states is valid.'''
+        if not value:
+            assert start.name == state.name
+            state = self._states[state._parents[-1]] if state._parents else self.null
+
+        if state.name not in start._children and start.name not in state._children:
+            raise InvalidTransition('state {} not in current state children {} and current state {} not in state children {}'.format(
+                state, start._children, start, state._children))
+        return state
+
+    def _get_transition(self, start, state, value, auto_transition=True, **__):
+        '''Get the states to remove+add to get from one state to another.'''
+        start = self.null if start is None else start
+        state = self.null if state is None else state
+        # noop - no change of state needed
+        if value and start.name == state.name:
+            return state, (), ()
+        # get the state parents
+        current, target = start._parents, state._parents
+        current_ = current + (start.name,) if start.name is not None else current
+        target_ = target + (state.name,) if state.name is not None else target
+
+        # turn off state
+        if not value:
+            # we're turning off this state, find the next highest state that is turned on.
+            state = (
+                next((s for s in (self._states[k] for k in target[::-1]) if s.value), None) 
+                if auto_transition else self._states[target[-1]] if target else self.null)
+            if state is None:  # go to null state
+                return None, current_[::-1], ()
+            target = state._parents
+
+        if not auto_transition:  # check that we're going to an adjacent state.
+            if state not in start._children and start not in state._children:
+                raise InvalidTransition(
+                    'Could not transition directly from {} to {}. '
+                    'Please activate the intermediate states first.'.format(start, state))
+
+        # find minimum path between current and target states
+        i = next((
+            i for i, (k1, k2) in enumerate(zip(current_, target_)) if k1 != k2), 
+            min(len(current_), len(target_))) if current and target else 0
+        remove, add = current[i:][::-1], target[i:]
         return state, remove, add
 
     def add_callback(self, name=None, func=None):
@@ -230,58 +335,19 @@ class States:
             add_cb(name) if callable(name) else 
             lambda func: add_cb(func, name))
 
-    def reset(self, **values):
+    def reset(self, non_current=False):
         '''Reset states to their default values.'''
+        if non_current:
+            current = self._current
+            stack = current._parents + (current.name,) if current is not None else ()
         for state in self._states.values():
-            state.reset()
+            if not non_current or state.name not in stack:
+                state.reset()
 
 
-
-class BasicStates:
-    '''A basic state model. All states are independently controlled.'''
-    STATES = []
-    def __init__(self, *names):
-        self._states = {}
-        self.define(*(self.STATES or ()), *names)
-    
-    def __str__(self):
-        return '[{}]'.format('+'.join(
-            name for name, state in self._states.items() if state) or '- null -')
-
-    def define(self, *names):
-        '''Add new states.'''
-        for name in names:
-            if name not in self._states:
-                self._states[name] = State(name)
-
-    def __getitem__(self, key):
-        '''Get the state object by name.'''
-        return self._states[key]
-
-    def __getattr__(self, key):
-        '''Get the state object by name.'''
-        try:
-            if not key.startswith('_'):
-                return self._states[key]
-        except KeyError:
-            pass
-        raise AttributeError(key)
-
-    def __setattr__(self, key, value):
-        '''Set a state value.'''
-        if not key.startswith('_') and key in self._states:
-            return self._states[key](value)
-        super().__setattr__(key, value)
-
-    def __setitem__(self, key, value):
-        '''Set a state value.'''
-        self._states[key](value)
-
-    def reset(self):
-        '''Reset states to their default values.'''
-        for state in self._states.values():
-            state.reset()
-
+def _treeview_yml(states, keys, indent=0):
+    tree = {str(states[k]): _treeview_yml(states, states[k]._children, indent=indent+1) for k in keys}
+    return '\n'.join(' '*2*indent + k + ('\n' + v if v else '') for k, v in tree.items())
 
 
 if __name__ == '__main__':
