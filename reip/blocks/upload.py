@@ -79,8 +79,10 @@ class BaseUpload(reip.Block):
         #print('request', kw)
         # retry request until it succeeds
         for i in reip.util.iters.loop():
+            response = None
             try:
                 response = self.sess.request(self.method, url, **kw, timeout=self.timeout)
+                response.raise_for_status()
                 # check for non-200 error code
                 if not response.ok:
                     raise UploadError('Error when uploading {} to {}.\n{}'.format(
@@ -147,7 +149,7 @@ class UploadFile(BaseUpload):
         return {k: (os.path.basename(fn), f) for k, (fn, f) in fileobjs.items()}
 
     def data_str(self, files, **kw):
-        return ', '.join(os.path.join(k, fn) for k, (fn, f) in files.items())
+        return ', '.join(os.path.join(k, fn)+'({})'.format(reip.util.human_time(time.time()-os.path.getmtime(f.name))) for k, (fn, f) in files.items())
 
     def open_file(self, fname):
         return fname, open(fname, 'rb')

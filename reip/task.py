@@ -1,17 +1,27 @@
 import time
 import remoteobj
+import multiprocessing as mp
 import reip
 from reip.util import iters, text
+
+#import logging
+#mplog = mp.log_to_stderr()
+#mplog.setLevel(logging.DEBUG)
+#mplog.setLevel(mp.SUBDEBUG)
 
 
 class Task(reip.Graph):
     _process = None
     _delay = 1e-4
+    _startup_delay = 0.1
+    #_port = 9999
 
     def __init__(self, *blocks, graph=None, **kw):
         super().__init__(*blocks, graph=graph, **kw)
         self.remote = remoteobj.Proxy(self, fulfill_final=True)
         self._except = remoteobj.Except()
+        #self._port = Task._port
+        #Task._port += 1
 
     def __repr__(self):
         return self.remote.super.attrs_('__repr__')(_default=self.__local_repr)
@@ -22,13 +32,24 @@ class Task(reip.Graph):
 
     # main run loop
 
-    def _run(self, duration=None, _controlling=True, _ready_flag=None):
-        self.log.debug(text.blue('Starting'))
+    def _run(self, duration=None, _controlling=False, _ready_flag=None):
         try:
+            #import heartrate; heartrate.trace(browser=True, port=self._port)
+            #mplog.info('heartrate at {}'.format(self._port))
+            #mplog.info(self.name)
+            time.sleep(self._startup_delay)
             with self._except(raises=False), self.remote.listen_(bg=False):
+                #mplog.info(self.name + 'asdfasdfasdfasdf')
                 try:
                     # initialize
+                    #mplog.info(self.name+'!!! spawning')
+                    #try:
                     super().spawn(wait=False, _controlling=_controlling, _ready_flag=_ready_flag)
+                    #except BaseException as e:
+                        #mplog.info(self.name+' didnt spawn')
+                        #self.log.exception(e)
+                    #mplog.info(self.name+'!!! spawned')
+                    self.log.debug(text.green('Children Spawned!'))
                     while True:
                         if super().error or super().done:
                             return
@@ -51,7 +72,9 @@ class Task(reip.Graph):
                     super().join(raise_exc=False)
         finally:
             _ = super().__export_state__()
-            return _
+            #self.log.info('finishing - listening? {}'.format(self.remote.listening_))
+            self._except.set_result(_)
+            #return _
 
 
 
@@ -62,8 +85,8 @@ class Task(reip.Graph):
         self.controlling = _controlling
 
         self._reset_state()
-        self._process = remoteobj.util.process(self._run, _ready_flag=_ready_flag, _controlling=_controlling)
-        self._except = self._process.exc
+        self.log.debug('Spawning process')
+        self._process = mp.Process(target=self._run, daemon=True) #, kwargs=dict(_ready_flag=_ready_flag, _controlling=_controlling)
         self._process.start()
 
         if wait:
@@ -77,8 +100,8 @@ class Task(reip.Graph):
 
         self.log.debug(text.yellow('Joining'))
         self.remote.super.join(*a, raise_exc=False, _default=None, **kw)  # join children
-        self._process.join(timeout=timeout, raises=False)
-        self.__import_state__(self._process.result)
+        self._process.join(timeout=timeout)
+        self.__import_state__(self._except.get_result()) #self._process.result)
 
         self._process = None
         if raise_exc:
@@ -87,10 +110,17 @@ class Task(reip.Graph):
 
     def _pull_process_result(self):
         # NOTE: this is to update the state when the remote process has finished
-        if self._process is not None:
-            r = self._process.result
+        r = self._except.get_result()
+        if r is not None:
             self.__import_state__(r)
             #self.log.info('result: {}'.format(r))
+
+    def _pull_then_get(self, name):
+        self._pull_process_result()
+        return getattr(super(), name)
+
+    def _pull_then_call(self, name, *a, **kw):
+        return self._pull_then_get(name)(*a, **kw)
 
     def __export_state__(self):
         return self.remote.super.attrs_('__export_state__')(_default=None)
@@ -107,28 +137,15 @@ class Task(reip.Graph):
 
     @property
     def terminated(self):
-        return remoteobj.get(self.remote.super.terminated, default=self.__local_terminated)
+        return remoteobj.get(self.remote.super.terminated, default=lambda: self._pull_then_get('terminated'))
 
     @property
     def done(self):
-        return remoteobj.get(self.remote.super.done, default=self.__local_done)
+        return remoteobj.get(self.remote.super.done, default=lambda: self._pull_then_get('done'))
 
     @property
     def error(self):
-        return remoteobj.get(self.remote.super.error, default=self.__local_error)
-
-    def __local_terminated(self):  # for when the remote process is not running
-        self._pull_process_result()
-        return super().terminated
-
-    def __local_done(self):  # for when the remote process is not running
-        self._pull_process_result()
-        return super().done
-
-    def __local_error(self):  # for when the remote process is not running
-        self._pull_process_result()
-        #self.log.debug('local error {} {}'.format(super().error, self))
-        return super().error
+        return remoteobj.get(self.remote.super.error, default=lambda: self._pull_then_get('error'))
 
     # block control
 
@@ -147,13 +164,13 @@ class Task(reip.Graph):
     # debug
 
     def stats(self):
-        return self.remote.super.stats(_default=super().stats)
+        return self.remote.super.stats(_default=lambda: self._pull_then_call('stats'))
 
     def summary(self):
-        return self.remote.super.summary(_default=super().summary)
+        return self.remote.super.summary(_default=lambda: self._pull_then_call('summary'))
 
     def status(self):
-        return self.remote.super.status(_default=super().status)
+        return self.remote.super.status(_default=lambda: self._pull_then_call('status'))
 
     def stats_summary(self):
-        return self.remote.super.stats_summary(_default=super().stats_summary)
+        return self.remote.super.stats_summary(_default=lambda: self._pull_then_call('stats_summary'))

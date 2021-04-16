@@ -227,6 +227,7 @@ class Graph(BaseContext):
                     self.log.debug(text.green('Ready'))
                 except Exception as e:
                     self.log.debug(text.red('Spawn Error'))
+                    self.log.exception(e)
                     raise
             with self._except(raises=False):
                 yield self

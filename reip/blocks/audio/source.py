@@ -20,8 +20,9 @@ class Mic(reip.Block):
         self.search_interval = search_interval
         self.mic_compensation = mic_compensation
         if self.mic_compensation is not None:
-            from scipy.signal import lfilter
+            from scipy.signal import lfilter, lfilter_zi
             self._lfilter = lfilter  # only import once
+            self.filter_zi = lfilter_zi(self.mic_compensation, [1.0])
         self.skip_n = skip_n or 0
         super().__init__(**kw)
 
@@ -78,7 +79,7 @@ class Mic(reip.Block):
         if self.mono is not None:
             pcm = np.ascontiguousarray(pcm[:,self.mono])
         if self.mic_compensation is not None:
-            pcm = self._lfilter(self.mic_compensation, [1.0], pcm)
+            pcm, self.filter_zi = self._lfilter(self.mic_compensation, [1.0], pcm, zi=self.filter_zi)
         return [pcm], {'sr': self.sr}
 
     def finish(self):
