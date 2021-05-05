@@ -3,8 +3,7 @@ import time
 import numpy as np
 import pyarrow as pa
 import pyarrow.plasma as plasma
-from .base import BaseStore
-from .pointers import SharedPointer
+from .core import BaseStore, SharedPointer
 from . import queue as q_
 
 
