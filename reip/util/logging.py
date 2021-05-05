@@ -22,6 +22,29 @@ DATE_FORMAT = "%m/%d/%y %H:%M:%S"
 
 DEFAULT_LEVEL = os.getenv('REIP_LOG_LEVEL') or 'info'
 
+import collections
+class _FileWrapper:
+    '''This is so we can flip a switch and start queue-ing up messages.'''
+    diverting = False
+    def __init__(self, file):
+        self.file = file
+        self.q = collections.deque()
+
+    def __getstate__(self):
+        return dict(self.__dict__, q=collections.deque(), diverting=False)
+
+    def __getattr__(self, key):
+        return getattr(self.file, key)
+
+    def write(self, x):
+        if self.diverting:
+            self.q.append(x)
+        else:
+            while self.diverting:
+                self.file.write(self.diverting.popleft())
+            self.file.write(x)
+
+
 
 def getLogger(block, level=DEFAULT_LEVEL, compact=True, propagate=False):
     is_block = block is not None and not isinstance(block, str)
