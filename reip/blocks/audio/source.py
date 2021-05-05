@@ -61,6 +61,7 @@ class Mic(reip.Block):
 
     def _stream_callback(self, buf, frames, time_info, status):
         '''Append frames to the queue - blocking API is suuuuuper slow.'''
+        timestamp = time.time() - 1.*len(buf)/self.sr
         if status:
             self.log.error('Input overflow status: {}'.format(status))
 
@@ -69,7 +70,7 @@ class Mic(reip.Block):
             return
         try:
             with self._except('process'):
-                self._q.put((np.copy(buf), {'time': time.time() - 1.*len(buf)/self.sr}))# - 1.*len(buf)/sr
+                self._q.put((np.copy(buf), {'time': timestamp}))
         except Exception as e:
             self.log.exception(e)
 
