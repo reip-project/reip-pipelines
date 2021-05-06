@@ -313,7 +313,10 @@ class Graph(BaseContext):
             elif isinstance(block, reip.Block):
                 workers.append(block._thread)
             else:
-                workers.extend(self._gather_workers())
+                try:
+                    workers.extend(block._gather_workers())
+                except AttributeError:
+                    pass
         return workers
 
     def wait_until_ready(self):
