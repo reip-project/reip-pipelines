@@ -16,39 +16,48 @@ def min_rate(rate, strategy=all, fail_rate=None, fail_count=1):
     Useful to handle null cases and prevent hanging.
     
     Arguments:
-        rate (float): the minimum time in seconds to wait.
+        rate (float): the minimum number of buffers per second. 
+            will wait for 1/rate seconds before firing.
         strategy (callable): the source strategy to use.
         fail_count (int): the number of times for the source 
             strategy to fail before switching from rate to 
             fail_rate.
-        fail_rate (float): the minimum time in seconds to wait
+        fail_rate (float): the minimum number of buffers per second.
             after `strategy` has failed `fail_count` times.
             This lets you give more tolerance when a block isn't outputting,
             but don't want to hold up downstream blocks if a previous 
             block isn't firing.
     '''
-    fail_rate = fail_rate or rate
-    def func(*a, **kw):
-        dt = time.time() - (func.t_last or time.time())
-        func.t_last += dt
-        
+    # NOTE: rate from here on out actually refers to interval !! (the argument IS rate tho)
+    fail_rate = 1. / (fail_rate or rate)
+    rate = 1. / rate
+    def minrate(*a, **kw):
         # check if it passed
         passed = strategy(*a, **kw)
         if passed:
-           func.fail_count = 0
-           return True
+            minrate.t_last = time.time()
+            minrate.fail_count = 0
+            return True
 
-        # otherwise check if we're over the min rate
-        func.fail_count += 1
-        rate_ = fail_rate if fail_count and func.fail_count > fail_count else rate
-        return dt >= rate_
-    func.t_last = 0
-    func.fail_count = 0
+        t0 = time.time()
+        minrate.t_last = minrate.t_last or t0
+
+        # check if it's been x seconds since the last true
+        current_rate = fail_rate if fail_count and minrate.fail_count >= fail_count else rate
+        if time.time() - minrate.t_last > current_rate:
+            minrate.t_last = time.time()
+            minrate.fail_count += 1
+            return True
+        return False
+    minrate.t_last = 0
+    minrate.fail_count = 0
 
     def clear():
-        func.t_last = 0
-    func.clear = clear
-    return func
+        minrate.t_last = 0
+    minrate.clear = clear
+    minrate.__name__ = 'minrate_{:.2f}'.format(rate).replace('.', '_')
+    return minrate
+
 
 
 def resize_list(lst, length, value=None):

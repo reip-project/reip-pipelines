@@ -71,9 +71,7 @@ class Task(reip.Graph):
                 finally:
                     super().join(raise_exc=False)
         finally:
-            _ = super().__export_state__()
-            #self.log.info('finishing - listening? {}'.format(self.remote.listening_))
-            self._except.set_result(_)
+            self._except.set_result(super().__export_state__())
             #return _
 
 
@@ -88,6 +86,7 @@ class Task(reip.Graph):
         self.log.debug('Spawning process')
         self._process = mp.Process(target=self._run, daemon=True) #, kwargs=dict(_ready_flag=_ready_flag, _controlling=_controlling)
         self._process.start()
+        self._started_process = True
 
         if wait:
             self.wait_until_ready()
@@ -102,6 +101,7 @@ class Task(reip.Graph):
         self.remote.super.join(*a, raise_exc=False, _default=None, **kw)  # join children
         self._process.join(timeout=timeout)
         self.__import_state__(self._except.get_result()) #self._process.result)
+        self._started_process = False
 
         self._process = None
         if raise_exc:
@@ -125,6 +125,10 @@ class Task(reip.Graph):
     def __export_state__(self):
         return self.remote.super.attrs_('__export_state__')(_default=None)
 
+    @property
+    def _unexpected_exit(self):
+        return self._started_process and self._process is not None and not self._process.is_alive()
+
     # children state
 
     @property
@@ -137,11 +141,11 @@ class Task(reip.Graph):
 
     @property
     def terminated(self):
-        return remoteobj.get(self.remote.super.terminated, default=lambda: self._pull_then_get('terminated'))
+        return remoteobj.get(self.remote.super.terminated, default=lambda: self._pull_then_get('terminated') or self._unexpected_exit)
 
     @property
     def done(self):
-        return remoteobj.get(self.remote.super.done, default=lambda: self._pull_then_get('done'))
+        return remoteobj.get(self.remote.super.done, default=lambda: self._pull_then_get('done') or self._unexpected_exit)
 
     @property
     def error(self):

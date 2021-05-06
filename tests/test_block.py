@@ -94,11 +94,14 @@ def test_process_function_returns():
 
 
 def test_init_errors_from_block_in_task():
-    with reip.Graph() as g:
+    with reip.Graph.detached() as g:
         with reip.Task() as t:
             reip.Block(max_processed=10)(reip.Block(), reip.Block())
     with pytest.raises(RuntimeError, match=r'Expected \d+ sources'):
         g.run()
+        print(t._except)
+        for b in t.blocks:
+            print(b._except)
 
 
 

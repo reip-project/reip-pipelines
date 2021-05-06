@@ -433,7 +433,8 @@ class Block:
             self.log.debug(text.blue('Spawning...'))
             # print(self.summary())
 
-            self._check_source_connections()
+            with self._except('spawn'):
+                self._check_source_connections()
             # spawn any sinks that need it
             for s in self.sinks:
                 if hasattr(s, 'spawn'):
