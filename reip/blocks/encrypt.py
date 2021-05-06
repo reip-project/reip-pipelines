@@ -111,11 +111,11 @@ class TwoStageDecrypt(reip.Block):
             name=reip.util.fname(file), **meta))
         # decrypt file to disk
         enc_msg, enc_key = self.decompress(file)
-        decrypted = self.decrypt(enc_file, enc_key)
+        decrypted = self.decrypt(enc_msg, enc_key)
         with open(fname, 'wb') as f:
             f.write(decrypted)
 
-        self.maybe_remove_files(file, enc_file, enc_key)
+        self.maybe_remove_files(file)
         return [fname], {}
 
     def decrypt(self, msg, enc_key):
@@ -154,25 +154,31 @@ def get_private_key(public_fname):
 def public2private(public_fname):
     return '{}_private{}'.format(*os.path.splitext(public_fname))
 
+def private2public(private_fname):
+    return '{}.pub'.format(private_fname)
+
 def load_rsa(rsa_key):
     with open(rsa_key, 'rb') as f:
         return RSA.importKey(f.read())
 
-def create_rsa(public_fname, private_fname=False, bits=2048):
+def create_rsa(private_fname=None, public_fname=None, bits=2048):
     private_key = RSA.generate(bits, e=65537)
     public_key = private_key.publickey()
 
+    if not (private_fname or public_fname):
+        private_fname = os.path.expanduser('~/.ssh/encrypt_rsa')
     private_fname = private_fname or public2private(public_fname)
-    print('Creating RSA Key Pair:')
-    print('\tprivate:', private_fname)
-    print('\tpublic:', public_fname)
+    public_fname = public_fname or private2public(private_fname)
+    # print('Creating RSA Key Pair:')
+    # print('\tprivate:', private_fname)
+    # print('\tpublic:', public_fname)
 
     reip.util.ensure_dir(public_fname)
     with open(public_fname, 'wb') as f:
         f.write(public_key.exportKey("PEM"))
     with open(private_fname, 'wb') as f:
         f.write(private_key.exportKey("PEM"))
-    return private_fname, private_fname
+    return private_fname, public_fname
 
 def tar_addbytes(tar, f, data):
     t = tarfile.TarInfo(f)

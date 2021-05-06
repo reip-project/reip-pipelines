@@ -238,18 +238,17 @@ def test_encrypt(tmp_path):
     # encrypt file
     # decrypt file
     # check if file is the same
-    f_out = tmp_path / 'testfile{}.txt'
     content = 'some content {} !!!'
-    rsa_key = tmp_path / 'rsa.pem'
 
     with reip.Graph() as g:
+        priv, pub = B.encrypt.create_rsa(tmp_path / 'encrypt_rsa')
+
         inc = B.Increment(10, max_rate=10)
-        txtfile = B.dummy.TextFile(content, f_out)(inc)
+        txtfile = B.dummy.TextFile(content, tmp_path / 'testfile{}.txt')(inc)
         encrypted = B.encrypt.TwoStageEncrypt(
-            tmp_path / 'encrypted/{name}.enc.tar.gz', rsa_key)(txtfile)
+            tmp_path / 'encrypted/{name}.enc.tar.gz', pub)(txtfile)
         decrypted = B.encrypt.TwoStageDecrypt(
-            tmp_path / 'decrypted/{name}.txt',
-            B.encrypt.public2private(rsa_key))(encrypted)
+            tmp_path / 'decrypted/{name}.txt', priv)(encrypted)
 
     with g.run_scope():
         inp = txtfile.output_stream()
@@ -302,38 +301,38 @@ def test_shell():
 #     assert outputs.results == [x + i for i in range(n)] + [0]
 
 
-def test_context_func():
-    class A:
-        init = finish = False
-    @B.context_func
-    def basic_block():
-        try:
-            A.init = True
-            def process(x, meta):
-                return [x * 2], {}
-            yield process
-        finally:
-            A.finish = True
-    n = 10
-    with reip.Graph() as g:
-        outs = B.Increment(n).to(basic_block()).output_stream().data[0]
-    g.run()
+# def test_context_func():
+#     class A:
+#         init = finish = False
+#     @B.context_func
+#     def basic_block():
+#         try:
+#             A.init = True
+#             def process(x, meta):
+#                 return [x * 2], {}
+#             yield process
+#         finally:
+#             A.finish = True
+#     n = 10
+#     with reip.Graph() as g:
+#         outs = B.Increment(n).to(basic_block()).output_stream().data[0]
+#     g.run()
 
-    outs = list(outs.nowait())
-    assert outs == [i*2 for i in range(n)]
-    assert A.init
-    assert A.finish
+#     outs = list(outs.nowait())
+#     assert outs == [i*2 for i in range(n)]
+#     assert A.init
+#     assert A.finish
 
 
-def test_lambda_block():
-    @B.process_func
-    def basic_block(block, x, meta):
-        return [x * 2], {}
+# def test_lambda_block():
+#     @B.process_func
+#     def basic_block(block, x, meta):
+#         return [x * 2], {}
 
-    n = 10
-    with reip.Graph() as g:
-        outs = B.Increment(n).to(basic_block()).output_stream().data[0]
-    g.run()
+#     n = 10
+#     with reip.Graph() as g:
+#         outs = B.Increment(n).to(basic_block()).output_stream().data[0]
+#     g.run()
 
-    outs = list(outs.nowait())
-    assert outs == [i*2 for i in range(n)]
+#     outs = list(outs.nowait())
+#     assert outs == [i*2 for i in range(n)]
