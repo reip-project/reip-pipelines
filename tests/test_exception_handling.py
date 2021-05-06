@@ -94,16 +94,20 @@ def test_block_error_in_graph(Block, test_func):
 
 @blk_param()
 def test_block_error_in_task(Block, test_func):
-    with reip.Task() as g:
+    print('test_block_error_in_task')
+    with reip.Task(name='{}_{}'.format(Block.__name__, 'test_block_error_in_task')) as g:
         Block(max_processed=10)
     test_func(g)
+    print('test_block_error_in_task end')
 
 @blk_param()
 def test_block_error_in_task_in_graph(Block, test_func):
+    print('test_block_error_in_task_in_graph')
     with reip.Graph() as g:
-        with reip.Task():
+        with reip.Task(name='{}_{}'.format(Block.__name__, 'test_block_error_in_task_in_graph')):
             Block(max_processed=10)
     test_func(g)
+    print('test_block_error_in_task_in_graph end')
 
 @blk_param()
 def test_block_error_solo(Block, test_func):

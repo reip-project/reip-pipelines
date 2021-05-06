@@ -272,9 +272,11 @@ class Block:
             if self.done or self.error:
                 return True
 
-    def _main(self, _ready_flag=None, duration=None):
+    def _main(self, _ready_flag=None, _spawn_flag=None, duration=None):
         '''The main thread target function. Handles uncaught exceptions and
         generic Block context management.'''
+        if _spawn_flag is not None:
+            _spawn_flag.wait()
         try:
             self.started = True
             self.closed = False
@@ -426,7 +428,7 @@ class Block:
 
     # Thread management
 
-    def spawn(self, wait=True, _controlling=True, _ready_flag=None):
+    def spawn(self, wait=True, _controlling=True, _ready_flag=None, _spawn_flag=None):
         '''Spawn the block thread'''
         try:
             self.controlling = _controlling
@@ -441,7 +443,7 @@ class Block:
                     s.spawn()
             self._reset_state()
             self.resume()
-            self._thread = remoteobj.util.thread(self._main, _ready_flag=_ready_flag, daemon_=True, raises_=False)
+            self._thread = remoteobj.util.thread(self._main, _spawn_flag=_spawn_flag, _ready_flag=_ready_flag, daemon_=True, raises_=False)
             # threading.Thread(target=self._main, kwargs={'_ready_flag': _ready_flag}, daemon=True)
             self._thread.start()
 

@@ -14,14 +14,11 @@ class Task(reip.Graph):
     _process = None
     _delay = 1e-4
     _startup_delay = 0.1
-    #_port = 9999
 
     def __init__(self, *blocks, graph=None, **kw):
         super().__init__(*blocks, graph=graph, **kw)
         self.remote = remoteobj.Proxy(self, fulfill_final=True)
         self._except = remoteobj.Except()
-        #self._port = Task._port
-        #Task._port += 1
 
     def __repr__(self):
         return self.remote.super.attrs_('__repr__')(_default=self.__local_repr)
@@ -32,23 +29,15 @@ class Task(reip.Graph):
 
     # main run loop
 
-    def _run(self, duration=None, _controlling=False, _ready_flag=None):
+    def _run(self, duration=None, _controlling=False, _spawn_flag=None, _ready_flag=None):
+        if _spawn_flag is not None:
+            _spawn_flag.wait()
         try:
-            #import heartrate; heartrate.trace(browser=True, port=self._port)
-            #mplog.info('heartrate at {}'.format(self._port))
-            #mplog.info(self.name)
             time.sleep(self._startup_delay)
             with self._except(raises=False), self.remote.listen_(bg=False):
-                #mplog.info(self.name + 'asdfasdfasdfasdf')
                 try:
                     # initialize
-                    #mplog.info(self.name+'!!! spawning')
-                    #try:
                     super().spawn(wait=False, _controlling=_controlling, _ready_flag=_ready_flag)
-                    #except BaseException as e:
-                        #mplog.info(self.name+' didnt spawn')
-                        #self.log.exception(e)
-                    #mplog.info(self.name+'!!! spawned')
                     self.log.debug(text.green('Children Spawned!'))
                     while True:
                         if super().error or super().done:
@@ -77,14 +66,15 @@ class Task(reip.Graph):
 
 
     # process management
-    def spawn(self, wait=True, _controlling=True, _ready_flag=None):
+    def spawn(self, wait=True, _controlling=True, _ready_flag=None, _spawn_flag=None):
         if self._process is not None:  # only start once
             return
         self.controlling = _controlling
 
         self._reset_state()
+        self._started_process = False
         self.log.debug('Spawning process')
-        self._process = mp.Process(target=self._run, daemon=True) #, kwargs=dict(_ready_flag=_ready_flag, _controlling=_controlling)
+        self._process = mp.Process(target=self._run, kwargs=dict(_spawn_flag=_spawn_flag), daemon=True) #, kwargs=dict(_ready_flag=_ready_flag, _controlling=_controlling)
         self._process.start()
         self._started_process = True
 

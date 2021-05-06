@@ -254,6 +254,8 @@ class Graph(BaseContext):
 
     def _reset_state(self):
         self._except.clear()
+        self._ready_flag = None
+        self._spawn_flag = None
 
     # state
 
@@ -279,28 +281,52 @@ class Graph(BaseContext):
 
     # Block control
     _ready_flag = None
-    def spawn(self, wait=True, _controlling=True, _ready_flag=None, **kw):
+    def spawn(self, wait=True, _controlling=True, _ready_flag=None, _spawn_flag=None, **kw):
         self.controlling = _controlling
-        # if self.controlling:
-        #     self._ready_flag = _ready_flag = mp.Event()
+        if self.controlling:
+            # self._ready_flag = _ready_flag = mp.Event()
+            self._spawn_flag = _spawn_flag = mp.Event()
 
         for block in self.blocks:
-            block.spawn(wait=False, _controlling=False, _ready_flag=_ready_flag, **kw)
+            block.spawn(wait=False, _controlling=False, _spawn_flag=_spawn_flag, _ready_flag=_ready_flag, **kw)
+
+        # this makes all blocks wait to begin threads/processes together
+        if self.controlling:
+            workers = self._gather_workers()
+            while not all(w.is_alive() for w in workers):
+                time.sleep(self._delay)
+            if _spawn_flag is not None:
+                _spawn_flag.set()
 
         if wait:
             self.wait_until_ready()
         if self.controlling:
             self.raise_exception()
-            if self._ready_flag is not None:
+            if _ready_flag is not None:
                 _ready_flag.set()
+
+    def _gather_workers(self):
+        workers = []
+        for block in self.blocks:
+            if isinstance(block, reip.Task):
+                workers.append(block._process)
+            elif isinstance(block, reip.Block):
+                workers.append(block._thread)
+            else:
+                workers.extend(self._gather_workers())
+        return workers
 
     def wait_until_ready(self):
         while not self.ready and not self.done:
             time.sleep(self._delay)
 
     def join(self, close=True, terminate=False, raise_exc=None, **kw):
+        # just in case there's a weird timing thing
+        if self._spawn_flag is not None and not self._spawn_flag.is_set():
+            self._spawn_flag.set()
         if self._ready_flag is not None and not self._ready_flag.is_set():
             self._ready_flag.set()
+        # do: close, terminate, join, raise
         if close:
             self.close()
         if terminate:
