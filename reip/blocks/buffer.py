@@ -58,6 +58,39 @@ class Rebuffer(reip.Block):
         return metas[0]
 
 
+class FastRebuffer(reip.Block):
+    def __init__(self, size=None, **kw):
+        assert size , 'You must specify a size.'
+        self.size = size
+        super().__init__(**kw)
+
+    def init(self):
+        self.buffers, self.meta = None, None
+        self.current_pos = 0
+
+    def process(self, x, meta):
+        # calculate the size the first time using the sr in metadata
+        if self.buffers is None:
+            shape = list(x.shape)
+            shape[0] = shape[0] * self.size
+            # self.buffers = np.concatenate([np.zeros_like(x)] * self.size)
+            self.buffers = np.zeros(tuple(shape), dtype=x.dtype)
+            self.meta = dict(meta)
+            self.current_pos = 0
+
+        l, i = x.shape[0], self.current_pos
+        
+        self.buffers[i*l:(i+1)*l, ...] = x[...]
+        self.current_pos = (self.current_pos + 1) % self.size
+
+        if self.current_pos == 0:
+            ret = [self.buffers], self.meta
+            self.buffers, self.meta = None, None
+        else:
+            ret = None
+
+        return ret
+
 
 class GatedRebuffer(Rebuffer):
     TIME_KEY = 'time'

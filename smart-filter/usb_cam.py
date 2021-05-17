@@ -91,7 +91,8 @@ class UsbCamGStreamer(BundleCam):
             g.add("tee", "tee").set_property("name", "t")
             g.add("queue", "queue_f")
             g.add("avimux", "mux")
-            self.fname = self.filename.format(**{"time": time.time()}) % self.dev
+            # self.fname = self.filename.format(**{"time": time.time()}) % self.dev
+            self.fname = self.filename % self.dev
             reip.util.ensure_dir(self.fname)
             self.fname = self.fname[:-4] + "_%d" + self.fname[-4:]
             f = g.add("multifilesink", "filesink")
@@ -202,13 +203,14 @@ class UsbCamGStreamer(BundleCam):
         while not sample:
             sample = self.gst.sink.try_pull_sample(1e+9 / self.fps / 10)
         t = time.time()
+        gt = None
 
         if sample:
             self.count += 1
-            img, ts, fmt = GStreamer.unpack_sample(sample, debug=True)
+            img, gt, fmt = GStreamer.unpack_sample(sample, debug=self.debug)
 
             if self.debug and self.verbose:
-                print("Pulled_ 0:", self.count, ts / 1.e+9, "at", time.time() - self.t0)
+                print("Pulled_ 0:", self.count, gt / 1.e+9, "at", time.time() - self.t0)
 
             w, h, ch, fmt = fmt
             assert(fmt == "I420")
@@ -225,6 +227,7 @@ class UsbCamGStreamer(BundleCam):
 
         if img is not None:
             return img, {"python_timestamp" : t,
+                         "gstreamer_timestamp" : gt / 1.e+9,
                          "resolution": self.res,
                          "file_template": self.fname,
                          "file_index": self.gst.multifilesink_index,
