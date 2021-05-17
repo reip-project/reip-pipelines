@@ -30,18 +30,19 @@ def mono():
     with reip.Task("Cam"):
         cam = UsbCamGStreamer(name="Cam", filename=DATA_DIR + "/video/%d_{time}.avi", dev=1,
                               bundle=None, rate=5, debug=True, verbose=False)
+        cam.to(BlackHole(name="Black_Hole_Cam"))
 
     # with reip.Task("Det"):
-    det = ObjectDetector(name="Detector", labels_dir=MODEL_DIR, max_rate=None, thr=0.1,
-                         draw=False, cuda_out=False, zero_copy=False, debug=True, verbose=False)
-    det.model = "ssd-mobilenet-v2"
+    #     det = ObjectDetector(name="Detector", labels_dir=MODEL_DIR, max_rate=None, thr=0.1,
+    #                         draw=False, cuda_out=False, zero_copy=False, debug=True, verbose=False)
+    #     det.model = "ssd-mobilenet-v2"
 
-    bh_det = BlackHole(name="Black_Hole_Detector")
-    det_gr = Bundle(name="Detection_Bundle", size=10, meta_only=True)
-    det_wr = NumpyWriter(name="Detection_Writer", filename_template=DATA_DIR + "/det/detections_%d")
+    # bh_det = BlackHole(name="Black_Hole_Detector")
+    # det_gr = Bundle(name="Detection_Bundle", size=10, meta_only=True)
+    # det_wr = NumpyWriter(name="Detection_Writer", filename_template=DATA_DIR + "/det/detections_%d")
 
-    cam.to(det, throughput='large', strategy="latest")
-    det.to(det_gr).to(det_wr).to(bh_det)
+    # cam.to(det, throughput='large', strategy="latest")
+    # det.to(det_gr).to(det_wr).to(bh_det)
 
     # bh_disp = BlackHole(name="Black_Hole_Display")
     # disp = ImageDisplay(name="Display", make_bgr=True)
@@ -154,9 +155,9 @@ if __name__ == '__main__':
     # sudo service nvargus-daemon restart
 
     # mono()
-    # stereo()
+    stereo()
     # audio()
-    all()
+    # all()
 
-    reip.default_graph().run(duration=15, stats_interval=2)
+    reip.default_graph().run(duration=45, stats_interval=2)
 

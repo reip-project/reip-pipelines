@@ -67,6 +67,8 @@ class UsbCamGStreamer(BundleCam):
     fps = 15  # Supported max fps: 15, 30, 30
     rate = 5  # Decoding / appsink rate
     dev = 0  # Camera device ID
+    max_duration = 3  # Max file duration, sec
+    max_size = 300  # Max file size, MB
     gst_started = False  # Delay pipeline start until all blocks loaded
     rec = True  # Do record the original data stream
     gst = None  # GStreamer pipeline
@@ -76,7 +78,8 @@ class UsbCamGStreamer(BundleCam):
 
     def init(self):
         assert(self.pixel_format in ["I420"])
-        self.tot_samples, self.tot_overrun, self.count, self.t0 = 0, 0, 0, time.time()
+        self.tot_samples, self.tot_overrun, self.tot_filenames, self.count, self.t0 = 0, 0, 0, 0, time.time()
+        self.new_filename = "Default"
 
         GStreamer.init()
         self.gst = GStreamer(debug=self.debug)
@@ -90,10 +93,19 @@ class UsbCamGStreamer(BundleCam):
             g.add("avimux", "mux")
             self.fname = self.filename.format(**{"time": time.time()}) % self.dev
             reip.util.ensure_dir(self.fname)
-            g.add("filesink", "filesink").set_property("location", self.fname)
+            self.fname = self.fname[:-4] + "_%d" + self.fname[-4:]
+            f = g.add("multifilesink", "filesink")
+            f.set_property("location", self.fname)
+            f.set_property("post-messages", True)
+            f.set_property("next-file", 4)  # Use max-file-size property
+            f.set_property("max-file-size", self.max_size * 1e+6)
+            # Duration limit doesn't work for some reason
+            # f.set_property("next-file", 5)  # Use max-file-duration property
+            # f.set_property("max-file-duration", self.max_duration * 1e+9)
+            # f.connect("filesink", self.new_file, f)
 
             q = g.add("queue", "queue_a")#.set_property("leaky", "downstream")
-            q.set_property("max-size-buffers", 5)
+            q.set_property("max-size-buffers", 3)
             q.set_property("leaky", "downstream")
             q.connect("overrun", self.overrun, q)
 
@@ -108,8 +120,8 @@ class UsbCamGStreamer(BundleCam):
             s = g.add("appsink", "sink")#.set_property("emit-signals", True)
 
             s.set_property("emit-signals", True)  # eos is not processed otherwise
-            s.set_property("max-buffers", 3)  # protection from memory overflow
-            s.set_property("drop", True)  # if python is too slow with pulling the samples
+            s.set_property("max-buffers", 2)  # protection from memory overflow
+            s.set_property("drop", False)  # if python is too slow with pulling the samples (or let queue do that)
             s.connect("new-sample", self.new_sample, s)
             # g.sink.connect("new-sample", just_pull, g.sink)
             # g.sink.connect("new-sample", pull_copy, g.sink)
@@ -147,6 +159,17 @@ class UsbCamGStreamer(BundleCam):
         super().init()
 
         # self.gst.start()
+
+    def new_file(self, sink, data):
+        # global tot_samples, t0
+        # sink.emit("try-pull-sample", 1e+6)
+        self.tot_filenames += 1
+        self.new_filename = "?"
+
+        if self.debug and self.verbose:
+            print("Filename_%d:" % self.tot_filenames, self.new_filename, time.time() - self.t0)
+
+        return Gst.FlowReturn.OK
 
     def new_sample(self, sink, data):
         # global tot_samples, t0
@@ -203,7 +226,8 @@ class UsbCamGStreamer(BundleCam):
         if img is not None:
             return img, {"python_timestamp" : t,
                          "resolution": self.res,
-                         "fname": self.fname,
+                         "file_template": self.fname,
+                         "file_index": self.gst.multifilesink_index,
                          "fps": self.fps,
                          "pixel_format" : self.pixel_format}
         else:

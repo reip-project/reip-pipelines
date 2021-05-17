@@ -43,6 +43,7 @@ class GStreamer:
         self._terminate = False
         self._exception = None
         self._done = False
+        self.multifilesink_index = 0
 
     def add(self, name, title = None):
         title = title or name
@@ -211,8 +212,16 @@ class GStreamer:
                             # if new_state == Gst.State.NULL:
                             #     print("\tDone")
                             #     self._done = True
+                    elif t == Gst.MessageType.ELEMENT:
+                        el_name = message.src.get_name()
+                        print("\tMessage from %s:" % el_name, message)
+                        if el_name == "multifilesink0":
+                            self.multifilesink_index = message.src.get_property("index")
+                            print("\tNew file index:", self.multifilesink_index)
+                            # print("\t", message.src.get_property("next-file"),
+                            #     message.src.get_property("max-file-size"), message.src.get_property("max-file-duration"))
                     else:
-                        print("\tUnknown message:", message.type)
+                        print("\tUnknown message:", message.type, message.src.get_name())
                 else:
                     raise ValueError("Empty message")
                 if not all:
