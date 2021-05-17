@@ -32,7 +32,7 @@ class ObjectDetector(reip.Block):
     cuda_out = False  # Output cuda image if True
     zero_copy = False  # Output a copy if False
     model = "ssd-inception-v2"  # Detection model: ssd-mobilenet-v1, ssd-mobilenet-v2 or ssd-inception-v2
-    labels_dir = "./"  # Directory with ssd_coco_labels.txt
+    labels_dir = "./models"  # Directory with ssd_coco_labels.txt
     # labels_dir = "/mnt/ssd/legotracker/vscode_workspace/models/"  # Directory with ssd_coco_labels.txt
     thr = 0.5  # Confidence threshold
     target_sel = mp.Value(c_uint, 0, lock=False)  # Desired (external) input source selection
@@ -40,9 +40,9 @@ class ObjectDetector(reip.Block):
     switch_interval = None  # Switch input with fixed interval if not None (overrides target_sel)
     inner_sw = None
 
-    def __init__(self, **kw):
+    def __init__(self, n_inputs=None, **kw):
         # enable variable number of sources
-        super().__init__(n_inputs=None, source_strategy=all, **kw)
+        super().__init__(n_inputs=n_inputs, source_strategy=all, **kw)
 
     def init(self):
         assert(self.model in ["ssd-mobilenet-v1", "ssd-mobilenet-v2", "ssd-inception-v2"])
@@ -50,7 +50,7 @@ class ObjectDetector(reip.Block):
         if self.debug:
             print("ObjectDetector: %d inputs avaiable" % self.n_in)
 
-        with open(self.labels_dir + "ssd_coco_labels.txt", "r") as f:
+        with open(self.labels_dir + "/ssd_coco_labels.txt", "r") as f:
             self.labels = [line.strip() for line in f.readlines()]
             if self.debug or True:
                 print("ObjectDetector Labels:", self.labels)
@@ -63,7 +63,10 @@ class ObjectDetector(reip.Block):
     def parse_detection(self, detection):
         fields = ["ClassID", "Confidence", "Left", "Top", "Right", "Bottom", "Width", "Height", "Area", "Center"]
         # return {field.lower(): getattr(detection, field) for field in fields}
-        return {field: getattr(detection, field) for field in fields}
+        objs = {field: getattr(detection, field) for field in fields}
+        objs["Label"] = self.labels[int(objs["ClassID"])]
+        return objs
+        # return {field: getattr(detection, field) for field in fields}
 
     def process(self, *xs, meta=None):
         assert(len(xs) == self.n_in)
@@ -71,17 +74,18 @@ class ObjectDetector(reip.Block):
         if self.n_in == 1:
             meta = [dict(meta)]
 
-        if self.switch_interval is not None:
-            if self.processed % self.switch_interval == 0:
-                self.current_sel.value = (self.current_sel.value + 1) % self.n_in
-                if self.debug:
-                    print("\nObjectDetector: Select input %d\n" % self.current_sel.value)
-        else:
-            if self.current_sel.value != self.target_sel.value and (self.debug or True):
-                print("\nObjectDetector: New input %d\n" % self.target_sel.value)
-            self.current_sel.value = self.target_sel.value
+        # if self.switch_interval is not None:
+        #     if self.processed % self.switch_interval == 0:
+        #         self.current_sel.value = (self.current_sel.value + 1) % self.n_in
+        #         if self.debug:
+        #             print("\nObjectDetector: Select input %d\n" % self.current_sel.value)
+        # else:
+        #     if self.current_sel.value != self.target_sel.value and (self.debug or True):
+        #         print("\nObjectDetector: New input %d\n" % self.target_sel.value)
+        #     self.current_sel.value = self.target_sel.value
 
         sel = self.current_sel.value
+        self.current_sel.value = (self.current_sel.value + 1) % self.n_in
 
         if type(xs[sel]) != np.ndarray:
             if self.debug:
@@ -178,7 +182,7 @@ class ObjectDetector(reip.Block):
                             "draw": self.draw,
                             "pixel_format": "rgb8" if self.draw else None,
                             "objects": [self.parse_detection(det) for det in detections if det.Confidence >= self.thr],
-                            "class_labels": self.labels,
+                            # "class_labels": self.labels,
                             "detections_id": self.processed,
                             "source_sel": sel,
                             "source_meta": sel_meta}

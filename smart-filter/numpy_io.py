@@ -31,6 +31,7 @@ class NumpyWriter(reip.Block):
             return None
 
         filename = self.filename_template % self.file_id
+        reip.util.ensure_dir(filename)
 
         if self.debug:
             print("Numpy_Writer filename:", filename, xs[0].shape if xs[0] is not None else None, meta)

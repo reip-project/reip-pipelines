@@ -31,10 +31,15 @@ class Tflite(reip.Block):
         self.model = tflit.Model(self.filename)
 
     def process(self, X, meta):
+        meta["labels"] = self.labels
         return (
             [self.model.predict(self._get_input_features(X, meta))],
-            {'labels': self.labels}
+            meta
         )
+        # return (
+        #     [self.model.predict(self._get_input_features(X, meta))],
+        #     {'labels': self.labels}
+        # )
 
     def finish(self):
         self.model = None

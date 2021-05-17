@@ -37,16 +37,18 @@ class SPL(reip.Block):
         if self.weightings is None:  # initialize using sr from metadata
             self._init(meta)
         # select single channel (48000, 1) => (48000,)
-        data = np.atleast_2d(data.T)[0]
+        data = np.atleast_2d(data.T)[0, :]
         # get spectrogram (frequency, time) - (1025, 94)
         S = np.abs(librosa.core.stft(data, n_fft=self.n_fft, **self.extra_kw))
         # get weighted leq (3, 1025) x (1025, 94) => (94, 3)
         leq = self.calibration + librosa.power_to_db((
             self.weightings[..., None] * (S ** 2)).mean(-2)).T
-        return [leq], {
-            #'spl_weightings': self.weight_names,
-            'hop_duration': self.hop_duration,
-        }
+        meta["hop_duration"] = self.hop_duration
+        return [leq], meta
+        # return [leq], {
+        #     #'spl_weightings': self.weight_names,
+        #     'hop_duration': self.hop_duration,
+        # }
 
 
 class Stft(reip.Block):

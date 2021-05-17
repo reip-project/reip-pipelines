@@ -1,6 +1,6 @@
 import os
 import tarfile
-
+import time
 import reip
 
 
@@ -13,6 +13,7 @@ class Tar(reip.Block):
 
     def process(self, *files, meta):
         # get filename
+        meta["time"] = time.time()
         fname = self.filename.format(**meta)
         os.makedirs(os.path.dirname(fname), exist_ok=True)
         # write to tar

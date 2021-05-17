@@ -1,5 +1,6 @@
 import collections
 import reip
+# import time
 
 
 class CycledWriter:
@@ -40,6 +41,7 @@ class CycledWriter:
     def _get_new_writer(self, meta):
         self.close()
         # get filename
+        # meta["time"] = time.time()
         self._fname = fname = self.filename.format(**meta)
         reip.util.ensure_dir(fname)
         # make writer

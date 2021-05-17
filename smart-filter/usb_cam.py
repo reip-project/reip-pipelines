@@ -14,6 +14,7 @@ class UsbCamOpenCV(BundleCam):
     res = (1944, 2592)  # Supported resolutions: (1944, 2592), (1080, 1920), (720, 1280)
     fps = 15  # Supported max fps: 15, 30, 30
     dev = 0  # Camera device ID
+    filename = "%d_{time}.avi"
     cam = None  # Actual camera handle
 
     gst_str = "v4l2src device=/dev/video%d ! image/jpeg,width=%d,height=%d,framerate=%d/1 ! jpegdec ! " + \
@@ -87,7 +88,9 @@ class UsbCamGStreamer(BundleCam):
             g.add("tee", "tee").set_property("name", "t")
             g.add("queue", "queue_f")
             g.add("avimux", "mux")
-            g.add("filesink", "filesink").set_property("location", "test.avi")
+            self.fname = self.filename.format(**{"time": time.time()}) % self.dev
+            reip.util.ensure_dir(self.fname)
+            g.add("filesink", "filesink").set_property("location", self.fname)
 
             q = g.add("queue", "queue_a")#.set_property("leaky", "downstream")
             q.set_property("max-size-buffers", 5)
@@ -200,6 +203,7 @@ class UsbCamGStreamer(BundleCam):
         if img is not None:
             return img, {"python_timestamp" : t,
                          "resolution": self.res,
+                         "fname": self.fname,
                          "fps": self.fps,
                          "pixel_format" : self.pixel_format}
         else:

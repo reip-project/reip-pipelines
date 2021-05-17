@@ -58,7 +58,7 @@ def load_resample(fname=None, y=None, sr=None, target_sr=None):
         y, target_sr = librosa.load(fname, mono=False, sr=target_sr)
     else:
         y = y.T
-        y = np.atleast_2d(y)[0]
+        y = np.atleast_2d(y)[0, :]
         if len(y) == 1:
             y = y[0]
         if sr and target_sr and sr != target_sr:

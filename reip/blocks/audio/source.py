@@ -63,7 +63,7 @@ class Mic(reip.Block):
             pcm = pcm / float(np.iinfo(pcm.dtype).max)
         if self.mono is not None:
             pcm = pcm[:,self.mono]
-        return [pcm], {'sr': self.sr}
+        return [pcm], {'sr': self.sr, "time": time.time()}
 
     def finish(self):
         '''Stop pyaudio'''
