@@ -115,31 +115,36 @@ class Task(reip.Graph):
     def __export_state__(self):
         return self.remote.super.attrs_('__export_state__')(_default=None)
 
-    @property
     def _unexpected_exit(self):
-        return self._started_process and self._process is not None and not self._process.is_alive()
+        exited = self._started_process and self._process is not None and not self._process.is_alive()
+        if exited:
+            self.remote._fulfill_final, _ff = False, self.remote._fulfill_final
+            self.remote.listening_ = False
+            self.remote._fulfill_final = _ff
+            self.join()
+        return exited
 
     # children state
 
     @property
     def ready(self):
-        return remoteobj.get(self.remote.super.ready, default=False)
+        return not self._unexpected_exit() or remoteobj.get(self.remote.super.ready, default=False)
 
     @property
     def running(self):
-        return remoteobj.get(self.remote.super.running, default=False)
+        return not self._unexpected_exit() or remoteobj.get(self.remote.super.running, default=False)
 
     @property
     def terminated(self):
-        return remoteobj.get(self.remote.super.terminated, default=lambda: self._pull_then_get('terminated') or self._unexpected_exit)
+        return self._unexpected_exit() or remoteobj.get(self.remote.super.terminated, default=lambda: self._pull_then_get('terminated'))
 
     @property
     def done(self):
-        return remoteobj.get(self.remote.super.done, default=lambda: self._pull_then_get('done') or self._unexpected_exit)
+        return self._unexpected_exit() or remoteobj.get(self.remote.super.done, default=lambda: self._pull_then_get('done'))
 
     @property
     def error(self):
-        return remoteobj.get(self.remote.super.error, default=lambda: self._pull_then_get('error'))
+        return self._unexpected_exit() or remoteobj.get(self.remote.super.error, default=lambda: self._pull_then_get('error'))
 
     # block control
 
