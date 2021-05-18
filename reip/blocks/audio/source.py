@@ -9,7 +9,7 @@ import reip
 class Mic(reip.Block):
     _audio_stream = device = blocksize = None
     def __init__(self, device=None, sr=None, block_duration=1, channels=None,
-                 mono=False, search_interval=10, dtype=np.int16, **kw):
+                 mono=False, search_interval=10, dtype=np.int16, mic_compensation=None, skip_n=0, **kw):
         self.device_name = device
         self.sr = sr
         self.channels = channels
@@ -18,6 +18,12 @@ class Mic(reip.Block):
         self._is_float = self.dtype == np.float32
         self.block_duration = block_duration
         self.search_interval = search_interval
+        self.mic_compensation = mic_compensation
+        if self.mic_compensation is not None:
+            from scipy.signal import lfilter, lfilter_zi
+            self._lfilter = lfilter  # only import once
+            self.filter_zi = lfilter_zi(self.mic_compensation, [1.0])
+        self.skip_n = skip_n or 0
         super().__init__(**kw)
 
         self._q = reip.stores.Producer()
@@ -35,6 +41,7 @@ class Mic(reip.Block):
     #                 self.log.exception(e)
 
     def init(self):
+        self.n_frames = 0
         # initialize pyaudio
         device = find_device(self.device_name)
         self.log.info('Using audio device: {} - {}'.format(device['name'], device))
@@ -54,22 +61,33 @@ class Mic(reip.Block):
 
     def _stream_callback(self, buf, frames, time_info, status):
         '''Append frames to the queue - blocking API is suuuuuper slow.'''
+        timestamp = time.time() - 1.*len(buf)/self.sr
         if status:
             self.log.error('Input overflow status: {}'.format(status))
-        self._q.put((buf, {'time': time.time()}))
+
+        self.n_frames += 1
+        if self.n_frames <= self.skip_n:
+            return
+        try:
+            with self._except('process'):
+                self._q.put((np.copy(buf), {'time': timestamp}))
+        except Exception as e:
+            self.log.exception(e)
 
     def process(self, pcm, meta):
         if not self._is_float:
             pcm = pcm / float(np.iinfo(pcm.dtype).max)
         if self.mono is not None:
-            pcm = pcm[:,self.mono]
-        return [pcm], {'sr': self.sr, "time": time.time()}
+            pcm = np.ascontiguousarray(pcm[:,self.mono])
+        if self.mic_compensation is not None:
+            pcm, self.filter_zi = self._lfilter(self.mic_compensation, [1.0], pcm, zi=self.filter_zi)
+        return [pcm], {'sr': self.sr}
 
     def finish(self):
         '''Stop pyaudio'''
         if self._audio_stream is not None:
-            self._audio_stream.close()
             self._audio_stream.stop()
+            self._audio_stream.close()
         self._audio_stream = None
         self.device = None
 
