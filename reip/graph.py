@@ -280,7 +280,7 @@ class Graph(BaseContext):
         return bool(self._except.all()) or any(b.error for b in self.blocks)
 
     # Block control
-    _ready_flag = None
+    _spawn_flag = _ready_flag = None
     def spawn(self, wait=True, _controlling=True, _ready_flag=None, _spawn_flag=None, **kw):
         self.controlling = _controlling
         if self.controlling:
