@@ -11,7 +11,6 @@ sys.path.append('..')
 from numpy_io import NumpyWriter
 # from direct_io import DirectWriter, DirectReader
 from bundles import Bundle
-from usb_cam import UsbCamGStreamer
 from dummies import Generator, BlackHole
 # from cv_utils import ImageConvert, ImageDisplay
 from ai import ObjectDetector
@@ -40,36 +39,34 @@ def get_blocks(*blocks):
         B_waggle = None
     return B_ray, B_reip, B_waggle
 
-B_ray, B_reip, B_waggle = get_blocks(
-    UsbCamGStreamer, ObjectDetector, Bundle, NumpyWriter, BlackHole, 
-    B.audio.Mic, B.FastRebuffer, B.audio.AudioFile, B.audio.SPL, B.Csv)
 
-# def define_graph(
-#         B, sizeA=(720, 1280), sizeB=(2000, 2500),
-#         rate_divider=1, throughput='large', use_tasks=True,
-#         gen_debug=None, bundle_debug=None, 
-#         io_debug=None, bh_debug=None):
 
-#     Graph = B.Task if use_tasks else B.Graph
-#     with Graph("Basler"):
-#         basler = (
-#             B.Generator(name="Basler_Cam", size=sizeA, dtype=np.uint8, max_rate=120 // rate_divider, debug=gen_debug, queue=120*2)
-#                 .to(B.Bundle(name="Basler_Bundle", size=12, queue=10*2, debug=bundle_debug)))
+def define_graph_alt(
+        B, sizeA=(720, 1280), sizeB=(2000, 2500),
+        rate_divider=1, throughput='large', use_tasks=True,
+        gen_debug=None, bundle_debug=None, 
+        io_debug=None, bh_debug=None):
 
-#     with Graph("Builtin"):
-#         builtin = (
-#             B.Generator(name="Builtin_Cam", size=sizeB, dtype=np.uint8, max_rate=30 // rate_divider, debug=gen_debug, queue=30*2)
-#                 .to(B.Bundle(name="Builtin_Bundle", size=3, queue=10*2, debug=bundle_debug)))#, strategy="skip", skip=3)
+    Graph = B.Task if use_tasks else B.Graph
+    with Graph("Basler"):
+        basler = (
+            B.Generator(name="Basler_Cam", size=sizeA, dtype=np.uint8, max_rate=120 // rate_divider, debug=gen_debug, queue=120*2)
+                .to(B.Bundle(name="Basler_Bundle", size=12, queue=10*2, debug=bundle_debug)))
 
-#     (basler
-#         .to(B.Bundle(name="Basler_Write_Bundle", size=5, queue=5, debug=bundle_debug), throughput=throughput)
-#         .to(B.NumpyWriter(name="Basler_Writer", filename_template=datafile("basler_%d"), debug=io_debug))
-#         .to(B.BlackHole(name="Basler_Black_Hole", debug=bh_debug)))
+    with Graph("Builtin"):
+        builtin = (
+            B.Generator(name="Builtin_Cam", size=sizeB, dtype=np.uint8, max_rate=30 // rate_divider, debug=gen_debug, queue=30*2)
+                .to(B.Bundle(name="Builtin_Bundle", size=3, queue=10*2, debug=bundle_debug)))#, strategy="skip", skip=3)
 
-#     (builtin
-#         .to(B.Bundle(name="Builtin_Write_Bundle", size=5, queue=5, debug=bundle_debug), throughput=throughput)
-#         .to(B.NumpyWriter(name="Builtin_Writer", filename_template=datafile("builtin_%d"), debug=io_debug))
-#         .to(B.BlackHole(name="Builtin_Black_Hole", debug=bh_debug)))
+    (basler
+        .to(B.Bundle(name="Basler_Write_Bundle", size=5, queue=5, debug=bundle_debug), throughput=throughput)
+        .to(B.NumpyWriter(name="Basler_Writer", filename_template=datafile("basler_%d"), debug=io_debug))
+        .to(B.BlackHole(name="Basler_Black_Hole", debug=bh_debug)))
+
+    (builtin
+        .to(B.Bundle(name="Builtin_Write_Bundle", size=5, queue=5, debug=bundle_debug), throughput=throughput)
+        .to(B.NumpyWriter(name="Builtin_Writer", filename_template=datafile("builtin_%d"), debug=io_debug))
+        .to(B.BlackHole(name="Builtin_Black_Hole", debug=bh_debug)))
 
 
 # def define_graph(B, use_tasks=True, throughput='large'):
@@ -168,6 +165,21 @@ def define_graph(audio_length=10, rate=4, data_dir='./data', cam_2nd=True, throu
         (spl.to(B.Csv(spl_fname, headers=[f'l{w}eq' for w in spl.weight_names.lower()], max_rows=10))
             .to(BlackHole(name="spl-bh")))
    
+
+
+
+try:
+    from usb_cam import UsbCamGStreamer
+    B_ray, B_reip, B_waggle = get_blocks(
+        UsbCamGStreamer, ObjectDetector, Bundle, NumpyWriter, BlackHole, 
+        B.audio.Mic, B.FastRebuffer, B.audio.AudioFile, B.audio.SPL, B.Csv)
+except ImportError:
+    import traceback
+    traceback.print_exc()
+    print('Continuing on with dummy graph...')
+
+    B_ray, B_reip, B_waggle = get_blocks(Generator, Bundle, NumpyWriter, BlackHole)
+    default_graph = default_graph_alt
 
 
 def run_graph(B, *a, duration=15, **kw):
