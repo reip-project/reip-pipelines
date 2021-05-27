@@ -13,7 +13,10 @@ def checkfile(f):
 
 
 class UploadError(requests.exceptions.RequestException):
-    pass
+    response = None
+    def __init__(self, message, response=None, **kw):
+        super().__init__(message, **kw)
+        self.response = request if self.response is None else self.response
 
 
 class BaseUpload(reip.Block):
@@ -73,37 +76,37 @@ class BaseUpload(reip.Block):
             self.endpoint) if self.servers else self.endpoint
 
     def request(self, **kw):
-        # setup
         url = self.get_url()
         datastr = self.data_str(**kw)
-        #print('request', kw)
-        # retry request until it succeeds
+        response = self.sess.request(self.method, url, **kw, timeout=self.timeout)
+        try:
+            response.raise_for_status()
+        except Exception as e:
+            raise type(e)('Error when uploading {} to {}.'.format(datastr, url) + str(e))
+        # check for non-200 error code
+        if not response.ok:
+            raise UploadError('Error when uploading {} to {}.\n{}'.format(
+                datastr, url, response.text), response)
+
+        # return response info
+        secs = response.elapsed.total_seconds()
+        speed = self.calc_size(**kw) / secs / 1024.0
+        self.log.info('{} uploaded to {} at {:.1f} Kb/s in {:.1f}s'.format(
+            datastr, url, speed, secs))
+
+        self.on_success(response, url, **kw)
+        return response, secs, speed
+
+    def retry_loop(self):
         for i in reip.util.iters.loop():
-            response = None
             try:
-                response = self.sess.request(self.method, url, **kw, timeout=self.timeout)
-                response.raise_for_status()
-                # check for non-200 error code
-                if not response.ok:
-                    raise UploadError('Error when uploading {} to {}.\n{}'.format(
-                        datastr, url, response.text))
+                return yield
             except Exception as e:
-                self.log.error(reip.util.excline(e))
                 # exit if we've failed too many times
-                if i >= self.n_tries-1:
-                    e.response = response
+                if not self.n_tries or i >= self.n_tries-1:
                     self.on_failure(response, url, **kw)
                     raise e
-
-            else:
-                # return response info
-                secs = response.elapsed.total_seconds()
-                speed = self.calc_size(**kw) / secs / 1024.0
-                self.log.info('{} uploaded to {} at {:.1f} Kb/s in {:.1f}s'.format(
-                    datastr, url, speed, secs))
-
-                self.on_success(response, url, **kw)
-                return response, secs, speed
+                self.log.error(reip.util.excline(e))
 
     def calc_size(self, **kw):
         return os.path.getsize(kw)
@@ -124,22 +127,25 @@ class UploadFile(BaseUpload):
         self.remove_on_success = remove_on_success
         super().__init__(*a, **kw)
 
+
+    def _process(self, *fs, meta=None):
+        files = [
+            (reip.util.resolve_call(self.names[i], fname)
+                if i < len(self.names) else
+                os.path.basename(os.path.dirname(fname))
+                or os.path.basename(fname), fname)
+            for i, fname in enumerate(fs)
+        ]
+        data = reip.util.resolve_call(self.data, files, meta=meta)
+
+        for _ in self.retry_loop():
+            response, secs, speed = self.request(files=self.as_file_dict(files), data=data)
+            self.on_file_success(*fs)
+            return [response], {'upload_time': secs, 'upload_kbs': speed, 'status_code': response.status_code}
+
     def process(self, *fs, meta=None):
         try:
-            files = [
-                (reip.util.resolve_call(self.names[i], fname)
-                 if i < len(self.names) else
-                 os.path.basename(os.path.dirname(fname))
-                 or os.path.basename(fname), fname)
-                for i, fname in enumerate(fs)
-            ]
-
-            response, secs, speed = self.request(
-                files=self.as_file_dict(files),
-                data=reip.util.resolve_call(self.data, files, meta=meta))
-            self.on_file_success(*fs)
-
-            return [response], {'upload_time': secs, 'upload_kbs': speed, 'status_code': response.status_code}
+            return self._process(*fs, meta=meta)
         except Exception as e:
             self.log.exception(e)
             return
@@ -163,56 +169,19 @@ class UploadFile(BaseUpload):
                 os.remove(f)
 
 
-# class UploadFile(_AbstractUploadFile):
-#    def __init__(self, *a, names=None, remove_on_success=True, **kw):
-#         self.names = reip.util.as_list(names or ())
-#         self.remove_on_success = remove_on_success
-#         super().__init__(*a, **kw)
-# 
-#     def process(self, *fs, meta=None):
-#         return super().process([
-#                 (reip.util.resolve_call(self.names[i], fname)
-#                  if i < len(self.names) else
-#                  os.path.basename(os.path.dirname(fname))
-#                  or os.path.basename(fname), fname)
-#                 for i, fname in enumerate(fs)
-#             ], data=reip.util.resolve_call(self.data, *fs, meta=meta))
-
-#     def on_success(self, resp, url, files, **kw):
-#         if self.remove_on_success: # delete file
-#             for f in files.values():
-#                 if isinstance(f, tuple):
-#                     f = f[0]
-#                 os.remove(f)
-
-
-
-#class UploadJSONAsFile(_AbstractUploadFile):
-#    FILENAME = 'status.json'
-#    def process(self, *data, meta=None):
-#        status = {k: v for d in data for k, v in d.items()}
-#        data = reip.util.resolve_call(self.data, status, meta=meta)
-#        return super().process({'file': status}, meta=meta, data=data)
-#
-#    def open_file(self, status):
-#        return self.FILENAME, json.dumps(status, cls=NumpyEncoder)
-#
-#    def calc_size(self, files):
-#        return sum(sys.getsizeof(x) for x in files.values())
-
-
-
 
 class UploadJSON(BaseUpload):
     def process(self, *data, meta=None):
-        status = {k: v for d in data for k, v in d.items()}
         try:
-            data = dict(reip.util.resolve_call(self.data, status, meta=meta) or {}, **status)
-            response, secs, speed = self.request(
-                data=json.dumps(data, cls=NumpyEncoder), 
-                headers={'Content-Type': 'application/json'})
-            return [response], {'upload_time': secs, 'upload_kbs': speed, 'status_code': response.status_code}
+            merged = {k: v for d in data for k, v in d.items() if d}
+            data = dict(status, **(reip.util.resolve_call(self.data, merged, meta=meta) or {}))
+            datajson = json.dumps(data, cls=NumpyEncoder)
+
+            for _ in self.retry_loop():
+                response, secs, speed = self.request(data=datajson, headers={'Content-Type': 'application/json'})
+                return [response], {'upload_time': secs, 'upload_kbs': speed, 'status_code': response.status_code}
         except Exception as e:
+            self.log.exception(e)
             return
 
     def calc_size(self, data=None, json=None, **kw):
