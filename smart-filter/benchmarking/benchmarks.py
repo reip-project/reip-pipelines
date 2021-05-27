@@ -13,7 +13,6 @@ from numpy_io import NumpyWriter
 from bundles import Bundle
 from dummies import Generator, BlackHole
 # from cv_utils import ImageConvert, ImageDisplay
-from ai import ObjectDetector
 # from controls import BulkUSB, Follower, Controller, ConsoleInput
 
 
@@ -169,6 +168,7 @@ def define_graph(audio_length=10, rate=4, data_dir='./data', cam_2nd=True, throu
 
 
 try:
+    from ai import ObjectDetector
     from usb_cam import UsbCamGStreamer
     B_ray, B_reip, B_waggle = get_blocks(
         UsbCamGStreamer, ObjectDetector, Bundle, NumpyWriter, BlackHole, 
