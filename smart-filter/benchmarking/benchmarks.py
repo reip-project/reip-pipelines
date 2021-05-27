@@ -218,7 +218,7 @@ def dump_results(results, i):
 
 def header(*txt, ch='*', s=2):
     txt = [str(' '.join(t) if isinstance(t, (list, tuple)) else t or '') for t in txt]
-    n = max(len(t) for t in txt, default=0)
+    n = max((len(t) for t in txt), default=0)
     n = max(n+1, 10)
     print('\n' + (ch*n) + '\n'*(max(0, i)) + '\n'.join(txt) + '\n' + (ch*n) + '\n')
 
