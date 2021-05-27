@@ -100,7 +100,7 @@ class BaseUpload(reip.Block):
     def retry_loop(self):
         for i in reip.util.iters.loop():
             try:
-                return yield
+                yield
             except Exception as e:
                 # exit if we've failed too many times
                 if not self.n_tries or i >= self.n_tries-1:
