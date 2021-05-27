@@ -23,17 +23,17 @@ datafile = lambda *f: os.path.join(DATA_DIR, *f)
 def get_blocks(*blocks):
     try:
         import ray_app
-        B_ray = ray_app.wrap_blocks(*blocks)
+        B_ray = ray_app.Block.wrap_blocks(*blocks)
     except ImportError:
         B_ray = None
     try:
         import reip_app
-        B_reip = reip_app.wrap_blocks(*blocks)
+        B_reip = reip_app.Block.wrap_blocks(*blocks)
     except ImportError:
         B_reip = None
     try:
         import waggle_app
-        B_waggle = waggle_app.wrap_blocks(*blocks)
+        B_waggle = waggle_app.Block.wrap_blocks(*blocks)
     except ImportError:
         B_waggle = None
     return B_ray, B_reip, B_waggle
@@ -179,12 +179,12 @@ except ImportError:
     print('Continuing on with dummy graph...')
 
     B_ray, B_reip, B_waggle = get_blocks(Generator, Bundle, NumpyWriter, BlackHole)
-    default_graph = default_graph_alt
+    define_graph = define_graph_alt
 
 
 def run_graph(B, *a, duration=15, **kw):
     # a) single process
-    with B.Graph(graph=False) as g:
+    with B.Graph() as g:
         define_graph(B, *a, **kw)
     g.run(duration=duration)
     return g

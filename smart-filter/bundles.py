@@ -30,7 +30,8 @@ class Bundle(reip.Block):
             if self.debug and self.verbose:
                 print("Bundle meta_only:", meta)
         else:
-            assert(type(xs[0]) == np.ndarray)
+            assert isinstance(xs[0], np.ndarray), 'expected numpy array. Got type {} value={}'.format(type(xs[0]), xs[0])
+            #assert(type(xs[0]) == np.ndarray)
 
             if self.debug and self.verbose:
                 print("Bundle buffer:", xs[0].shape, xs[0].dtype, meta)

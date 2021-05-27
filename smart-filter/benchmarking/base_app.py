@@ -46,10 +46,10 @@ class Graph:
     default = None
     delay = 1e-5
     task_name = None
-    def __init__(self, name=None):
+    def __init__(self, name=None, graph=None):
         self.blocks = []
         self.name = auto_name(self, name=name)
-        graph = Graph.default
+        graph = graph or Graph.default
         if graph is not None:
             graph.add_block(self)
 
@@ -212,13 +212,13 @@ class Block:
             len(self.inputs), len(self.output_customers),
             self.processed, self.dropped)
 
-    def __call__(self, *inputs):
+    def __call__(self, *inputs, throughput=None, strategy=None):
         self.input_blocks.extend(inputs)
         self.inputs.extend(b.get_output(self) if isinstance(b, Block) else b for b in inputs)
         return self
 
-    def to(self, block):
-        return block(self)
+    def to(self, block, **kw):
+        return block(self, **kw)
 
     def get_output(self, other):
         if self.task_name == other.task_name:
