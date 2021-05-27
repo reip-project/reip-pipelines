@@ -19,6 +19,12 @@ class UploadError(requests.exceptions.RequestException):
         self.response = request if self.response is None else self.response
 
 
+def reword_exception(exc, message):
+    exc2 = type(exc)(message)
+    exc2.__dict__ = exc.__dict__
+    return exc2
+
+
 class BaseUpload(reip.Block):
     Session = requests.Session
     def __init__(self, endpoint, servers=None, method='post', data=None,
@@ -82,7 +88,7 @@ class BaseUpload(reip.Block):
         try:
             response.raise_for_status()
         except Exception as e:
-            raise type(e)('Error when uploading {} to {}.'.format(datastr, url) + str(e))
+            raise reword_exception(e, 'Error when uploading {} to {}. {}'.format(datastr, url, e))
         # check for non-200 error code
         if not response.ok:
             raise UploadError('Error when uploading {} to {}.\n{}'.format(
