@@ -174,7 +174,7 @@ class UploadJSON(BaseUpload):
     def process(self, *data, meta=None):
         try:
             merged = {k: v for d in data for k, v in d.items() if d}
-            data = dict(status, **(reip.util.resolve_call(self.data, merged, meta=meta) or {}))
+            data = dict(merged, **(reip.util.resolve_call(self.data, merged, meta=meta) or {}))
             datajson = json.dumps(data, cls=NumpyEncoder)
 
             for _ in self.retry_loop():
