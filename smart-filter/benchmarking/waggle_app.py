@@ -39,12 +39,20 @@ class PublishBlock(Block):
     def __init__(self, key):
         self.key = key
 
-    def process(self, x):
+    def process(self, *inputs):
+        result = super().process(*inputs)
+        if result is None:
+            return
+        [x, meta] = base_app.convert_inputs(result)
         plugin.publish(self.key, x)
 
 
 class FileBlock(Block):
     def process(self, x):
+        result = super().process(*inputs)
+        if result is None:
+            return
+        [x, meta] = base_app.convert_inputs(result)
         plugin.upload_file(x)
 
 

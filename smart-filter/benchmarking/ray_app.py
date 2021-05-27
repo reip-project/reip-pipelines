@@ -1,11 +1,12 @@
 import queue
 import time
+import reip
 
 import ray
 ray.init()
 
 import base_app
-from base_app import Block as BaseBlock, Graph
+from base_app import Block as BaseBlock, Graph, convert_inputs
 
 @ray.remote
 class BlockAgent:
@@ -18,8 +19,13 @@ class BlockAgent:
         self.block.init()
         self.inner_time = time.time()
 
-    def process(self, *a, **kw):
-        return self.block.process(*a, **kw)
+    def process(self, *inputs):
+        # print(1, self.block.__block__.name)
+        if inputs and all(x is None for x in inputs):
+            return
+        # print(2, self.block.__block__.name)
+        inputs, meta = convert_inputs(*inputs)
+        return self.block.process(*inputs, meta=meta)
 
     def finish(self):
         self.duration = time.time() - self.inner_time
@@ -107,7 +113,7 @@ class Block(base_app.Block):
 
 
 if __name__ == '__main__':
-    B = example(Block)
+    B = base_app.example(Block)
 
     with B.Graph() as g:
         x1 = B.BlockA(max_processed=10).to(B.BlockB(10)).to(B.BlockB(10)).to(B.Print())
