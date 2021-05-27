@@ -9,13 +9,13 @@ import reip.blocks as B
 import sys
 sys.path.append('..')
 from numpy_io import NumpyWriter
-from direct_io import DirectWriter, DirectReader
+# from direct_io import DirectWriter, DirectReader
 from bundles import Bundle
 from usb_cam import UsbCamGStreamer
 from dummies import Generator, BlackHole
-from cv_utils import ImageConvert, ImageDisplay
+# from cv_utils import ImageConvert, ImageDisplay
 from ai import ObjectDetector
-from controls import BulkUSB, Follower, Controller, ConsoleInput
+# from controls import BulkUSB, Follower, Controller, ConsoleInput
 
 
 DATA_DIR = '/mnt/ssd/test_data/'
