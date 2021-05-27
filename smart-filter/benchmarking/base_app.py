@@ -185,11 +185,12 @@ class Block:
     Task = Task
     processed = dropped = 0
     task_name = None
-    def __init__(self, *a, queue=10, block=None, max_processed=None, max_rate=None, wait_when_full=False, name=None, graph=None, **kw):
+    def __init__(self, *a, queue=10, block=None, max_processed=None, max_rate=None, wait_when_full=False, source_strategy=all, name=None, graph=None, **kw):
         self.max_queue = queue
         self.max_processed = max_processed
         self.wait_when_full = wait_when_full
         self.throttle = Throttler(max_rate)
+        self.src_strategy = source_strategy
 
         if block is None:
             block = self.Cls(*a, **kw)
@@ -248,7 +249,8 @@ class Block:
         self.inner_time = time.time()
 
     def process(self, *inputs):
-        return self.block.process(*inputs)
+        inputs, meta = convert_inputs(*inputs)
+        return self.block.process(*inputs, meta=meta)
     
     def finish(self):  # TODO: wait for queue items?
         print(self.name, 'finishing', flush=True)
@@ -257,7 +259,7 @@ class Block:
         self.outer_duration = time.time() - self.outer_time
 
     def poll(self):
-        if not all(not q.empty() for q in self.inputs):
+        if not self.src_strategy(not q.empty() for q in self.inputs):
             return False
 
         if self.throttle():
@@ -266,8 +268,10 @@ class Block:
         if self.wait_when_full and any(q.full() for q in self.output_customers):
             return True
 
-        inputs = [qi.get() for qi in self.inputs]
-        result = self.block.process(*inputs)
+        inputs = [qi.get(block=False) for qi in self.inputs]
+        result = self.process(*inputs)
+        if result is None:
+            return True
         for q in self.output_customers:
             if q.full():
                 q.get()
@@ -291,6 +295,20 @@ class Block:
     @classmethod
     def wrap_blocks(cls, *blocks):
         return BlocksModule(*blocks, cls=cls, Graph=cls.Graph, Task=cls.Task)
+
+
+def convert_buffer(result):
+    if result is None:
+        return None, {}
+    [x], meta = result
+    return x, meta
+
+
+def convert_inputs(*inputs):
+    xs = [convert_buffer(x) for x in inputs]
+    inputs, meta = tuple(zip(*xs)) or ((), ())
+    return inputs, reip.util.Meta(meta)
+
 
 
 class BlocksModule(dict):
@@ -338,9 +356,9 @@ def example(Block):
         def init(self):
             self.i = -1
 
-        def process(self):
+        def process(self, meta):
             self.i += 1
-            return self.i
+            return [self.i], {}
 
         def finish(self):
             b = self.__block__
@@ -350,17 +368,18 @@ def example(Block):
         def __init__(self, add):
             self.add = add
 
-        def process(self, x):
-            return x + self.add
+        def process(self, x, meta):
+            print(x)
+            return [x + self.add], {}
 
         def finish(self):
             b = self.__block__
             print(b.name, b.drain_inputs(), flush=True)
 
     class Print(CoreBlock):
-        def process(self, x):
+        def process(self, x, meta):
             print(x, flush=True)
-            return x
+            return [x], {}
 
         def finish(self):
             b = self.__block__
