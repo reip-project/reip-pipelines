@@ -51,8 +51,7 @@ class Graph:
         self.name = auto_name(self, name=name)
         graph = Graph.default
         if graph is not None:
-            graph.blocks.append(self)
-            self.task_name = graph.task_name
+            graph.add_block(self)
 
     def __enter__(self):
         Graph.default, self._previous = self, Graph.default
@@ -66,6 +65,31 @@ class Graph:
             ''.join('\n  '+x for x in str(b).splitlines())
             for b in self.blocks
         ))
+
+    def add_block(self, block):
+        self.blocks.append(block)
+        block.task_name = self.task_name
+
+    def get_block(self, name, require=True, match_graphs=False):
+        found = next((
+            b for b in self.iter_blocks(include_graphs=match_graphs) 
+            if b.name == name), None)
+        if require and found is None:
+            raise KeyError(name)
+        return found
+
+    def all_blocks(self):
+        return list(self.iter_blocks())
+
+    def iter_blocks(self, include_graphs=False):
+        for b in self.blocks:
+            get_nested = getattr(b, 'iter_blocks', None)
+            if get_nested is not None:
+                if include_graphs:
+                    yield b
+                yield from get_nested()
+            else:
+                yield b
 
     @property
     def running(self):
@@ -160,7 +184,8 @@ class Block:
     Graph = Graph
     Task = Task
     processed = dropped = 0
-    def __init__(self, *a, queue=10, block=None, max_processed=None, max_rate=None, wait_when_full=False, name=None, **kw):
+    task_name = None
+    def __init__(self, *a, queue=10, block=None, max_processed=None, max_rate=None, wait_when_full=False, name=None, graph=None, **kw):
         self.max_queue = queue
         self.max_processed = max_processed
         self.wait_when_full = wait_when_full
@@ -175,10 +200,10 @@ class Block:
         self.output_customers = []
 
         self.name = auto_name(self, name=name)
-        graph = Graph.default
-        if graph is not None:
-            graph.blocks.append(self)
-            self.task_name = graph.task_name
+        if graph is not False:
+            graph = graph or Graph.default
+            if graph is not None:
+                graph.add_block(self)
         self.log = reip.util.logging.getLogger(self, strrep='__repr__')
 
     def __repr__(self):
@@ -353,6 +378,8 @@ if __name__ == '__main__':
             B.BlockA(max_processed=10).to(B.Print())
         with B.Task():
             x1.to(B.BlockB(50)).to(B.Print())
+
+    assert g.get_block('print') is x1
 
     print(g)
     print(g.run())

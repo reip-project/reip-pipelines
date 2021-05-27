@@ -30,6 +30,8 @@ class Block(base_app.Block):
         if publish == 'file':
             self.output_customers.append(FileQueue())
         elif publish:
+            if publish is True:
+                publish = self.name
             self.output_customers.append(PublishQueue(publish))
 
 

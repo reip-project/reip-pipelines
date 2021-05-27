@@ -206,6 +206,27 @@ class Graph(BaseContext):
     def detached(cls, *blocks, **kw):
         return cls(*blocks, graph=None, **kw)
 
+    def get_block(self, name, require=True, match_graphs=False):
+        found = next((
+            b for b in self.iter_blocks(include_graphs=match_graphs) 
+            if b.name == name), None)
+        if require and found is None:
+            raise KeyError(name)
+        return found
+
+    def all_blocks(self):
+        return list(self.iter_blocks())
+
+    def iter_blocks(self, include_graphs=False):
+        for b in self.blocks:
+            get_nested = getattr(b, 'iter_blocks', None)
+            if get_nested is not None:
+                if include_graphs:
+                    yield b
+                yield from get_nested()
+            else:
+                yield b
+
     # run graph
 
     def run(self, duration=None, stats_interval=1, print_graph=True, **kw):
