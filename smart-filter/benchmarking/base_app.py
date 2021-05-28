@@ -3,6 +3,10 @@ import time
 import remoteobj
 import multiprocessing as mp
 import reip
+try:
+    from reip.util.meta2 import Meta
+except ImportError:
+    from reip.util.meta import Meta
 
 
 class BlockExit(SystemExit):
@@ -33,7 +37,7 @@ def run(worker, duration=None):
             if duration and time.time() - t0 >= duration:
                 break
             worker.poll()
-            time.sleep(worker.delay)
+            time.sleep(worker._delay)
     except BlockExit:
         print('Exiting...')
     except KeyboardInterrupt:
@@ -42,9 +46,34 @@ def run(worker, duration=None):
         worker.finish()
 
 
+class _QMix:
+    _qstr = 'Q'
+    def __repr__(self):
+        return '{}({}/{})'.format(self._qstr, len(self), self.maxsize)
+    def __len__(self):
+        return self.qsize()
+
+    def get(self, block=False, timeout=None):
+        try:
+            return super().get(block, timeout)
+        except queue.Empty:
+            if block:
+                raise
+            return None
+
+class Queue(_QMix, queue.Queue):
+    pass
+
+def mpQueue(*a, **kw):
+    q = mp.Queue(*a, **kw)
+    cls = q.__class__
+    q.__class__ = type('mpQueue', (_QMix, cls), {'_qstr': 'mQ', 'maxsize': q._maxsize})
+    return q
+
+
 class Graph:
     default = None
-    delay = 1e-5
+    _delay = 1e-5
     task_name = None
     def __init__(self, name=None, graph=None):
         self.blocks = []
@@ -63,6 +92,12 @@ class Graph:
     def __repr__(self):
         return '[{}{}]'.format(self.name, ''.join(
             ''.join('\n  '+x for x in str(b).splitlines())
+            for b in self.blocks
+        ))
+
+    def status(self):
+        return '[{}{}]'.format(self.name, ''.join(
+            ''.join('\n  '+x for x in str(b.status()).splitlines())
             for b in self.blocks
         ))
 
@@ -125,17 +160,32 @@ class Task(Graph):
         self.remote = remoteobj.Proxy(self)
         self.task_name = self.name
 
+    def __repr__(self):
+        if self.is_spawned:
+            return super().__repr__()
+        return self.remote.super.attrs_('__repr__')(_default=super().__repr__)
+
+    def status(self):
+        if self.is_spawned:
+            return super().status()
+        return self.remote.super.status(_default=super().status)
+
     def _task_run(self):
         self.is_spawned = True
-        try:
-            return self.run()
-        finally:
-            pass
+        with self.remote.listen_(bg=False):
+            try:
+                return self.run()
+            finally:
+                pass
 
     @property
     def running(self):
         if self.is_spawned:
             return super().running
+        return self._process is not None and self._process.is_alive()
+
+    @property
+    def proc_up(self):
         return self._process is not None and self._process.is_alive()
 
     def init(self):
@@ -152,6 +202,7 @@ class Task(Graph):
 
     def poll(self):
         if self.is_spawned:
+            self.remote.process_requests()
             doing_stuff = super().poll()
             if not doing_stuff and self._should_exit.is_set():
                 raise BlockExit()
@@ -175,6 +226,10 @@ class Task(Graph):
 
 
 class CoreBlock:
+    def __init__(self, **kw):
+        pass
+        #if kw:
+        #    print('got extra kw to', self.__class__.__name__, kw)
     def init(self): pass
     def process(self, *x, **kw): pass
     def finish(self): pass
@@ -185,7 +240,9 @@ class Block:
     Task = Task
     processed = dropped = 0
     task_name = None
-    def __init__(self, *a, queue=10, block=None, max_processed=None, max_rate=None, wait_when_full=False, source_strategy=all, name=None, graph=None, **kw):
+    _delay = 1e-5
+    duration = 0
+    def __init__(self, *a, queue=10, block=None, max_processed=None, max_rate=None, wait_when_full=False, source_strategy=all, name=None, graph=None, level='info', **kw):
         self.max_queue = queue
         self.max_processed = max_processed
         self.wait_when_full = wait_when_full
@@ -195,7 +252,7 @@ class Block:
         if block is None:
             block = self.Cls(*a, **kw)
         self.block = block
-        block.__block__ = self
+        block.__block__ = block._ = self
         self.inputs = []
         self.input_blocks = []
         self.output_customers = []
@@ -205,13 +262,13 @@ class Block:
             graph = graph or Graph.default
             if graph is not None:
                 graph.add_block(self)
-        self.log = reip.util.logging.getLogger(self, strrep='__repr__')
+        self.log = reip.util.logging.getLogger(self, level, strrep='__repr__')
 
     def __repr__(self):
-        return '[{:<12} [{}-{}] <{}> -{}]'.format(
+        return '[{:<12} [{}-{}] <{}> -{} i={} o={}]'.format(
             self.name, 
             len(self.inputs), len(self.output_customers),
-            self.processed, self.dropped)
+            self.processed, self.dropped, self.inputs, self.output_customers)
 
     def __call__(self, *inputs, throughput=None, strategy=None):
         self.input_blocks.extend(inputs)
@@ -223,9 +280,9 @@ class Block:
 
     def get_output(self, other):
         if self.task_name == other.task_name:
-            q = queue.Queue(self.max_queue)
+            q = Queue(self.max_queue)
         else:
-            q = mp.Queue(self.max_queue)
+            q = mpQueue(self.max_queue)
         self.output_customers.append(q)
         return q
 
@@ -241,7 +298,7 @@ class Block:
         self.dropped = 0
 
     def init(self):
-        print(self.name, 'initializing', flush=True)
+        self.log.info('initializing')
         self._reset()
         self.running = True
         self.outer_time = time.time()
@@ -249,34 +306,42 @@ class Block:
         self.inner_time = time.time()
 
     def process(self, *inputs):
+        if inputs and all(x is None for x in inputs):
+            return 
         inputs, meta = convert_inputs(*inputs)
         return self.block.process(*inputs, meta=meta)
     
     def finish(self):  # TODO: wait for queue items?
-        print(self.name, 'finishing', flush=True)
+        self.log.info('finishing')
         self.duration = time.time() - self.inner_time
         self.block.finish()
         self.outer_duration = time.time() - self.outer_time
 
     def poll(self):
         if not self.src_strategy(not q.empty() for q in self.inputs):
+            #self.log.debug('no sources available %s', self.inputs)
             return False
 
         if self.throttle():
+            #self.log.debug('throttling %d/%d', self.throttle.time_left, self.throttle.interval)
             return True
 
         if self.wait_when_full and any(q.full() for q in self.output_customers):
+            #self.log.debug('output full: %s', self.output_customers)
             return True
 
         inputs = [qi.get(block=False) for qi in self.inputs]
+        #self.log.debug('getting inputs: %s', inputs)
         result = self.process(*inputs)
+        #self.log.debug('got outputs: %s', result)
         if result is None:
             return True
         for q in self.output_customers:
             if q.full():
                 q.get()
                 self.dropped += 1
-                print('sample dropped due to full queue in', self.block, flush=True)
+                if self.dropped % 10 == 1:
+                    print(self.dropped, 'samples dropped due to full queue in', self, flush=True)
             q.put(result)
 
         self.processed += 1
@@ -290,11 +355,13 @@ class Block:
     def status(self):
         dt = self.duration
         return '[{} {} processed {} dropped. ran {:.3f}s. (avg: {:.5f} x/s)]'.format(
-            self.block.__class__.__name__, self.processed, self.dropped, dt, self.processed/dt)
+            self.block.__class__.__name__, self.processed, self.dropped, dt, self.processed/dt if dt else 0)
 
-    @classmethod
-    def wrap_blocks(cls, *blocks):
-        return BlocksModule(*blocks, cls=cls, Graph=cls.Graph, Task=cls.Task)
+
+def wrap_blocks(cls, *blocks):
+    return cls.Module(*blocks, cls=cls, Graph=cls.Graph, Task=cls.Task, Monitor=_monitor(cls))
+
+Block.wrap_blocks = classmethod(wrap_blocks)
 
 
 def convert_buffer(result):
@@ -307,19 +374,22 @@ def convert_buffer(result):
 def convert_inputs(*inputs):
     xs = [convert_buffer(x) for x in inputs]
     inputs, meta = tuple(zip(*xs)) or ((), ())
-    return inputs, reip.util.Meta(meta)
+    return inputs, Meta(inputs=meta)
 
 
 
-class BlocksModule(dict):
+class BaseBlocksModule(dict):
     def __init__(self, *blocks, cls=Block, **kw):
         self.cls = cls
         super().__init__()
         self.update(*blocks, **kw)
 
+    def _make_item(self, c, cls):
+        return c
+
     def update(self, *blocks, cls=None, **kw):
         cls = self.cls if cls is None else cls
-        super().update(((c.__name__, type(c.__name__, (cls,), {'Cls': c})) for c in blocks), **kw)
+        super().update(((c.__name__, self._make_item(c, cls)) for c in blocks), **kw)
         return self
 
     def __getattr__(self, k):
@@ -332,6 +402,14 @@ class BlocksModule(dict):
         return list(self)
 
 
+class BlocksModule(BaseBlocksModule):
+    def _make_item(self, c, cls):
+        return type(c.__name__, (cls,), {'Cls': c})
+
+
+Block.Module = BlocksModule
+
+
 class Throttler:
     t_last = None
     def __init__(self, max_rate=None):
@@ -342,13 +420,37 @@ class Throttler:
         return self
 
     def __call__(self):
+        interval = self.interval
+        if interval is None:
+            return False
         last = self.t_last
         now = time.time()
         if last is None or (self.interval and now - last > self.interval):
             self.t_last = now
-            return True
-        return False
+            return False
+        return True
 
+    @property
+    def elapsed(self):
+        last = self.t_last
+        return time.time() - last if last is not None else self.interval or 0
+
+    @property
+    def time_left(self):
+        return max(0, self.interval - self.elapsed) if self.interval else 0
+
+
+def _monitor(Block):
+    class Monitor(Block):
+        def __init__(self, obj, key='status', max_rate=1/5., **kw):
+            self.obj = obj
+            self.str = getattr(obj, key or '__str__')
+            super().__init__(max_rate=max_rate, n_inputs=0, n_outputs=0, **kw)
+            #self.block.process = self._process
+    
+        def process(self, *a, **kw):
+            print(self.str())
+    return Monitor
 
 
 def example(Block):
@@ -362,28 +464,28 @@ def example(Block):
 
         def finish(self):
             b = self.__block__
-            print(b.name, b.drain_inputs(), flush=True)
+            b.log.info(b.drain_inputs())
 
     class BlockB(CoreBlock):
         def __init__(self, add):
             self.add = add
 
         def process(self, x, meta):
-            print(x)
+            self._.log.info(x)
             return [x + self.add], {}
 
         def finish(self):
             b = self.__block__
-            print(b.name, b.drain_inputs(), flush=True)
+            b.log.info(b.drain_inputs())
 
     class Print(CoreBlock):
         def process(self, x, meta):
-            print(x, flush=True)
+            self._.log.info(x)
             return [x], {}
 
         def finish(self):
             b = self.__block__
-            print(b.name, b.drain_inputs(), flush=True)
+            b.log.info(b.drain_inputs())
 
     B = Block.wrap_blocks(BlockA, BlockB, Print)
     return B
@@ -397,6 +499,7 @@ if __name__ == '__main__':
             B.BlockA(max_processed=10).to(B.Print())
         with B.Task():
             x1.to(B.BlockB(50)).to(B.Print())
+        B.Monitor(g, None)
 
     assert g.get_block('print') is x1
 

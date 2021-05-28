@@ -25,6 +25,7 @@ class BlockAgent:
             return
         # print(2, self.block.__block__.name)
         inputs, meta = convert_inputs(*inputs)
+        print(meta)
         return self.block.process(*inputs, meta=meta)
 
     def finish(self):

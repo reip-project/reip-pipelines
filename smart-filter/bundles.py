@@ -52,7 +52,7 @@ class Bundle(reip.Block):
 
             if self.debug:
                 print("Bundle new_id = %d:" % self.bundle_id, self.shape, self.dtype, self.meta_only)
-
+        
         self.metas[self.buffer_id] = dict(meta)
 
         if not self.meta_only:

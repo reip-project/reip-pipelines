@@ -1,35 +1,41 @@
 import reip
 import base_app
 
-class Graph(reip.Graph):
-    def __init__(self, *a, name=None, **kw):
-        super().__init__(*a, name=base_app.auto_name(block, name=name), **kw)
+reip.Block.KW_TO_ATTRS = True
 
-class Task(reip.Task):
-    def __init__(self, *a, name=None, **kw):
-        super().__init__(*a, name=base_app.auto_name(block, name=name), **kw)
+
+class Graph(reip.Graph):
+    def __init__(self, name_=None, *a, name=None, **kw):
+        super().__init__(*a, name=base_app.auto_name(self, name=name_ or name), **kw)
+
+Task = reip.Task
+#class Task(reip.Task):
+#    def __init__(self, name_, *a, name=None, **kw):
+#        super().__init__(*a, name=base_app.auto_name(self, name=name_ or name), **kw)
+
 
 class Block(reip.Block):
-    Cls = base_app.CoreBlock
+    #Cls = base_app.CoreBlock
     Graph = Graph
     Task = Task
-    wrap_blocks = base_app.Block.wrap_blocks
+    wrap_blocks = classmethod(base_app.wrap_blocks)
+    Module = base_app.BaseBlocksModule
 
-    def __init__(self, block, **kw):
-        if block is None:
-            block = self.Cls(*a, **kw)
-        self.block = block
-        super().__init__(n_inputs=None, name='{}_{}'.format(block.__class__.__name__, id(self)), **kw)
-        block.__block__ = self
+    #def __init__(self, *a, block=None, **kw):
+    #    super().__init__(n_inputs=None, name='{}_{}'.format(block.__class__.__name__, id(self)), **kw)
+    #    if block is None:
+    #        block = self.Cls(**self.extra_k)
+    #    self.block = block
+    #    block.__block__ = self
 
-    def init(self):
-        self.block.init()
+    #def init(self):
+    #    self.block.init()
 
-    def process(self, *xs, meta):
-        return [self.block.process(*xs)], meta
+    #def process(self, *xs, meta):
+    #    return [self.block.process(*xs)], meta
 
-    def finish(self):
-        self.block.finish()
+    #def finish(self):
+    #    self.block.finish()
 
 
 if __name__ == '__main__':

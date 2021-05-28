@@ -1,11 +1,11 @@
 import os
-import cv2
 import time
 import numpy as np
 import matplotlib.pyplot as plt
 
 import reip
 import reip.blocks as B
+import traceback
 import sys
 sys.path.append('..')
 from numpy_io import NumpyWriter
@@ -15,6 +15,7 @@ from dummies import Generator, BlackHole
 # from cv_utils import ImageConvert, ImageDisplay
 # from controls import BulkUSB, Follower, Controller, ConsoleInput
 
+import base_app
 
 DATA_DIR = '/mnt/ssd/test_data/'
 datafile = lambda *f: os.path.join(DATA_DIR, *f)
@@ -23,27 +24,43 @@ datafile = lambda *f: os.path.join(DATA_DIR, *f)
 def get_blocks(*blocks):
     try:
         import ray_app
+        print(ray_app.Block)
         B_ray = ray_app.Block.wrap_blocks(*blocks)
     except ImportError:
+        traceback.print_exc()
         B_ray = None
     try:
         import reip_app
+        print(reip_app.Block)
         B_reip = reip_app.Block.wrap_blocks(*blocks)
+        print(B_reip)
+        print(B_reip.Generator.__mro__)
     except ImportError:
+        traceback.print_exc()
         B_reip = None
     try:
         import waggle_app
+        print(waggle_app.Block)
         B_waggle = waggle_app.Block.wrap_blocks(*blocks)
+        print(B_waggle)
     except ImportError:
+        traceback.print_exc()
         B_waggle = None
-    return B_ray, B_reip, B_waggle
+    try:
+        import basic_app
+        B_basic = basic_app.Block.wrap_blocks(*blocks)
+        print('basic:', B_basic)
+    except ImportError:
+        traceback.print_exc()
+        B_basic = None
+    return B_ray, B_reip, B_waggle, B_basic
 
 
 
 def define_graph_alt(
         B, sizeA=(720, 1280), sizeB=(2000, 2500),
         rate_divider=1, throughput='large', use_tasks=True,
-        gen_debug=None, bundle_debug=None, 
+        gen_debug=None, bundle_debug=True, 
         io_debug=None, bh_debug=None):
 
     Graph = B.Task if use_tasks else B.Graph
@@ -170,7 +187,7 @@ def define_graph(audio_length=10, rate=4, data_dir='./data', cam_2nd=True, throu
 try:
     from ai import ObjectDetector
     from usb_cam import UsbCamGStreamer
-    B_ray, B_reip, B_waggle = get_blocks(
+    B_ray, B_reip, B_waggle, B_basic = get_blocks(
         UsbCamGStreamer, ObjectDetector, Bundle, NumpyWriter, BlackHole, 
         B.audio.Mic, B.FastRebuffer, B.audio.AudioFile, B.audio.SPL, B.Csv)
 except ImportError:
@@ -178,22 +195,31 @@ except ImportError:
     traceback.print_exc()
     print('Continuing on with dummy graph...')
 
-    B_ray, B_reip, B_waggle = get_blocks(Generator, Bundle, NumpyWriter, BlackHole)
+    B_ray, B_reip, B_waggle, B_basic = get_blocks(Generator, Bundle, NumpyWriter, BlackHole)
     define_graph = define_graph_alt
+
+Bs = {'ray': B_ray, 'reip': B_reip, 'waggle': B_waggle, 'basic': B_basic}
 
 
 def run_graph(B, *a, duration=15, **kw):
     # a) single process
     with B.Graph() as g:
+        print(g.__class__.__module__)
         define_graph(B, *a, **kw)
-    g.run(duration=duration)
+        B.Monitor(g)
+    try:
+        g.run(duration=duration)
+    except KeyboardInterrupt:
+        print('interrupted.')
+        raise
+    finally:
+        print(g.status())
     return g
 
 
 
-def test(*a, duration=15, **kw):
-    run_graph(B_reip, *a, duration=15, **kw)
-    return g
+def test(module='reip', *a, duration=10, **kw):
+    g = run_graph(Bs[module], *a, duration=duration, **kw)
 
 
 SIZES = [
