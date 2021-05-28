@@ -92,7 +92,7 @@ class Block:
     # When max_rate is really low (e.g. fire once every 5 mins), if the block were to just sleep for 5 mins,
     # it would take up to 5 mins to realize that everything else is trying to shutdown.
     # So instead we sleep in shorter chunks so we can periodically check the state of the block.
-    __MAX_RATE_CHUNK = 0.4 # seconds - how long we should sleep for at a time. - TODO: what's the best value here?
+    __MAX_RATE_CHUNK = 0.6 # seconds - how long we should sleep for at a time. - TODO: what's the best value here?
 
     def __init__(self, n_inputs=1, n_outputs=1, queue=100, blocking=False, print_summary=True,
                  max_rate=None, min_interval=None, max_processed=None, max_generated=None, graph=None, name=None,
@@ -313,10 +313,16 @@ class Block:
             if self.done or self.error:
                 return True
 
-    def _main(self, _ready_flag=None, duration=None):
+    def _main(self, _ready_flag=None, _spawn_flag=None, duration=None):
         '''The main thread target function. Handles uncaught exceptions and
         generic Block context management.'''
+        if _spawn_flag is not None:
+            _spawn_flag.wait()
         try:
+            from pyinstrument import Profiler
+            profiler = Profiler()
+            profiler.start()
+
             self.started = True
             self.closed = False
             self.log.debug(text.blue('Starting...'))
@@ -335,11 +341,18 @@ class Block:
                 # propagate stream signals to sinks e.g. CLOSE
                 if self.__signal is not None:
                     self._send_sink_signal(self.__signal)
+                profiler.stop()
+                self.log.info(profiler.output_text(unicode=True, color=True))
             finally:
                 self.done = True
                 self.started = False
                 self.closed = True
                 self.log.debug(text.green('Done.'))
+
+    def _track_sleep(self, sleep):
+        self._sw.tick('sleep')
+        time.sleep(sleep)
+        self._sw.tock('sleep')
 
 
     def __main_run(self, _ready_flag=None, duration=None):
@@ -365,7 +378,9 @@ class Block:
             self.old_time = t_last = t0 = time.time()
             sleep_amt = 0
             while True:
-                time.sleep(self._delay)
+                self._track_sleep(self._delay)
+                #time.sleep(self._delay)
+                #self._sw.ticktock(self._delay, 'sleep')
                 if self.done or self.closed or self.terminated:
                     break
                 # max duration
@@ -374,28 +389,31 @@ class Block:
                     break
                 # throttle
                 if self.max_rate:
+                    self._sw.tick('sleep')
                     # NOTE: sleep in chunks so that if we have a really high
                     #       interval (e.g. run once per hour), then we don't
                     #       have to wait an hour to shut down
                     if not sleep_amt:
                         ti = time.time()
-                        sleep_amt = max(0, self.max_rate - (ti - t_last))
+                        sleep_amt = max(0, 1/self.max_rate - (ti - t_last))
                         t_last = ti
                     sleep_amt_prev, sleep_amt = sleep_amt, max(
                         0, sleep_amt - self.__MAX_RATE_CHUNK)
                     dt = sleep_amt_prev - sleep_amt
                     if dt:
                         time.sleep(dt)
+                    self._sw.tock('sleep')
                     if sleep_amt:
                         continue
                 # play pause
                 if not self.running:
                     continue
-                # check source availability
-                if not self.sources_available():
-                    continue
 
                 with self._sw('source'):
+                    # check source availability
+                    if not self.sources_available():
+                        continue
+
                     inputs = [s.get_nowait() for s in self.sources]
                     # check inputs
                     recv_close = False
@@ -420,13 +438,13 @@ class Block:
                 # process each input batch
                 with self._sw('process'), self._except('process'): #
                     # prepare inputs
-                    for func in self.input_modifiers:
-                        buffers, meta = func(*buffers, meta=meta)
+                    #for func in self.input_modifiers:
+                    #    buffers, meta = func(*buffers, meta=meta)
 
                     # process and get outputs
                     outputs = self.process(*buffers, meta=meta)
-                    for func in self.modifiers:
-                        outputs = func(outputs)
+                    #for func in self.modifiers:
+                    #    outputs = func(outputs)
 
                 # count the number of buffers received and processed
                 self.processed += 1
@@ -506,7 +524,7 @@ class Block:
 
     # Thread management
 
-    def spawn(self, wait=True, _controlling=True, _ready_flag=None):
+    def spawn(self, wait=True, _controlling=True, _ready_flag=None, _spawn_flag=None):
         '''Spawn the block thread'''
         try:
             self.controlling = _controlling
@@ -520,7 +538,7 @@ class Block:
                     s.spawn()
             self._reset_state()
             self.resume()
-            self._thread = remoteobj.util.thread(self._main, _ready_flag=_ready_flag, daemon_=True, raises_=False)
+            self._thread = remoteobj.util.thread(self._main, _ready_flag=_ready_flag, _spawn_flag=_spawn_flag, daemon_=True, raises_=False)
             # threading.Thread(target=self._main, kwargs={'_ready_flag': _ready_flag}, daemon=True)
             self._thread.start()
 

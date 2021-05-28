@@ -22,7 +22,9 @@ class Task(reip.Graph):
 
     # main run loop
 
-    def _run(self, duration=None, _controlling=True, _ready_flag=None):
+    def _run(self, duration=None, _controlling=True, _ready_flag=None, _spawn_flag=None):
+        if _spawn_flag is not None:
+            _spawn_flag.wait()
         self.log.debug(text.blue('Starting'))
         try:
             with self._except(raises=False), self.remote.listen_(bg=False):
@@ -55,13 +57,13 @@ class Task(reip.Graph):
 
 
     # process management
-    def spawn(self, wait=True, _controlling=True, _ready_flag=None):
+    def spawn(self, wait=True, _controlling=True, _ready_flag=None, _spawn_flag=None):
         if self._process is not None:  # only start once
             return
         self.controlling = _controlling
 
         self._reset_state()
-        self._process = remoteobj.util.process(self._run, _ready_flag=_ready_flag, _controlling=_controlling)
+        self._process = remoteobj.util.process(self._run, _ready_flag=_ready_flag, _spawn_flag=_spawn_flag, _controlling=_controlling)
         self._except = self._process.exc
         self._process.start()
 

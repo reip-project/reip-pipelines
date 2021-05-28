@@ -46,7 +46,7 @@ class _FileWrapper:
 
 
 
-def getLogger(block, level=DEFAULT_LEVEL, compact=True, propagate=False):
+def getLogger(block, level=DEFAULT_LEVEL, strrep=None, compact=True, propagate=False):
     is_block = block is not None and not isinstance(block, str)
     log = logging.getLogger(block.name if is_block else block or 'reip')
 
@@ -56,7 +56,7 @@ def getLogger(block, level=DEFAULT_LEVEL, compact=True, propagate=False):
 
     if is_block:
         log.addFilter(InjectData(dict(
-            block=StrRep(block, 'short_str' if compact else None)
+            block=StrRep(block, strrep if strrep else 'short_str' if compact else None)
         )))
     log.propagate = propagate
     log.setLevel(aslevel(DEFAULT_LEVEL if level is None else level))

@@ -189,6 +189,7 @@ class Debug(reip.Block):
 
     def _block_format(self, *xs, meta):
         data = [self._block_line_format(x) for x in xs]
+        meta = dict(meta)
 
         return (text.block_text if self._border else text.b_)(
             text.blue(self.message),
