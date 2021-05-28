@@ -73,7 +73,7 @@ def mpQueue(*a, **kw):
 
 class Graph:
     default = None
-    _delay = 1e-5
+    _delay = 1e-1
     task_name = None
     def __init__(self, name=None, graph=None):
         self.blocks = []
@@ -138,8 +138,10 @@ class Graph:
         did_something = False  # let blocks finish
         for block in self.blocks:
             if not block.running:
+                block.log.debug('not running')
                 continue
             did_something = block.poll() or did_something
+            time.sleep(self._delay)
         return did_something
 
     def finish(self):
@@ -242,7 +244,7 @@ class Block:
     task_name = None
     _delay = 1e-5
     duration = 0
-    def __init__(self, *a, queue=10, block=None, max_processed=None, max_rate=None, wait_when_full=False, source_strategy=all, name=None, graph=None, level='info', **kw):
+    def __init__(self, *a, queue=10, block=None, max_processed=None, max_rate=None, wait_when_full=False, source_strategy=all, name=None, graph=None, log_level='info', **kw):
         self.max_queue = queue
         self.max_processed = max_processed
         self.wait_when_full = wait_when_full
@@ -262,7 +264,7 @@ class Block:
             graph = graph or Graph.default
             if graph is not None:
                 graph.add_block(self)
-        self.log = reip.util.logging.getLogger(self, level, strrep='__repr__')
+        self.log = reip.util.logging.getLogger(self, log_level, strrep='__repr__')
 
     def __repr__(self):
         return '[{:<12} [{}-{}] <{}> -{} i={} o={}]'.format(
@@ -318,8 +320,9 @@ class Block:
         self.outer_duration = time.time() - self.outer_time
 
     def poll(self):
+        self.log.debug('poll')
         if not self.src_strategy(not q.empty() for q in self.inputs):
-            #self.log.debug('no sources available %s', self.inputs)
+            self.log.debug('no sources available %s', self.inputs)
             return False
 
         if self.throttle():
@@ -333,7 +336,7 @@ class Block:
         inputs = [qi.get(block=False) for qi in self.inputs]
         #self.log.debug('getting inputs: %s', inputs)
         result = self.process(*inputs)
-        #self.log.debug('got outputs: %s', result)
+        self.log.debug('got outputs: %s', type(result))
         if result is None:
             return True
         for q in self.output_customers:

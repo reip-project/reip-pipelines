@@ -60,27 +60,27 @@ def get_blocks(*blocks):
 def define_graph_alt(
         B, sizeA=(720, 1280), sizeB=(2000, 2500),
         rate_divider=1, throughput='large', use_tasks=True,
-        gen_debug=None, bundle_debug=True, 
+        gen_debug=None, bundle_debug=False, bundle_log=True,
         io_debug=None, bh_debug=None):
 
     Graph = B.Task if use_tasks else B.Graph
     with Graph("Basler"):
         basler = (
             B.Generator(name="Basler_Cam", size=sizeA, dtype=np.uint8, max_rate=120 // rate_divider, debug=gen_debug, queue=120*2)
-                .to(B.Bundle(name="Basler_Bundle", size=12, queue=10*2, debug=bundle_debug)))
+                .to(B.Bundle(name="Basler_Bundle", size=12, queue=10*2, debug=bundle_debug, log_level=bundle_log)))
 
     with Graph("Builtin"):
         builtin = (
             B.Generator(name="Builtin_Cam", size=sizeB, dtype=np.uint8, max_rate=30 // rate_divider, debug=gen_debug, queue=30*2)
-                .to(B.Bundle(name="Builtin_Bundle", size=3, queue=10*2, debug=bundle_debug)))#, strategy="skip", skip=3)
+                .to(B.Bundle(name="Builtin_Bundle", size=3, queue=10*2, debug=bundle_debug, log_level=bundle_log)))#, strategy="skip", skip=3)
 
     (basler
-        .to(B.Bundle(name="Basler_Write_Bundle", size=5, queue=5, debug=bundle_debug), throughput=throughput)
+        .to(B.Bundle(name="Basler_Write_Bundle", size=5, queue=5, debug=bundle_debug, log_level=bundle_log), throughput=throughput)
         .to(B.NumpyWriter(name="Basler_Writer", filename_template=datafile("basler_%d"), debug=io_debug))
         .to(B.BlackHole(name="Basler_Black_Hole", debug=bh_debug)))
 
     (builtin
-        .to(B.Bundle(name="Builtin_Write_Bundle", size=5, queue=5, debug=bundle_debug), throughput=throughput)
+        .to(B.Bundle(name="Builtin_Write_Bundle", size=5, queue=5, debug=bundle_debug, log_level=bundle_log), throughput=throughput)
         .to(B.NumpyWriter(name="Builtin_Writer", filename_template=datafile("builtin_%d"), debug=io_debug))
         .to(B.BlackHole(name="Builtin_Black_Hole", debug=bh_debug)))
 
