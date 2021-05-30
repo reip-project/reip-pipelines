@@ -54,8 +54,9 @@ def sonyc(test=True, status_period=20):
     #######################################################
 
     # audio source, 1 second and 10 second chunks
-    audio1s = B.audio.Mic(block_duration=1, channels=1, device="hw:1,0", dtype=np.int32)#.to(B.Debug('audio pcm'))
-    audio10s = audio1s.to(B.GatedRebuffer(functools.partial(B.temporal_coverage, 10), duration=10))
+    audio1s = B.audio.Mic(block_duration=1, channels=1, device="hw:2,0", dtype=np.int32)#.to(B.Debug('audio pcm'))
+    # audio10s = audio1s.to(B.GatedRebuffer(functools.partial(B.temporal_coverage, 10), duration=10))
+    audio10s = audio1s.to(B.FastRebuffer(size=10))
 
     # audio(10s) -> wav file -> encrypted -> tar.gz
     # encrypted = (

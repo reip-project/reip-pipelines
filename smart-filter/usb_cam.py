@@ -99,7 +99,7 @@ class UsbCamGStreamer(BundleCam):
             f.set_property("location", self.fname)
             f.set_property("post-messages", True)
             f.set_property("next-file", 4)  # Use max-file-size property
-            f.set_property("max-file-size", self.max_size * 1e+6)
+            f.set_property("max-file-size", int(self.max_size * 1e+6))
             # Duration limit doesn't work for some reason
             # f.set_property("next-file", 5)  # Use max-file-duration property
             # f.set_property("max-file-duration", self.max_duration * 1e+9)
@@ -140,13 +140,13 @@ class UsbCamGStreamer(BundleCam):
             # g.src.set_property("num-buffers", 150)
             # print("\n\tname", g.src.get_property("device-name"))
 
-            q.set_property("max-size-buffers", 5)
+            q.set_property("max-size-buffers", 3)
             q.set_property("leaky", "no")
             q.connect("overrun", self.overrun, q)
 
             s.set_property("emit-signals", True)  # eos is not processed otherwise
-            s.set_property("max-buffers", 10)  # protection from memory overflow
-            s.set_property("drop", True)  # if python is too slow with pulling the samples
+            s.set_property("max-buffers", 1)  # protection from memory overflow
+            s.set_property("drop", False)  # if python is too slow with pulling the samples
             s.connect("new-sample", self.new_sample, s)
 
             g.link()
@@ -168,7 +168,7 @@ class UsbCamGStreamer(BundleCam):
         self.new_filename = "?"
 
         if self.debug and self.verbose:
-            print("Filename_%d:" % self.tot_filenames, self.new_filename, time.time() - self.t0)
+            print("Filename_%d:" % self.dev, self.tot_filenames, self.new_filename, time.time() - self.t0)
 
         return Gst.FlowReturn.OK
 
@@ -178,7 +178,7 @@ class UsbCamGStreamer(BundleCam):
         self.tot_samples += 1
 
         if self.debug and self.verbose:
-            print("Samples_0:", self.tot_samples, time.time() - self.t0)
+            print("Sample_%d:" % self.dev, self.tot_samples, time.time() - self.t0)
 
         return Gst.FlowReturn.OK
 
@@ -187,7 +187,7 @@ class UsbCamGStreamer(BundleCam):
         self.tot_overrun += 1
 
         if self.debug:
-            print("\nOverrun_0:", self.tot_overrun, time.time() - self.t0)
+            print("\nOverrun_%d:" % self.dev, self.tot_overrun, time.time() - self.t0)
 
         return Gst.FlowReturn.OK
 
@@ -207,10 +207,10 @@ class UsbCamGStreamer(BundleCam):
 
         if sample:
             self.count += 1
-            img, gt, fmt = GStreamer.unpack_sample(sample, debug=self.debug)
+            img, gt, fmt = GStreamer.unpack_sample(sample, debug=self.verbose)
 
             if self.debug and self.verbose:
-                print("Pulled_ 0:", self.count, gt / 1.e+9, "at", time.time() - self.t0)
+                print("Pulled_%d:" % self.dev, self.count, gt / 1.e+9, "at", time.time() - self.t0)
 
             w, h, ch, fmt = fmt
             assert(fmt == "I420")
@@ -244,8 +244,8 @@ class UsbCamGStreamer(BundleCam):
         if self.gst and self.gst_started:
             self.gst.stop(timeout=3)
 
-        if self.debug:
-            print("tot_samples", self.tot_samples, "tot_overrun", self.tot_overrun)
+        if self.debug or True:
+            print("\nCamera_%d:\n\tPulled - %d, Lost - %d" % (self.dev, self.tot_samples, self.tot_overrun))
 
         super().finish()
 
