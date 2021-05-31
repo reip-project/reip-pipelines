@@ -120,7 +120,7 @@ class GStreamer:
         self._bus_thread.start()
 
         if self._debug:
-            print("\n\tStarted pipeline\n")
+            print("\n\tStarted pipeline")
 
     def pause(self):
         self.check_ready(required=True)
@@ -145,7 +145,7 @@ class GStreamer:
     def eos(self):
         self._pipeline.send_event(Gst.Event.new_eos())
         if self._debug:
-            print("\tInserted EOS")
+            print("\n\tInserted EOS")
 
     # timeout = -1 - no timeout
     def stop(self, wait=True, timeout=0.1):
@@ -158,7 +158,7 @@ class GStreamer:
             t0 = time.time()
             while not self._done:
                 if time.time() - t0 > timeout and timeout >= 0:
-                    print("\tWait timeout")
+                    print("\n\tWait timeout")
                     break
                 time.sleep(1e-3)
 
@@ -169,7 +169,7 @@ class GStreamer:
 
     def _bus_loop(self):
         if self._debug:
-            print("\tEnter bus loop")
+            print("\n\tEnter bus loop")
 
         while not self._terminate:
             try:
@@ -186,7 +186,7 @@ class GStreamer:
                 break
 
         if self._debug:
-            print("\tExit bus loop")
+            print("\n\tExit bus loop")
 
     def process_messages(self, all=True):
         if self._bus:
@@ -199,7 +199,7 @@ class GStreamer:
                         raise RuntimeError("Error received from element %s: %s\nDebugging information:%s" % (message.src.get_name(), err, debug))
                     elif t == Gst.MessageType.EOS:
                         if self._debug:
-                            print("\n\tEnd-Of-Stream reached\n")
+                            print("\n\tEnd-Of-Stream reached")
                         self._pipeline.set_state(Gst.State.NULL)
                         time.sleep(1e-3)  # Bus stops receiving messages after EOS for some reason
                         self._done = True
@@ -214,10 +214,12 @@ class GStreamer:
                             #     self._done = True
                     elif t == Gst.MessageType.ELEMENT:
                         el_name = message.src.get_name()
-                        print("\tMessage from %s:" % el_name, message)
+                        # if self._debug:
+                        #     print("\tMessage from %s:" % el_name, message)
                         if el_name == "multifilesink0":
                             self.multifilesink_index = message.src.get_property("index")
-                            print("\tNew file index:", self.multifilesink_index)
+                            if self._debug:
+                                print("\n\tNew file index:", self.multifilesink_index)
                             # print("\t", message.src.get_property("next-file"),
                             #     message.src.get_property("max-file-size"), message.src.get_property("max-file-duration"))
                     else:

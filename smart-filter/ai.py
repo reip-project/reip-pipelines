@@ -22,7 +22,7 @@ import cv2
 # from trt_pose.draw_objects import DrawObjects
 # from trt_pose.parse_objects import ParseObjects
 
-print(cv2.__version__)
+# print(cv2.__version__)
 
 
 class ObjectDetector(reip.Block):
@@ -52,7 +52,7 @@ class ObjectDetector(reip.Block):
 
         with open(self.labels_dir + "/ssd_coco_labels.txt", "r") as f:
             self.labels = [line.strip() for line in f.readlines()]
-            if self.debug or True:
+            if self.verbose:
                 print("ObjectDetector Labels:", self.labels)
 
         self.net = jetson.inference.detectNet(self.model, threshold=self.thr)
@@ -123,14 +123,13 @@ class ObjectDetector(reip.Block):
                 self.cuda_in[sel] = None
 
         if self.cuda_in[sel] is None:
-            if self.debug:
-                print("ObjectDetector: Allocating buffers")
-
             with self.inner_sw("allocate"):
-                print(w, h, pixel_format)
+                # print(w, h, pixel_format)
                 self.cuda_in[sel] = jetson.utils.cudaAllocMapped(width=w, height=h, format=pixel_format)
                 self.np_in[sel] = jetson.utils.cudaToNumpy(self.cuda_in[sel])
-                print(self.cuda_in[sel], self.np_in[sel])
+                if self.debug:
+                    print("\nObjectDetector: Allocating buffers")
+                    print(self.cuda_in[sel])
 
                 self.cuda_det[sel] = jetson.utils.cudaAllocMapped(width=w, height=h, format="rgb8")
                 self.np_det[sel] = jetson.utils.cudaToNumpy(self.cuda_det[sel])
@@ -189,7 +188,7 @@ class ObjectDetector(reip.Block):
 
     def finish(self):
         if self.debug or True:
-            print("\nObjectDetector inner stats:\n" + str(self.inner_sw), "\n")
+            print("\nObjectDetector inner stats:\n" + str(self.inner_sw))
 
 
 # class PoseDetector(reip.Block):

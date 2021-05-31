@@ -18,57 +18,92 @@ from direct_io import DirectWriter, DirectReader
 from bundles import Bundle
 from usb_cam import UsbCamGStreamer
 from dummies import Generator, BlackHole
-from cv_utils import ImageConvert, ImageDisplay
+from cv_utils import ImageConvert, ImageDisplay, ImageWriter
 from ai import ObjectDetector
+from motion import MotionDetector
 from controls import BulkUSB, Follower, Controller, ConsoleInput
 
-DATA_DIR = './data'
+# DATA_DIR = './data'
+DATA_DIR = '/mnt/ssd/data'
 MODEL_DIR = './models'
 
 
-def mono():
+def mono_object():
+    with reip.Task("Cam"):
+        cam = UsbCamGStreamer(name="Cam", filename=DATA_DIR + "/video/%d_{time}.avi", dev=0,
+                              bundle=None, rate=15, debug=False, verbose=False)
+
+    with reip.Task("Det"):
+        det = ObjectDetector(name="Detector", labels_dir=MODEL_DIR, max_rate=None, thr=0.1, model = "ssd-mobilenet-v2",
+                            draw=True, cuda_out=False, zero_copy=False, debug=True, verbose=False)
+
+    cam.to(det, throughput='large', strategy="latest")
+
+    det.to(ImageWriter(name="Writer", path=DATA_DIR + "/objects/"), throughput='large').to(BlackHole(name="Writer_BH"))
+
+    # det.to(ImageDisplay(name="Display"), throughput='large', strategy="latest").to(BlackHole(name="Display_BH"))
+
+
+def mono_motion():
     with reip.Task("Cam"):
         cam = UsbCamGStreamer(name="Cam", filename=DATA_DIR + "/video/%d_{time}.avi", dev=1,
-                              bundle=None, rate=5, debug=True, verbose=False)
-        cam.to(BlackHole(name="Black_Hole_Cam"))
+                              bundle=None, rate=15, debug=False, verbose=False)
 
-    # with reip.Task("Det"):
-    #     det = ObjectDetector(name="Detector", labels_dir=MODEL_DIR, max_rate=None, thr=0.1,
-    #                         draw=False, cuda_out=False, zero_copy=False, debug=True, verbose=False)
-    #     det.model = "ssd-mobilenet-v2"
+    with reip.Task("Det"):
+        det = MotionDetector(name="Detector", do_hist=True, debug=True, verbose=False)
 
-    # bh_det = BlackHole(name="Black_Hole_Detector")
-    # det_gr = Bundle(name="Detection_Bundle", size=10, meta_only=True)
-    # det_wr = NumpyWriter(name="Detection_Writer", filename_template=DATA_DIR + "/det/detections_%d")
+    cam.to(det, throughput='large', strategy="latest")
 
-    # cam.to(det, throughput='large', strategy="latest")
-    # det.to(det_gr).to(det_wr).to(bh_det)
+    det.to(ImageWriter(name="Writer", path=DATA_DIR + "/motion/", make_bgr=False), throughput='large').to(BlackHole(name="Writer_BH"))
 
-    # bh_disp = BlackHole(name="Black_Hole_Display")
-    # disp = ImageDisplay(name="Display", make_bgr=True)
-    # det.to(disp, throughput='large', strategy="latest").to(bh_disp)
+    # det.to(ImageDisplay(name="Display", make_bgr=False), throughput='large', strategy="latest").to(BlackHole(name="Display_BH"))
+
+
+def mono_both():
+    # with reip.Task("Cam"):
+    cam = UsbCamGStreamer(name="Cam", filename=DATA_DIR + "/video/%d_{time}.avi", dev=0,
+                            bundle=None, rate=15, debug=False, verbose=False)
+
+    # with reip.Task("Det_Objects"):
+    det = ObjectDetector(name="Objects_Detector", labels_dir=MODEL_DIR, max_rate=None, thr=0.1, model = "ssd-mobilenet-v2",
+                        draw=True, cuda_out=False, zero_copy=False, debug=True, verbose=False)
+
+    cam.to(det, throughput='large', strategy="latest")
+
+    det.to(ImageWriter(name="Objects_Writer", path=DATA_DIR + "/objects/"), throughput='large').to(BlackHole(name="Objects_Writer_BH"))
+
+    # det.to(ImageDisplay(name="Objects_Display"), throughput='large', strategy="latest").to(BlackHole(name="Objects_Display_BH"))
+
+    # with reip.Task("Det_Motion"):
+    det = MotionDetector(name="Motion_Detector", do_hist=True, debug=True, verbose=False)
+
+    cam.to(det, throughput='large', strategy="latest")
+
+    det.to(ImageWriter(name="Motion_Writer", path=DATA_DIR + "/motion/", make_bgr=False), throughput='large').to(BlackHole(name="Motion_Writer_BH"))
+
+    # det.to(ImageDisplay(name="Motion_Display", make_bgr=False), throughput='large', strategy="latest").to(BlackHole(name="Motion_Display_BH"))
 
 
 def stereo():
-    with reip.Task("Cam_Task_0"):
-        cam_0 = UsbCamGStreamer(name="Cam_0", filename=DATA_DIR + "/video/%d_{time}.avi", dev=0,
+    # with reip.Task("Cam_Task_0"):
+    cam_0 = UsbCamGStreamer(name="Cam_0", filename=DATA_DIR + "/video/%d_{time}.avi", dev=0,
                               bundle=None, rate=6, debug=True, verbose=False)
 
-    with reip.Task("Cam_Task_1"):
-        cam_1 = UsbCamGStreamer(name="Cam_1", filename=DATA_DIR + "/video/%d_{time}.avi", dev=1,
+    # with reip.Task("Cam_Task_1"):
+    cam_1 = UsbCamGStreamer(name="Cam_1", filename=DATA_DIR + "/video/%d_{time}.avi", dev=1,
                               bundle=None, rate=6, debug=True, verbose=False)
 
-    with reip.Task("Detector_Task"):
-        det = ObjectDetector(name="Detector", n_inputs=2, labels_dir=MODEL_DIR, max_rate=None, thr=0.1,
-                            draw=False, cuda_out=False, zero_copy=False, debug=True, verbose=False)
-        det.model = "ssd-mobilenet-v2"
+    # with reip.Task("Detector_Task"):
+    det = ObjectDetector(name="Detector", n_inputs=2, labels_dir=MODEL_DIR, max_rate=None, thr=0.1,
+                        draw=False, cuda_out=False, zero_copy=False, debug=True, verbose=False)
+    det.model = "ssd-mobilenet-v2"
 
-        cam_0.to(det, throughput='large', strategy="latest", index=0)
-        cam_1.to(det, throughput='large', strategy="latest", index=1)
+    cam_0.to(det, throughput='large', strategy="latest", index=0)
+    cam_1.to(det, throughput='large', strategy="latest", index=1)
 
-        det_gr = Bundle(name="Detection_Bundle", size=10, meta_only=True)
-        det_wr = NumpyWriter(name="Detection_Writer", filename_template=DATA_DIR + "/det/detections_%d")
-        det.to(det_gr).to(det_wr).to(BlackHole(name="Black_Hole_Detector"))
+    det_gr = Bundle(name="Detection_Bundle", size=10, meta_only=True)
+    det_wr = NumpyWriter(name="Detection_Writer", filename_template=DATA_DIR + "/det/detections_%d")
+    det.to(det_gr).to(det_wr).to(BlackHole(name="Black_Hole_Detector"))
 
     # bh_disp = BlackHole(name="Black_Hole_Display")
     # disp = ImageDisplay(name="Display", make_bgr=True)
@@ -156,10 +191,13 @@ if __name__ == '__main__':
     # If camera got stcuk and does not open, run:
     # sudo service nvargus-daemon restart
 
-    # mono()
+    # mono_object()
+    # mono_motion()
+    mono_both()
+
     # stereo()
     # audio()
-    all()
+    # all()
 
-    reip.default_graph().run(duration=None, stats_interval=2)
+    reip.default_graph().run(duration=60, stats_interval=2)
 
