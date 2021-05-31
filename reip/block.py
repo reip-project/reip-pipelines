@@ -282,6 +282,11 @@ class Block:
         '''The main thread target function. Handles uncaught exceptions and
         generic Block context management.'''
         try:
+            from pyinstrument import Profiler
+
+            profiler = Profiler()
+            profiler.start()
+            
             self.started = True
             self.closed = False
             self.log.debug(text.blue('Starting...'))
@@ -305,6 +310,8 @@ class Block:
                 # propagate stream signals to sinks e.g. CLOSE
                 if self._stream.signal is not None:
                     self._send_sink_signal(self._stream.signal)
+                profiler.stop()
+                self.log.info(profiler.output_text(unicode=True, color=True))
             finally:
                 self.done = True
                 self.started = False

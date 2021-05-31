@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 
 import reip
 import reip.blocks as B
+import reip.blocks.audio
 import traceback
 import sys
 sys.path.append('..')
@@ -19,6 +20,12 @@ import base_app
 
 DATA_DIR = '/mnt/ssd/test_data/'
 datafile = lambda *f: os.path.join(DATA_DIR, *f)
+
+
+reip.Graph._delay = 1e-1
+reip.Task._delay = 2e-1
+reip.Block.USE_META_CLASS = True
+reip.Block.KW_TO_ATTRS = True
 
 
 def get_blocks(*blocks):
@@ -47,13 +54,13 @@ def get_blocks(*blocks):
         traceback.print_exc()
         B_waggle = None
     try:
-        import basic_app
-        B_basic = basic_app.Block.wrap_blocks(*blocks)
-        print('basic:', B_basic)
+        import base_app
+        B_base = base_app.Block.wrap_blocks(*blocks)
+        print('basic:', B_base)
     except ImportError:
         traceback.print_exc()
-        B_basic = None
-    return B_ray, B_reip, B_waggle, B_basic
+        B_base = None
+    return B_ray, B_reip, B_waggle, B_base
 
 
 
@@ -61,18 +68,18 @@ def define_graph_alt(
         B, sizeA=(720, 1280), sizeB=(2000, 2500),
         rate_divider=1, throughput='large', use_tasks=True,
         gen_debug=None, bundle_debug=False, bundle_log=True,
-        io_debug=None, bh_debug=None):
+        io_debug=None, bh_debug=None, include_audio=True):
 
     Graph = B.Task if use_tasks else B.Graph
     with Graph("Basler"):
         basler = (
             B.Generator(name="Basler_Cam", size=sizeA, dtype=np.uint8, max_rate=120 // rate_divider, debug=gen_debug, queue=120*2)
-                .to(B.Bundle(name="Basler_Bundle", size=12, queue=10*2, debug=bundle_debug, log_level=bundle_log)))
+                .to(B.Bundle(name="Basler_Bundle", size=12, queue=10*2, debug=bundle_debug)))#, log_level=bundle_log
 
     with Graph("Builtin"):
         builtin = (
             B.Generator(name="Builtin_Cam", size=sizeB, dtype=np.uint8, max_rate=30 // rate_divider, debug=gen_debug, queue=30*2)
-                .to(B.Bundle(name="Builtin_Bundle", size=3, queue=10*2, debug=bundle_debug, log_level=bundle_log)))#, strategy="skip", skip=3)
+                .to(B.Bundle(name="Builtin_Bundle", size=3, queue=10*2, debug=bundle_debug)))#, strategy="skip", skip=3)#, log_level=bundle_log
 
     (basler
         .to(B.Bundle(name="Basler_Write_Bundle", size=5, queue=5, debug=bundle_debug, log_level=bundle_log), throughput=throughput)
@@ -83,6 +90,38 @@ def define_graph_alt(
         .to(B.Bundle(name="Builtin_Write_Bundle", size=5, queue=5, debug=bundle_debug, log_level=bundle_log), throughput=throughput)
         .to(B.NumpyWriter(name="Builtin_Writer", filename_template=datafile("builtin_%d"), debug=io_debug))
         .to(B.BlackHole(name="Builtin_Black_Hole", debug=bh_debug)))
+
+    if include_audio:
+        define_graph_alt2(B, throughput=throughput)
+
+
+def define_graph_alt2(B, audio_length=10, rate=4, data_dir='./data', cam_2nd=True, throughput='large'):
+    timestamp = time.time()
+
+    os.makedirs(data_dir, exist_ok=True)
+    cam_fname = os.path.join(data_dir, "video/%d_{}.avi".format(timestamp))
+    det_fname = os.path.join(data_dir, "det/{}_%d".format(timestamp))
+    spl_fname = os.path.join(data_dir, 'spl/{time}.csv')
+    aud_fname = os.path.join(data_dir, 'audio/{time}.wav')
+
+    _kw = dict(log_level='debug')
+    with B.Task('mic-task'):
+        audio1s = B.Mic(
+            name="mic", block_duration=1, channels=16,
+            device="hw:2,0", dtype=np.int32)#.to(B.Debug('1s', _kw=_kw))
+        audio_ns = audio1s.to(B.FastRebuffer(size=audio_length))
+
+    with B.Task("audio-write-task"):
+        (audio_ns
+            .to(B.AudioFile(aud_fname), throughput=throughput)#.to(B.Debug('audfile', _kw=_kw))
+            .to(B.BlackHole(name="audio-bh")))
+
+    with B.Task("spl-task"):
+        weights = 'ZAC'
+        spl = audio1s.to(B.SPL(name="spl", calibration=72.54, weighting=weights), throughput=throughput)#.to(B.Debug('spl', _kw=_kw))
+        (spl.to(B.Csv(spl_fname, headers=[f'l{w}eq' for w in weights.lower()], max_rows=10))
+            .to(B.BlackHole(name="spl-bh")))
+#define_graph_alt = define_graph_alt2
 
 
 # def define_graph(B, use_tasks=True, throughput='large'):
@@ -169,7 +208,7 @@ def define_graph(audio_length=10, rate=4, data_dir='./data', cam_2nd=True, throu
         audio1s = B.audio.Mic(
             name="mic", block_duration=1, channels=16, 
             device="hw:2,0", dtype=np.int32)
-        audio_ns = audio1s.to(B.FastRebuffer(size=audio_length))
+        audio_ns = audio1s.to(B.FastRebuffer(size=audio_length)).to(B.Debug('audio 10s'))
 
     with reip.Task("audio-write-task"):
         (audio_ns
@@ -187,7 +226,7 @@ def define_graph(audio_length=10, rate=4, data_dir='./data', cam_2nd=True, throu
 try:
     from ai import ObjectDetector
     from usb_cam import UsbCamGStreamer
-    B_ray, B_reip, B_waggle, B_basic = get_blocks(
+    B_ray, B_reip, B_waggle, B_base = get_blocks(
         UsbCamGStreamer, ObjectDetector, Bundle, NumpyWriter, BlackHole, 
         B.audio.Mic, B.FastRebuffer, B.audio.AudioFile, B.audio.SPL, B.Csv)
 except ImportError:
@@ -195,10 +234,12 @@ except ImportError:
     traceback.print_exc()
     print('Continuing on with dummy graph...')
 
-    B_ray, B_reip, B_waggle, B_basic = get_blocks(Generator, Bundle, NumpyWriter, BlackHole)
+    B_ray, B_reip, B_waggle, B_base = get_blocks(
+            Generator, Bundle, NumpyWriter, BlackHole,
+            B.audio.Mic, B.FastRebuffer, B.audio.AudioFile, B.audio.SPL, B.Csv, B.Debug)
     define_graph = define_graph_alt
 
-Bs = {'ray': B_ray, 'reip': B_reip, 'waggle': B_waggle, 'basic': B_basic}
+Bs = {'ray': B_ray, 'reip': B_reip, 'waggle': B_waggle, 'base': B_base}
 
 
 def run_graph(B, *a, duration=15, **kw):

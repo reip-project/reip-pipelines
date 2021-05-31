@@ -18,10 +18,16 @@ class PublishQueue:
     def put(self, x):
         plugin.publish(self.key, x)
 
+    def get(self, **kw):
+        return
+
 
 class FileQueue(PublishQueue):
     def put(self, x):
         plugin.upload_file(x)
+
+    def get(self, **kw):
+        return
 
 
 class Block(base_app.Block):
