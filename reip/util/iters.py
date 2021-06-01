@@ -93,6 +93,65 @@ def limit(it, n=None):
         yield x
 
 
+
+
+class HitThrottle:
+    '''Control the execution timing inside a loop.
+
+    The Idea:
+        t0 = time.time()
+        th_a = HitThrottle(3)
+        th_b = HitThrottle(5)
+        while True:
+            if th_a:
+                print('a', time.time() - t0)  # 3.000, 6.000, ...
+            if th_b:
+                print('b', time.time() - t0)  # 5.000, 10.000, ...
+            time.sleep(1e-3)
+        
+    '''
+    t0 = 0
+    def __init__(self, interval, fire=True, smudge=0.00001):
+        self.interval = interval
+        self.smudge = smudge
+        self.fire = fire
+
+    def __repr__(self):
+        return '<hit-throttle({}s/{}s)>'.format(self.elapsed, self.interval)
+
+    def clear(self):
+        self.t0 = 0
+        return True
+
+    def __bool__(self):
+        '''Whether or not we are throttling. The sign convention is determined by self.fire.'''
+        interval = self.interval
+        if not interval:
+            return self.fire
+
+        now = time.time()
+        last = self.t0
+        if not last or now - last + self.smudge > interval:
+            self.t0 = now
+            return self.fire
+        return not self.fire
+        
+    @property
+    def elapsed(self):
+        '''The time since last hit.'''
+        t0 = self.t0
+        return time.time() - t0 if t0 else 0
+        
+    @property
+    def remaining(self):
+        '''The amount of time before the next hit.'''
+        interval = self.interval
+        return max(0, interval - self.elapsed) if interval and self.t0 else 0
+
+
+
+
+
 def peakiter(it, n=1):
     '''Check the value first n items of an iterator without unloading them from
     the iterator queue.'''

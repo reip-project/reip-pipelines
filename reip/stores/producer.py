@@ -67,6 +67,8 @@ class Producer(reip.Sink):
 
     def _put(self, buffer):
         '''Send data to stores.'''
+        if not self.readers:  # don't add to a sink without any customers
+            return
         data, meta = buffer
         meta = {} if meta is None else meta
         for store in self.stores.values():

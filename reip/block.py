@@ -88,6 +88,8 @@ class Block:
     generated = 0
     controlling = False
     max_rate = None
+    run_profiler = False
+    timeout = 10
 
     # When max_rate is really low (e.g. fire once every 5 mins), if the block were to just sleep for 5 mins,
     # it would take up to 5 mins to realize that everything else is trying to shutdown.
@@ -97,7 +99,7 @@ class Block:
     def __init__(self, n_inputs=1, n_outputs=1, queue=100, blocking=False, print_summary=True,
                  max_rate=None, min_interval=None, max_processed=None, max_generated=None, graph=None, name=None,
                  source_strategy=all, extra_kw=None, kw_to_attrs=None, extra_meta=None, log_level=None,
-                 handlers=None, modifiers=None, input_modifiers=None, **kw):
+                 handlers=None, modifiers=None, input_modifiers=None, run_profiler=None, **kw):
         self._except = remoteobj.LocalExcept(raises=True)
         self.name = reip.auto_name(self, name=name)
         self.parent_id, self.task_id = reip.Graph.register_instance(self, graph)
@@ -121,6 +123,7 @@ class Block:
         # sent to a sink
         self.modifiers = reip.util.as_list(modifiers or [])
         self.input_modifiers = reip.util.as_list(input_modifiers or [])
+        self.run_profiler = run_profiler if run_profiler is not None else self.run_profiler
 
         if min_interval and max_rate:
             warnings.warn((
@@ -319,12 +322,13 @@ class Block:
         if _spawn_flag is not None:
             _spawn_flag.wait()
         try:
-            from pyinstrument import Profiler
-            profiler = Profiler()
-            profiler.start()
+            if self.run_profiler:
+                from pyinstrument import Profiler
+                profiler = Profiler()
+                profiler.start()
 
             self.started = True
-            self.closed = False
+            #self.closed = False
             self.log.debug(text.blue('Starting...'))
             time.sleep(self._delay)
 
@@ -341,8 +345,9 @@ class Block:
                 # propagate stream signals to sinks e.g. CLOSE
                 if self.__signal is not None:
                     self._send_sink_signal(self.__signal)
-                profiler.stop()
-                self.log.info(profiler.output_text(unicode=True, color=True))
+                if self.run_profiler:
+                    profiler.stop()
+                    self.log.info(profiler.output_text(unicode=True, color=True))
             finally:
                 self.done = True
                 self.started = False
@@ -365,8 +370,8 @@ class Block:
             # block initialization
             with self._sw('init'): #, self._except('init')
                 self.init()
-            self.terminated = False
-            self.closed = False
+            #self.terminated = False
+            #self.closed = False
             self.ready = True
             self.log.debug(text.green('Ready.'))
 
@@ -586,10 +591,10 @@ class Block:
         for s in self.sinks:
             if hasattr(s, 'join'):
                 s.join()
-
+        
         # close thread
-        if self._thread is not None:
-            self._thread.join(timeout=timeout)
+        if self._thread is not None and self._thread.is_alive():
+            self._thread.join(timeout=self.timeout if timeout is None else timeout)
         if (self.controlling if raise_exc is None else raise_exc):
             self.raise_exception()
         if self._print_summary:  # print now or part of the stats will be lost if the block is used inside of Task
@@ -610,14 +615,11 @@ class Block:
     def all_exceptions(self):
         return self._except.all()
 
-    def __export_state__(self):
-        return {
-            '_sw': self._sw,
-            'started': self.started, 'ready': self.ready,
-            'done': self.done, #'error': self.error,
-            'terminated': self.terminated,
-            '_except': self._except,
-        }
+    _BASE_EXPORT = ['_sw', 'started', 'ready', 'done', 'terminated', '_except', 'processed', 'generated']
+    EXPORT = []
+    def __export_state__(self, **kw):
+        state = dict(((k, getattr(self, k, None)) for k in self._BASE_EXPORT + self.EXPORT), **kw)
+        return state
 
     def __import_state__(self, state):
         for k, v in state.items():
@@ -701,10 +703,11 @@ class Block:
         speed_now = n_new / (time.time() - self.old_time)
         self.old_processed, self.old_time = n, time.time()
 
-        n_src = [len(s) for s in self.sources]
-        n_snk = [len(s) for s in self.sinks]
+        n_src = [len(s) if s is not None else None for s in self.sources]
+        n_snk = [len(s) if s is not None else None for s in self.sinks]
+        dropped = [getattr(s, 'dropped', None) for s in self.sinks]
 
-        return f'{self.name}\t + {n_new:3} buffers ({speed_now:,.2f} x/s), {n:5} total ({speed_avg:,.2f} x/s avg),  sources={n_src}, sinks={n_snk}'
+        return f'{self.name}\t + {n_new:3} buffers ({speed_now:,.2f} x/s), {n:5} total ({speed_avg:,.2f} x/s avg), sources={n_src}, sinks={n_snk}, dropped={dropped}'
 
     def stats_summary(self):
         stats = self.stats()

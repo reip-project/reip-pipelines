@@ -219,9 +219,32 @@ class Graph(BaseContext):
     def __bool__(self):
         return not (self.done or self.error)
 
+    # block accessors
+
+    def get_block(self, name, require=True, match_graphs=False):
+        found = next((
+            b for b in self.iter_blocks(include_graphs=match_graphs)
+            if b.name == name), None)
+        if require and found is None:
+            raise KeyError(name)
+        return found
+
+    def all_blocks(self):
+        return list(self.iter_blocks())
+
+    def iter_blocks(self, include_graphs=False):
+        for b in self.blocks:
+            get_nested = getattr(b, 'iter_blocks', None)
+            if get_nested is not None:
+                if include_graphs:
+                    yield b
+                yield from get_nested()
+            else:
+                yield b
+
     # run graph
 
-    def run(self, duration=None, stats_interval=1, print_graph=True, **kw):
+    def run(self, duration=None, stats_interval=None, print_graph=True, **kw):
         if print_graph:
             print("\nStarting:", self, "\n")
 
@@ -239,7 +262,8 @@ class Graph(BaseContext):
                     # controlling = self.controlling
                     self.log.debug(text.green('Ready'))
                 except Exception as e:
-                    self.log.debug(text.red('Spawn Error'))
+                    self.log.error(text.red('Spawn Error - {}'.format(reip.util.excline(e))))
+                    self.log.warning(self)
                     raise
             with self._except(raises=False):
                 yield self
@@ -307,7 +331,7 @@ class Graph(BaseContext):
         # this makes all blocks wait to begin threads/processes together
         if self.controlling:
             workers = self._gather_workers()
-            while not all(w.is_alive() for w in workers):
+            while not all(w.is_alive() for w in workers) and not self.done and not self.error:
                 time.sleep(self._delay)
             if _spawn_flag is not None:
                 _spawn_flag.set()
@@ -334,7 +358,10 @@ class Graph(BaseContext):
         return workers
 
     def wait_until_ready(self):
+        print_th = reip.util.iters.HitThrottle(4)
         while not self.ready and not self.done:
+            if print_th:
+                self.log.info('waiting on {}'.format(reip.util.text.b_(*(b for b in self.blocks if not b.ready))))
             time.sleep(self._delay)
 
     def join(self, close=True, terminate=False, raise_exc=None, **kw):
@@ -388,9 +415,9 @@ class Graph(BaseContext):
                 b.__import_state__(update)
 
     def short_str(self):
-        return '[{}({})[{} children]]'.format(
+        return '[{}({})[{} children, {} up]]'.format(
             self.__class__.__name__[0],
-            self.name, len(self.blocks))
+            self.name, len(self.blocks), sum(b.ready for b in self.blocks))
 
     def stats(self):
         return {
