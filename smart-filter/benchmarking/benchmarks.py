@@ -24,8 +24,11 @@ datafile = lambda *f: os.path.join(DATA_DIR, *f)
 
 reip.Graph._delay = 1e-1
 reip.Task._delay = 2e-1
+#reip.Block._delay = 1e-1
 reip.Block.USE_META_CLASS = True
 reip.Block.KW_TO_ATTRS = True
+reip.Block.run_profiler = True
+reip.Task.run_profiler = True
 
 
 def get_blocks(*blocks):
@@ -242,14 +245,14 @@ except ImportError:
 Bs = {'ray': B_ray, 'reip': B_reip, 'waggle': B_waggle, 'base': B_base}
 
 
-def run_graph(B, *a, duration=15, **kw):
+def run_graph(B, *a, duration=15, stats_interval=5, **kw):
     # a) single process
     with B.Graph() as g:
         print(g.__class__.__module__)
         define_graph(B, *a, **kw)
-        B.Monitor(g)
+        #B.Monitor(g)
     try:
-        g.run(duration=duration)
+        g.run(duration=duration, stats_interval=stats_interval)
     except KeyboardInterrupt:
         print('interrupted.')
         raise

@@ -8,6 +8,36 @@ ray.init()
 import base_app
 from base_app import Block as BaseBlock, Graph, convert_inputs
 
+
+
+class QMix(base_app.QMix):
+    cache = None
+    def spawn(self):
+        self.cache = None
+
+    def get(self, block=False, timeout=None):
+        fut = self.cache
+        if fut is None:  # get the next element
+            self.cache = fut = super().get(block=block, timeout=timeout)
+        if fut is None:  # there's nothing right now
+            return
+        if not ray.wait([fut], timeout=0, fetch_local=False)[0]:  # not ready
+            return
+        return fut  # the future is ready, but don't pull the item
+
+    def join(self):
+        if self.cache is not None:
+            ray.cancel(self.cache)
+            self.cache = None
+        while self.qsize():
+            fut = self.get()
+            if fut is not None:
+                ray.cancel(fut)
+
+#Queue, mpQueue = base_app.extend_queue(QMix)
+
+
+
 @ray.remote
 class BlockAgent:
     duration = None
@@ -66,10 +96,14 @@ class Graph(base_app.Graph):
 class Task(Graph):  # XXX: ray does not need to spawn a process because blocks are their own process
     pass
 
+Queue, mpQueue = base_app.extend_queue(QMix)
 
 class Block(base_app.Block):
     Graph = Graph
     Task = Task
+    Queue = Queue
+    mpQueue = staticmethod(mpQueue)
+
     def __init__(self, *a, **kw):
         super().__init__(*a, **kw)
         self.agent = BlockAgent.remote(self.block)
@@ -89,6 +123,9 @@ class Block(base_app.Block):
 
     def finish(self):  # TODO: wait for queue items?
         return self.agent.finish.remote()
+
+
+
 
 
 
@@ -113,15 +150,9 @@ class Block(base_app.Block):
 #         print(b.status())
 
 
+B = base_app.example(Block)
+test = functools.partial(base_app.test, B=B)
+
 if __name__ == '__main__':
-    B = base_app.example(Block)
-
-    with B.Graph() as g:
-        x1 = B.BlockA(max_processed=10).to(B.BlockB(10)).to(B.BlockB(10)).to(B.Print())
-        with B.Graph():
-            B.BlockA(max_processed=10).to(B.Print())
-        with B.Task():
-            x1.to(B.BlockB(50)).to(B.Print())
-
-    print(g)
-    print(g.run())
+    import fire
+    fire.Fire(test)
