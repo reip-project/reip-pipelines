@@ -1,13 +1,22 @@
 import queue
 import time
+import functools
+
 import reip
 
 import ray
-ray.init()
 
 import base_app
 from base_app import Block as BaseBlock, Graph, convert_inputs
 
+
+def ray_init(*a, **kw):
+    if ray_init.done:
+        print('ray already initialized.')
+        return
+    ray.init(*a, ignore_reinit_error=True, **kw)
+    ray_init.done = True
+ray_init.done = False
 
 
 class QMix(base_app.QMix):
@@ -43,6 +52,7 @@ class BlockAgent:
     duration = None
     def __init__(self, block):
         self.block = block
+        print('initializing ray init', block)
 
     def init(self):
         self.outer_time = time.time()
@@ -67,31 +77,35 @@ class BlockAgent:
         return self.duration
 
 
+def maybeget(futs, get=True):
+    return ray.get(futs) if get else futs
 
 class Graph(base_app.Graph):
-    def init(self):
+    def init(self, get=True):
         print(self.name, 'initializing', flush=True)
-        return [fut for block in self.blocks for fut in base_app.aslist(block.init())]
+        futs = [fut for block in self.blocks for fut in base_app.aslist(block.init(get=False))]
+        return maybeget(futs, get)
 
-    def finish(self):
+    def finish(self, get=True):
         print(self.name, 'finishing', flush=True)
-        return [fut for block in self.blocks for fut in base_app.aslist(block.finish())]
+        futs = [fut for block in self.blocks for fut in base_app.aslist(block.finish(get=False))]
+        return maybeget(futs, get)
 
-    def run(self, duration=None):
-        try:
-            t0 = time.time()
-            ray.get(self.init())
-            while self.running:
-                if duration and time.time() - t0 >= duration:
-                    break
-                self.poll()
-                time.sleep(self.delay)
-        except base_app.BlockExit:
-            print('Exiting...')
-        except KeyboardInterrupt:
-            print('Interrupting...')
-        finally:
-            ray.get(self.finish())
+    #def run(self, duration=None):
+    #    try:
+    #        t0 = time.time()
+    #        self.init()
+    #        while self.running:
+    #            if duration and time.time() - t0 >= duration:
+    #                break
+    #            self.poll()
+    #            time.sleep(self.delay)
+    #    except base_app.BlockExit:
+    #        print('Exiting...')
+    #    except KeyboardInterrupt:
+    #        print('Interrupting...')
+    #    finally:
+    #        self.finish()
 
 class Task(Graph):  # XXX: ray does not need to spawn a process because blocks are their own process
     pass
@@ -101,8 +115,8 @@ Queue, mpQueue = base_app.extend_queue(QMix)
 class Block(base_app.Block):
     Graph = Graph
     Task = Task
-    Queue = Queue
-    mpQueue = staticmethod(mpQueue)
+    #Queue = Queue
+    Queue = mpQueue = staticmethod(mpQueue)
 
     def __init__(self, *a, **kw):
         super().__init__(*a, **kw)
@@ -112,17 +126,17 @@ class Block(base_app.Block):
     def duration(self):
         return ray.get(self.agent.get_duration.remote())
 
-    def init(self):
+    def init(self, get=True):
         self.processed = 0
         self.dropped = 0
         self.running = True
-        return self.agent.init.remote()
+        return maybeget(self.agent.init.remote(), get)
 
     def process(self, *inputs):
         return self.agent.process.remote(*inputs)
 
-    def finish(self):  # TODO: wait for queue items?
-        return self.agent.finish.remote()
+    def finish(self, get=True):
+        return maybeget(self.agent.finish.remote(), get)
 
 
 

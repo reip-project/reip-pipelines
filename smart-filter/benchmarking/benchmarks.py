@@ -8,9 +8,12 @@ import reip.blocks as B
 import reip.blocks.audio
 import traceback
 import sys
-sys.path.append('..')
+sys.path.append(os.path.abspath('..'))
+os.environ["PYTHONPATH"] = os.path.abspath('..') + ":" + os.environ.get("PYTHONPATH", "")  # for workers
+
 from numpy_io import NumpyWriter
 # from direct_io import DirectWriter, DirectReader
+import bundles, dummies
 from bundles import Bundle
 from dummies import Generator, BlackHole
 # from cv_utils import ImageConvert, ImageDisplay
@@ -31,10 +34,15 @@ reip.Block.run_profiler = True
 reip.Task.run_profiler = True
 
 
+MIC_DEVICE = 'Mic' #"hw:2,0"
+MIC_CHANNELS = None #16
+
+
 def get_blocks(*blocks):
     try:
         import ray_app
         print(ray_app.Block)
+        ray_app.ray_init()
         B_ray = ray_app.Block.wrap_blocks(*blocks)
     except ImportError:
         traceback.print_exc()
@@ -110,8 +118,8 @@ def define_graph_alt2(B, audio_length=10, rate=4, data_dir='./data', cam_2nd=Tru
     _kw = dict(log_level='debug')
     with B.Task('mic-task'):
         audio1s = B.Mic(
-            name="mic", block_duration=1, channels=16,
-            device="hw:2,0", dtype=np.int32)#.to(B.Debug('1s', _kw=_kw))
+            name="mic", block_duration=1, channels=MIC_CHANNELS,
+            device=MIC_DEVICE, dtype=np.int32)#.to(B.Debug('1s', _kw=_kw))
         audio_ns = audio1s.to(B.FastRebuffer(size=audio_length))
 
     with B.Task("audio-write-task"):

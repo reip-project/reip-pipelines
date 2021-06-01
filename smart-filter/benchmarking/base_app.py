@@ -2,6 +2,8 @@ import queue
 import time
 import remoteobj
 import multiprocessing as mp
+#import mpqueue_fix
+
 import reip
 try:
     from reip.util.meta2 import Meta
@@ -364,6 +366,7 @@ class CoreBlock:  # a basic base block to make sure that all required methods ar
 
 
 class QWrap:  # wraps reip Customer so it works like the other queues
+    wrapped = None
     def __init__(self, wrapped):
         self.wrapped = wrapped
         self.wrapped.maxsize = len(self.wrapped.store.items)
@@ -373,7 +376,11 @@ class QWrap:  # wraps reip Customer so it works like the other queues
     def __len__(self):
         return len(self.wrapped)
     def __getattr__(self, k):
-        return getattr(self.wrapped, k)
+        try:
+            return getattr(self.wrapped, k)
+        except RecursionError:
+            print('Recursion error for {}'.format(k))
+            raise
     def get(self, *a, **kw):
         x = self.wrapped.get(*a, **kw)
         self.wrapped.next()
@@ -408,6 +415,7 @@ class Block:
     task_name = None
     _delay = 1e-5
     duration = 0
+    inner_time = outer_time = 0
     running = False
 
     Queue = Queue
@@ -446,7 +454,7 @@ class Block:
         if srcs:
             for src in srcs:
                 if src is not None:
-                    self.inputs.append(QWrap(src))
+                    self.inputs.append(QWrap(src) if not isinstance(src, QWrap) else src)
 
     def __reduce__(self):
         return pickle_worker(self)
@@ -508,6 +516,7 @@ class Block:
         self.dropped = 0
         self.duration = 0
         self.inner_time = 0
+        self.outer_time = 0
 
     def elapsed(self):
         return time.time() - self.inner_time if not self.duration else self.duration
