@@ -1,6 +1,6 @@
 import multiprocessing
 import multiprocessing.queues
-
+import queue
 
 # source: https://github.com/vterron/lemon/blob/d60576bec2ad5d1d5043bcb3111dff1fcb58a8d6/methods.py#L536-L573
 
@@ -47,13 +47,14 @@ class Queue(multiprocessing.queues.Queue):
         super().__init__(*a, **kw)
         self.size = SharedCounter(0)
 
-    def put(self, *args, **kwargs):
+    def put(self, *a, **kw):
+        super().put(*a, **kw)
         self.size.increment(1)
-        super(Queue, self).put(*args, **kwargs)
 
-    def get(self, *args, **kwargs):
+    def get(self, *a, **kw):
+        _ = super().get(*a, **kw)
         self.size.increment(-1)
-        return super(Queue, self).get(*args, **kwargs)
+        return _
 
     def qsize(self):
         """ Reliable implementation of multiprocessing.Queue.qsize() """
@@ -65,7 +66,11 @@ class Queue(multiprocessing.queues.Queue):
 
     def clear(self):
         """ Remove all elements from the Queue. """
-        while not self.empty():
-            self.get()
+        try:
+            while True:
+                self.get(block=False)
+                print('clearing to zero:', self.qsize(), flush=True)
+        except queue.Empty:
+            return
 
 multiprocessing.queues.Queue = Queue

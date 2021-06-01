@@ -2,7 +2,7 @@ import queue
 import time
 import remoteobj
 import multiprocessing as mp
-#import mpqueue_fix
+# import mpqueue_fix
 
 import reip
 try:
@@ -52,7 +52,7 @@ def run(worker, duration=None, stats_interval=None):
     except BlockExit:
         worker.log.info('Exiting...')
     except KeyboardInterrupt:
-        worker.log.warning('Interrupting...')
+        worker.log.warning('Interrupting... {}'.format(worker.status()))
     finally:
         worker.finish()
 
@@ -71,23 +71,34 @@ class QMix:  # patch class for basic queue objects to make them work like reip q
     def get(self, block=False, timeout=None):
         if self.strategy == 'latest':
             print('using latest strategy', self)
-            x = None
-            dropped = -1
-            try:
-                while True:
-                    x = super().get(block=False, timeout=timeout)
-                    dropped += 1
-            except queue.Empty:
-                if dropped > 0:
-                    self.dropped += dropped
-                return x
-
+            x, dropped = self._get_latest()
+            if dropped > 0:
+                self.dropped += dropped
         try:
             return super().get(block, timeout)
         except queue.Empty:
             if block:
                 raise
             return None
+
+    def clear(self):
+        '''Clears all items from the queue.'''
+        self._get_latest()
+
+    def _get_latest(self):
+        x = None
+        dropped = -1
+        try:
+            while True:
+                x = super().get(block=False)
+                print('latest strategy skipping sample.', self, flush=True)
+                dropped += 1
+        except queue.Empty:
+            return x, dropped
+
+    def join(self):
+        self.clear()
+        (getattr(self, 'close', None) or (lambda: None))()
 
 
 
@@ -196,9 +207,15 @@ class Graph:
         return all(b.running for b in self.blocks)
 
     def init(self):
-        self.log.info('initializing')
+        self.log.info(reip.util.text.blue('initializing'))
         for block in self.blocks:
-            block.init()
+            try:
+                block.init()
+                self.log.info(self.status())
+            except Exception as e:
+                self.log.exception(e)
+                raise
+        self.log.info(reip.util.text.green('ready\n') + self.status())
 
     def poll(self):
         if any(not b.running for b in self.blocks): # just added this to make graphs end immediately
@@ -217,10 +234,11 @@ class Graph:
             block.close()
 
     def finish(self):
-        self.log.info('finishing')
+        self.log.info(reip.util.text.blue('finishing'))
         self.close()
         for block in self.blocks:
             block.finish()
+        self.log.info(reip.util.text.green('done'))
 
     def run(self, *a, **kw):
         run(self, *a, **kw)
@@ -229,6 +247,7 @@ class Graph:
 class Task(Graph):
     timeout = 10
     _process = None
+    _should_exit = None
     is_spawned = False
     run_profiler = False
 
@@ -268,11 +287,12 @@ class Task(Graph):
             if self.run_profiler:
                 profiler.stop()
                 self.log.info(profiler.output_text(unicode=True, color=True))
-            self.is_spawned = False
             print(self.status())
             state = self.__export_state__()
             self.log.info(str(state))
             self.is_spawned = False
+            self.remote.listening_ = False
+            self.remote.cancel_requests()
             return state
 
     # state
@@ -299,7 +319,7 @@ class Task(Graph):
 
         self.log.info(reip.util.text.blue('Spawning'))
         self._should_exit = mp.Event()
-        self._process = remoteobj.util.process(self._task_run)
+        self._process = remoteobj.util.process(self._task_run, name_='{}-worker'.format(self.name))
         self._process.start()  # make sure _process is assigned first
 
     _task_should_finish_up = False
@@ -319,11 +339,18 @@ class Task(Graph):
     def close(self):
         if self.is_spawned:
             return super().close()
-        self._should_exit.set()
+        if self._should_exit is not None:
+            self._should_exit.set()
 
     def finish(self):
         if self.is_spawned:
-            return super().finish()
+            self.log.info(reip.util.text.blue('joining children'))
+            super().finish()
+            self.log.info(reip.util.text.blue('children joined.'))
+            import threading
+            for th in threading.enumerate():
+                self.log.warning(th)
+            return
         if self._process is None:
             return
 
@@ -340,6 +367,7 @@ class Task(Graph):
             print('Could not pull block state from process. This means that block duration and processed counts will not be accurate.')
         self._process.exc.raise_any()
         self._process = None
+        self._should_exit = None
 
 
 def pickle_worker(obj, drop=()):  # tweaking how blocks get pickled
@@ -371,8 +399,9 @@ class QWrap:  # wraps reip Customer so it works like the other queues
         self.wrapped = wrapped
         self.wrapped.maxsize = len(self.wrapped.store.items)
         self.wrapped._qstr = 'C'
+        self.wrapped.dropped = getattr(self.wrapped, 'dropped', 0)
     def __repr__(self):
-        return _QMix.__repr__(self.wrapped)
+        return QMix.__repr__(self.wrapped)
     def __len__(self):
         return len(self.wrapped)
     def __getattr__(self, k):
@@ -535,6 +564,8 @@ class Block:
     def close(self):
         self.log.info('closing')
         self.running = False
+        # for q in self.output_customers:
+        #     q.join()
         #self.duration = time.time() - self.inner_time
     
     def finish(self):  # TODO: wait for queue items?
@@ -545,6 +576,8 @@ class Block:
         self.block.finish()
         self.outer_duration = time.time() - self.outer_time
         self.running = False
+        # for q in self.output_customers:
+        #     q.clear()
 
     def poll(self):
         #self.log.debug('poll')

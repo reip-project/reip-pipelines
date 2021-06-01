@@ -18,7 +18,6 @@ Task = reip.Task
 
 class BlocksModule(base_app.BlocksModule):
     def _make_item(self, c, cls):
-        print(cls, issubclass(cls, reip.Block), cls.__mro__, flush=True)
         if issubclass(c, reip.Block):
             return c
         return super()._make_item(c, cls)

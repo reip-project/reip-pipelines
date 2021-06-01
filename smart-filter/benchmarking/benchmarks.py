@@ -22,6 +22,7 @@ from dummies import Generator, BlackHole
 import base_app
 
 DATA_DIR = '/mnt/ssd/test_data/'
+DATA_DIR = './data'
 datafile = lambda *f: os.path.join(DATA_DIR, *f)
 
 
@@ -41,33 +42,25 @@ MIC_CHANNELS = None #16
 def get_blocks(*blocks):
     try:
         import ray_app
-        print(ray_app.Block)
-        ray_app.ray_init()
         B_ray = ray_app.Block.wrap_blocks(*blocks)
     except ImportError:
         traceback.print_exc()
         B_ray = None
     try:
         import reip_app
-        print(reip_app.Block)
         B_reip = reip_app.Block.wrap_blocks(*blocks)
-        print(B_reip)
-        print(B_reip.Generator.__mro__)
     except ImportError:
         traceback.print_exc()
         B_reip = None
     try:
         import waggle_app
-        print(waggle_app.Block)
         B_waggle = waggle_app.Block.wrap_blocks(*blocks)
-        print(B_waggle)
     except ImportError:
         traceback.print_exc()
         B_waggle = None
     try:
         import base_app
         B_base = base_app.Block.wrap_blocks(*blocks)
-        print('basic:', B_base)
     except ImportError:
         traceback.print_exc()
         B_base = None
@@ -103,10 +96,10 @@ def define_graph_alt(
         .to(B.BlackHole(name="Builtin_Black_Hole", debug=bh_debug)))
 
     if include_audio:
-        define_graph_alt2(B, throughput=throughput)
+        define_graph_alt2(B, throughput=throughput, use_tasks=use_tasks)
 
 
-def define_graph_alt2(B, audio_length=10, rate=4, data_dir='./data', cam_2nd=True, throughput='large'):
+def define_graph_alt2(B, audio_length=10, rate=4, data_dir='./data', use_tasks=True, throughput='large'):
     timestamp = time.time()
 
     os.makedirs(data_dir, exist_ok=True)
@@ -116,18 +109,19 @@ def define_graph_alt2(B, audio_length=10, rate=4, data_dir='./data', cam_2nd=Tru
     aud_fname = os.path.join(data_dir, 'audio/{time}.wav')
 
     _kw = dict(log_level='debug')
-    with B.Task('mic-task'):
+    Graph = B.Task if use_tasks else B.Graph
+    with Graph('mic-task'):
         audio1s = B.Mic(
             name="mic", block_duration=1, channels=MIC_CHANNELS,
             device=MIC_DEVICE, dtype=np.int32)#.to(B.Debug('1s', _kw=_kw))
         audio_ns = audio1s.to(B.FastRebuffer(size=audio_length))
 
-    with B.Task("audio-write-task"):
+    with Graph("audio-write-task"):
         (audio_ns
             .to(B.AudioFile(aud_fname), throughput=throughput)#.to(B.Debug('audfile', _kw=_kw))
             .to(B.BlackHole(name="audio-bh")))
 
-    with B.Task("spl-task"):
+    with Graph("spl-task"):
         weights = 'ZAC'
         spl = audio1s.to(B.SPL(name="spl", calibration=72.54, weighting=weights), throughput=throughput)#.to(B.Debug('spl', _kw=_kw))
         (spl.to(B.Csv(spl_fname, headers=[f'l{w}eq' for w in weights.lower()], max_rows=10))

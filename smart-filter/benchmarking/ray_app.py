@@ -55,9 +55,11 @@ class BlockAgent:
         print('initializing ray init', block)
 
     def init(self):
+        self.log.info(reip.util.text.blue('initializing'))
         self.outer_time = time.time()
         self.block.init()
         self.inner_time = time.time()
+        self.log.info(reip.util.text.green('ready'))
 
     def process(self, *inputs):
         # print(1, self.block.__block__.name)
@@ -69,9 +71,11 @@ class BlockAgent:
         return self.block.process(*inputs, meta=meta)
 
     def finish(self):
+        self.log.info(reip.util.text.blue('finishing'))
         self.duration = time.time() - self.inner_time
         self.block.finish()
         self.outer_duration = time.time() - self.outer_time
+        self.log.info(reip.util.text.green('done'))
 
     def get_duration(self):
         return self.duration
@@ -90,6 +94,10 @@ class Graph(base_app.Graph):
         print(self.name, 'finishing', flush=True)
         futs = [fut for block in self.blocks for fut in base_app.aslist(block.finish(get=False))]
         return maybeget(futs, get)
+
+    def run(self, *a, **kw):
+        ray_init()
+        return super().run(*a, **kw)
 
     #def run(self, duration=None):
     #    try:
@@ -137,31 +145,6 @@ class Block(base_app.Block):
 
     def finish(self, get=True):
         return maybeget(self.agent.finish.remote(), get)
-
-
-
-
-
-
-# with Graph() as g:
-#     cam1 = Block(core.Camera(), max_processed=100)
-#     cam2 = Block(core.Camera())
-
-#     stitch = Block(core.Stitch(), cam1, cam2)
-#     filtered = Block(core.MotionFilter(), stitch)
-#     ml = Block(core.ML(), filtered)
-
-#     write_video = Block(core.Write(), filtered)
-#     write_ml = Block(core.Write(), ml)
-
-
-# try:
-#     g.run()
-# except KeyboardInterrupt:
-#     print('\nInterrupted.\n')
-# finally:
-#     for b in g.blocks:
-#         print(b.status())
 
 
 B = base_app.example(Block)
