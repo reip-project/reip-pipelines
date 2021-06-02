@@ -28,7 +28,7 @@ class QMix(base_app.QMix):
         return super().qsize() + int(self.cache is not None)
 
     def empty(self):
-        return self.get(peek=True) is not None  # make empty take into consideration if the future is ready or not
+        return self.get(peek=True) is None  # make empty take into consideration if the future is ready or not
 
     def get(self, block=False, timeout=None, peek=False):
         fut = self.cache

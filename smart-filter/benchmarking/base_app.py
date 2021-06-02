@@ -48,8 +48,10 @@ class QMix:  # patch class for basic queue objects to make them work like reip q
     def __init__(self, *a, strategy='all', **kw):
         self.strategy = strategy
         super().__init__(*a, **kw)
+
     def __repr__(self):
         return '{}({}/{} -{})'.format(self._qstr, len(self), self.maxsize, self.dropped)
+
     def __len__(self):
         return self.qsize()
 
