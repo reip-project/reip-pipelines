@@ -3,7 +3,7 @@ import json
 import time
 import datetime
 import numpy as np
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 
 import reip
 import reip.blocks as B
@@ -181,8 +181,8 @@ def define_graph_alt2(B, audio_length=10, rate=4, data_dir='./data', use_tasks=T
 
 #     # reip.default_graph().run(duration=None, stats_interval=10)
 
-def define_graph(audio_length=10, rate=4, data_dir='./data', cam_2nd=True, throughput='large'):
-    rate, timestamp = 4, str(time.time())
+def define_graph(B, audio_length=10, rate=4, data_dir='./data', cam_2nd=True, use_tasks=True, throughput='large'):
+    timestamp = time.time()
 
     os.makedirs(data_dir, exist_ok=True)
     cam_fname = os.path.join(data_dir, "video/%d_{}.avi".format(timestamp))
@@ -190,45 +190,48 @@ def define_graph(audio_length=10, rate=4, data_dir='./data', cam_2nd=True, throu
     spl_fname = os.path.join(data_dir, 'spl/{time}.csv')
     aud_fname = os.path.join(data_dir, 'audio/{time}.wav')
 
-    with reip.Task("cam0-task"):
-        cam_0 = UsbCamGStreamer(
+    Graph = B.Task if use_tasks else B.Graph
+    with Graph("cam0-task"):
+        cam_0 = B.UsbCamGStreamer(
             name="cam0", filename=cam_fname, dev=0,
             bundle=None, rate=rate, debug=False, verbose=False)
 
     if cam_2nd:
-        with reip.Task("cam1-task"):
-            cam_1 = UsbCamGStreamer(
+        with Graph("cam1-task"):
+            cam_1 = B.UsbCamGStreamer(
                 name="cam1", filename=cam_fname, dev=1,
                 bundle=None, rate=rate, debug=False, verbose=False)
 
-    with reip.Task('detect-task'):
-        det = ObjectDetector(name='detect', n_inputs=1, labels_dir=MODEL_DIR, max_rate=None, thr=0.1,
-                            draw=False, cuda_out=False, zero_copy=False, debug=True, verbose=False)
+    with Graph('detect-task'):
+        det = B.ObjectDetector(
+            name='detect', n_inputs=1, labels_dir=MODEL_DIR, max_rate=None, thr=0.1,
+            draw=False, cuda_out=False, zero_copy=False, debug=True, verbose=False)
         det.model = "ssd-mobilenet-v2"
 
         cam_0.to(det, throughput=throughput, strategy="latest", index=0)
         if cam_2nd:
             cam_1.to(det, throughput=throughput, strategy="latest", index=1)
 
-        (det.to(Bundle(name='det-bundle', size=10, meta_only=True))
-            .to(NumpyWriter(name='det-write', filename_template=det_fname))
-            .to(BlackHole(name='det-bh')))
+        (det.to(B.Bundle(name='det-bundle', size=10, meta_only=True))
+            .to(B.NumpyWriter(name='det-write', filename_template=det_fname))
+            .to(B.BlackHole(name='det-bh')))
 
-    with reip.Task('mic-task'):
-        audio1s = B.audio.Mic(
+    with Graph('mic-task'):
+        audio1s = B.Mic(
             name="mic", block_duration=1, channels=16, 
             device="hw:2,0", dtype=np.int32)
         audio_ns = audio1s.to(B.FastRebuffer(size=audio_length)).to(B.Debug('audio 10s'))
 
-    with reip.Task("audio-write-task"):
+    with Graph("audio-write-task"):
         (audio_ns
-            .to(B.audio.AudioFile(aud_fname), throughput=throughput)
-            .to(BlackHole(name="audio-bh")))
+            .to(B.AudioFile(aud_fname), throughput=throughput)
+            .to(B.BlackHole(name="audio-bh")))
 
-    with reip.Task("spl-task"):
-        spl = audio1s.to(B.audio.SPL(name="spl", calibration=72.54, weighting='ZAC'), throughput=throughput)
-        (spl.to(B.Csv(spl_fname, headers=[f'l{w}eq' for w in spl.weight_names.lower()], max_rows=10))
-            .to(BlackHole(name="spl-bh")))
+    with Graph("spl-task"):
+        weights = 'ZAC'
+        spl = audio1s.to(B.SPL(name="spl", calibration=72.54, weighting=weights), throughput=throughput)
+        (spl.to(B.Csv(spl_fname, headers=[f'l{w}eq' for w in weights.lower()], max_rows=10))
+            .to(B.BlackHole(name="spl-bh")))
    
 
 
@@ -334,7 +337,7 @@ def header(*txt, **kw):
 
 
 
-def run(kind, *a, size=None, name=None, blocks=None, out_dir=OUT_DIR, **kw):
+def run(kind, *a, size=(480,480), name=None, blocks=None, out_dir=OUT_DIR, **kw):
     header(kind, ('size', size), ('args', str(a), str(kw)))
     g = run_graph(Bs[kind], *a, size=size, **kw)
     blocks = [g.get_block(k) for k in blocks] if blocks else g.iter_blocks()
