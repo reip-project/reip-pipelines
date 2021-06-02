@@ -32,6 +32,10 @@ def auto_name(block, name=None, attrs=None, ns=None, leading=2):
     count = namespace[name] = namespace.get(name, -1) + 1
     return '{}-{:0{leading}.0f}'.format(name, count, leading=leading) if count else name
 
+def auto_name_clear():
+    _NAMESPACES_IDX.clear()
+auto_name.clear = auto_name_clear
+
 def aslist(x):
     return x if isinstance(x, list) else [] if x is None else [x]
 
@@ -172,6 +176,10 @@ class Graph:
 
     def __export_state__(self):
         return export_state(self, blocks=[b.__export_state__() for b in self.blocks])
+
+    @classmethod
+    def reset_names(self):
+        return auto_name.clear()
 
     # adding and getting blocks
 
@@ -598,7 +606,7 @@ class Block:
         inputs = [qi.get(block=False) for qi in self.inputs]
         #self.log.debug('getting inputs: %s', inputs)
         result = self.process(*inputs)
-        self.log.debug('got outputs: %s', type(result))
+        #self.log.debug('got outputs: %s', type(result))
         if result is None:
             return True
         for q in self.output_customers:

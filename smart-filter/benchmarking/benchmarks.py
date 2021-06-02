@@ -1,5 +1,7 @@
 import os
+import json
 import time
+import datetime
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -13,7 +15,6 @@ os.environ["PYTHONPATH"] = os.path.abspath('..') + ":" + os.environ.get("PYTHONP
 
 from numpy_io import NumpyWriter
 # from direct_io import DirectWriter, DirectReader
-import bundles, dummies
 from bundles import Bundle
 from dummies import Generator, BlackHole
 # from cv_utils import ImageConvert, ImageDisplay
@@ -34,9 +35,11 @@ reip.Block.KW_TO_ATTRS = True
 reip.Block.run_profiler = True
 reip.Task.run_profiler = True
 
+OUT_DIR = './results'
+DURATION = 60
 
-MIC_DEVICE = 'Mic' #"hw:2,0"
-MIC_CHANNELS = None #16
+MIC_DEVICE = "hw:2,0" #'Mic' #
+MIC_CHANNELS = 16 #None #
 
 
 def get_blocks(*blocks):
@@ -69,31 +72,33 @@ def get_blocks(*blocks):
 
 
 def define_graph_alt(
-        B, sizeA=(720, 1280), sizeB=(2000, 2500),
-        rate_divider=1, throughput='large', use_tasks=True,
+        B, size=(1280, 1280), #sizeA=(720, 1280), sizeB=(2000, 2500),
+        rate_divider=1, rate=60, throughput='large', use_tasks=True,
         gen_debug=None, bundle_debug=False, bundle_log=True,
         io_debug=None, bh_debug=None, include_audio=True):
 
     Graph = B.Task if use_tasks else B.Graph
-    with Graph("Basler"):
+    with Graph("basler"):
+        #rate = 120
         basler = (
-            B.Generator(name="Basler_Cam", size=sizeA, dtype=np.uint8, max_rate=120 // rate_divider, debug=gen_debug, queue=120*2)
-                .to(B.Bundle(name="Basler_Bundle", size=12, queue=10*2, debug=bundle_debug)))#, log_level=bundle_log
+            B.Generator(name="basler-cam", size=size, dtype=np.uint8, max_rate=rate // rate_divider, debug=gen_debug, queue=rate*2)
+                .to(B.Bundle(name="basler-bundle", size=int(rate/10), queue=10*2, debug=bundle_debug)))#, log_level=bundle_log
 
-    with Graph("Builtin"):
+    with Graph("builtin"):
+        #rate = 30
         builtin = (
-            B.Generator(name="Builtin_Cam", size=sizeB, dtype=np.uint8, max_rate=30 // rate_divider, debug=gen_debug, queue=30*2)
-                .to(B.Bundle(name="Builtin_Bundle", size=3, queue=10*2, debug=bundle_debug)))#, strategy="skip", skip=3)#, log_level=bundle_log
+            B.Generator(name="builtin-cam", size=size, dtype=np.uint8, max_rate=rate // rate_divider, debug=gen_debug, queue=rate*2)
+                .to(B.Bundle(name="builtin-bundle", size=int(rate/10), queue=10*2, debug=bundle_debug)))#, strategy="skip", skip=3)#, log_level=bundle_log
 
     (basler
-        .to(B.Bundle(name="Basler_Write_Bundle", size=5, queue=5, debug=bundle_debug, log_level=bundle_log), throughput=throughput)
-        .to(B.NumpyWriter(name="Basler_Writer", filename_template=datafile("basler_%d"), debug=io_debug))
-        .to(B.BlackHole(name="Basler_Black_Hole", debug=bh_debug)))
+        .to(B.Bundle(name="basler-write-bundle", size=5, queue=5, debug=bundle_debug, log_level=bundle_log), throughput=throughput)
+        .to(B.NumpyWriter(name="basler-write", filename_template=datafile("basler_%d"), debug=io_debug))
+        .to(B.BlackHole(name="basler-bh", debug=bh_debug)))
 
     (builtin
-        .to(B.Bundle(name="Builtin_Write_Bundle", size=5, queue=5, debug=bundle_debug, log_level=bundle_log), throughput=throughput)
-        .to(B.NumpyWriter(name="Builtin_Writer", filename_template=datafile("builtin_%d"), debug=io_debug))
-        .to(B.BlackHole(name="Builtin_Black_Hole", debug=bh_debug)))
+        .to(B.Bundle(name="builtin-write-bundle", size=5, queue=5, debug=bundle_debug, log_level=bundle_log), throughput=throughput)
+        .to(B.NumpyWriter(name="builtin-write", filename_template=datafile("builtin_%d"), debug=io_debug))
+        .to(B.BlackHole(name="builtin-bh", debug=bh_debug)))
 
     if include_audio:
         define_graph_alt2(B, throughput=throughput, use_tasks=use_tasks)
@@ -234,6 +239,7 @@ try:
     B_ray, B_reip, B_waggle, B_base = get_blocks(
         UsbCamGStreamer, ObjectDetector, Bundle, NumpyWriter, BlackHole, 
         B.audio.Mic, B.FastRebuffer, B.audio.AudioFile, B.audio.SPL, B.Csv)
+    BLOCKS = ['cam0', 'cam1', 'detect']
 except ImportError:
     import traceback
     traceback.print_exc()
@@ -243,21 +249,27 @@ except ImportError:
             Generator, Bundle, NumpyWriter, BlackHole,
             B.audio.Mic, B.FastRebuffer, B.audio.AudioFile, B.audio.SPL, B.Csv, B.Debug)
     define_graph = define_graph_alt
+    BLOCKS = ['Basler_Cam', 'Builtin_Cam', 'Basler_Write_Bundle', 'Builtin_Write_Bundle', 'mic', 'spl-task']
 
 Bs = {'ray': B_ray, 'reip': B_reip, 'waggle': B_waggle, 'base': B_base}
 
 
 def run_graph(B, *a, duration=15, stats_interval=5, **kw):
-    # a) single process
+    # clear names
+    base_app.auto_name.clear()
+    # define graph
     with B.Graph() as g:
         print(g.__class__.__module__)
         define_graph(B, *a, **kw)
         #B.Monitor(g)
+    # run graph
     try:
         g.run(duration=duration, stats_interval=stats_interval)
-    except KeyboardInterrupt:
+    except KeyboardInterrupt as e:
         print('interrupted.')
-        raise
+        g.log.exception(e)  # show where it was interrupted
+    except Exception as e:
+        g.log.exception(e)  # always return g
     finally:
         print(g.status())
     return g
@@ -272,42 +284,70 @@ SIZES = [
     (2, 2),
     (60, 60),
     (120, 120),
-    (180, 180),
+    #(180, 180),
     (240, 240),
     (480, 480),
     (960, 960),
     (1080, 1080),
-    (1200, 1200),
-    (1800, 1800),
-    (2400, 2400),
-    (3600, 3600),
+    #(1200, 1200),
+    #(1800, 1800),
+    #(2400, 2400),
+    #(3600, 3600),
 ]
 
-def get_block_stats(b, data_size=None, **kw):
-    n_proc, duration = b.processed, b.duration
-    buf_per_sec = 1.*b.processed/b.duration
+
+def get_block_stats(b, size=None, data_size=None, **kw):
+    try:
+        duration = b.duration
+    except AttributeError:
+        duration = b._sw.total()
+    processed = b.processed
+    buf_per_sec = 1. * processed / duration if duration else 0
     d = dict(
-        block=b.name, size=size, 
-        buf_per_sec=buf_per_sec,
-        data_per_sec=data_size*buf_per_sec if data_size else None,
-        processed=n_proc, duration=duration, **kw)
+        block=b.name, size=size, data_size=data_size,
+        buffers_per_sec=buf_per_sec,
+        pixels_per_sec=data_size*buf_per_sec if data_size else None,
+        processed=processed, 
+        duration=duration,
+        block_status=b.status(), 
+        **kw)
     return d
 
 
-def dump_results(results, i):
-    with open('compare-{}-results-{}.json'.format(i, datetime.datetime.now().strftime('%c')), 'w') as f:
+def dump_results(results, name, out_dir='.'):
+    os.makedirs(out_dir, exist_ok=True)
+    fname = os.path.join(out_dir, '{}-results-{}.json'.format(name, datetime.datetime.now().strftime('%Y_%m_%d-%H_%M_%S')))
+    with open(fname, 'w') as f:
         json.dump(results, f)
+    print('Wrote {} results to {}.'.format(len(results), fname))
     return results
 
 
-def header(*txt, ch='*', s=2):
-    txt = [str(' '.join(t) if isinstance(t, (list, tuple)) else t or '') for t in txt]
-    n = max((len(t) for t in txt), default=0)
-    n = max(n+1, 10)
-    print('\n' + (ch*n) + '\n'*(max(0, i)) + '\n'.join(txt) + '\n' + (ch*n) + '\n')
+#def header(*txt, ch='*', s=2):
+    #txt = [str(' '.join(t) if isinstance(t, (list, tuple)) else t or '') for t in txt]
+    #n = max((len(t) for t in txt), default=0)
+    #n = max(n+1, 10)
+    #print('\n' + (ch*n) + '\n'*(max(0, i)) + '\n'.join(txt) + '\n' + (ch*n) + '\n')
+def header(*txt, **kw):
+    print(reip.util.text.block_text(*txt, **kw))
 
 
-def compare_1(*a, duration=30, **kw):
+
+
+def run(kind, *a, size=None, name=None, blocks=None, out_dir=OUT_DIR, **kw):
+    header(kind, ('size', size), ('args', str(a), str(kw)))
+    g = run_graph(Bs[kind], *a, size=size, **kw)
+    blocks = [g.get_block(k) for k in blocks] if blocks else g.iter_blocks()
+    results = {
+        b.name: get_block_stats(b, size=size, data_size=size[0]*size[1], status=g.status())
+        for b in blocks
+    }
+    dump_results(results, name, out_dir=out_dir)
+    print({k: {ki: d[ki] for ki in ('size', 'pixels_per_sec', 'processed', 'buffers_per_sec')} for k, d in results.items()})
+
+
+
+def compare_1(*a, duration=DURATION, out_dir=OUT_DIR, **kw):
     '''1) Concurrency: Comparison  inside  of  REIP  -  prove that sometimes you need threading vs. multiprocessing 
 
     Comparing performance within  REIP - data rates/throughput for single process, multi process, and multi-process w/ shared memory
@@ -323,46 +363,43 @@ def compare_1(*a, duration=30, **kw):
         header(('size:', size))
         # a) single process
         header('single process', ('size:', size), s=1)
-        g1 = run_graph(B_reip, *a, use_tasks=False, duration=duration, **kw)
-        writer = g1.get_block('Builtin_Write_Bundle')
-        det = g1.get_block('Object_Detector')
-        results.extend(
-            get_block_stats(b, group='single', size=size, data_size=size[0]*size[1])
-            for b in [writer, det])
+        g = run_graph(B_reip, *a, use_tasks=False, size=size, duration=duration, **kw)
+        results.extend({
+            b.name: get_block_stats(g.get_block(name), group='single', size=size, data_size=size[0]*size[1], status=g.status())
+            for b in g.iter_blocks()})
 
+    for size in SIZES:
         # a) multi process - pickle
-        header('single process', ('size:', size))
-        g2 = run_graph(B_reip, *a, throughput='medium', duration=duration, **kw)
-        writer = g2.get_block('Builtin_Write_Bundle')
-        det = g2.get_block('Object_Detector')
-        results.extend(
-            get_block_stats(b, group='pickle', size=size, data_size=size[0]*size[1])
-            for b in [writer, det])
+        header('pickle', ('size:', size))
+        g = run_graph(B_reip, *a, throughput='medium', size=size, duration=duration, **kw)
+        results.extend({
+            b.name: get_block_stats(g.get_block(name), group='pickle', size=size, data_size=size[0]*size[1], status=g.status())
+            for b in g.iter_blocks()})
 
+    for size in SIZES:
         # a) multi process - plasma
-        header('single process', ('size:', size))
-        g3 = run_graph(B_reip, *a, throughput='large', duration=duration, **kw)
-        writer = g3.get_block('Builtin_Write_Bundle')
-        det = g3.get_block('Object_Detector')
-        results.extend(
-            get_block_stats(b, group='plasma', size=size, data_size=size[0]*size[1])
-            for b in [writer, det])
+        header('plasma', ('size:', size))
+        g = run_graph(B_reip, *a, throughput='large', size=size, duration=duration, **kw)
+        results.extend({
+            b.name: get_block_stats(b, group='plasma', size=size, data_size=size[0]*size[1], status=g.status())
+            for b in g.iter_blocks()})
 
-    return dump_results(results, 1)
+    return dump_results(results, 1, out_dir=out_dir)
 
 
-def compare_2(*a, duration=30, **kw):
+def compare_2(*a, duration=DURATION, out_dir=OUT_DIR, **kw):
     '''2) Overhead: Comparison inside of REIP - prove that we don’t add much overhead over the actual tasks that we want to perform.'''
     results = []
     for size in SIZES:
-        g = run_graph(B_reip, *a, duration=duration, **kw)
-        results.extend(
-            get_block_stats(b, group='plasma', size=size, data_size=size[0]*size[1])
-            for b in g.iter_blocks())
-    return dump_results(results, 2)
+        header(('size:', size))
+        g = run_graph(B_reip, *a, size=size, duration=duration, **kw)
+        results.extend({
+            b.name: get_block_stats(b, group='plasma', size=size, data_size=size[0]*size[1], status=g.status())
+            for b in g.iter_blocks()})
+    return dump_results(results, 2, out_dir=out_dir)
 
 
-def compare_3():
+def compare_3(*a, duration=DURATION, out_dir=OUT_DIR, **kw):
     '''3) Hardware platform: REIP’s software blocks are Linux-platform  agnostic  so  they  can  be  executed  on  a  large  variety of 
     single  board  computers  (SBC)  at  various  price  and  powerpoints.  This  flexibility  allows  the  software  to  be  matched 
     to suitable hardware based on the computational demands of theblocks and the project budget. In this use case, real-time, high-resolution 
@@ -370,46 +407,54 @@ def compare_3():
     '''
     results = []
     for size in SIZES:
-        g = run_graph(B_reip, *a, duration=duration, **kw)
-        results.extend(
-            get_block_stats(b, size=size, data_size=size[0]*size[1])
-            for b in g.iter_blocks())
-    return dump_results(results, 3)
+        header(('size:', size))
+        g = run_graph(B_reip, *a, size=size, duration=duration, **kw)
+        results.extend({
+            b.name: get_block_stats(b, size=size, data_size=size[0]*size[1], status=g.status())
+            for b in g.iter_blocks()})
+    return dump_results(results, 3, out_dir=out_dir)
 
 
-def compare_4():
+def compare_4(*a, duration=DURATION, out_dir=OUT_DIR, **kw):
     '''4) Comparing to other systems:'''
     results = []
     for size in SIZES:
-        # REIP
-        with B_reip.Graph() as g:
-            define_graph(B_reip, *a, **kw)
-        g.run(duration=duration)
-        results.extend(
-            get_block_stats(g2.get_block(name), group='reip', size=size, data_size=size[0]*size[1])
-            for name in ['Builtin_Write_Bundle', 'Object_Detector'])
+        kind = 'reip'
+        header(kind, ('size:', size))
+        g = run_graph(Bs[kind], *a, size=size, duration=duration, **kw)
+        results.extend({
+            b.name: get_block_stats(b, group=kind, size=size, data_size=size[0]*size[1], status=g.status())
+            for b in g.iter_blocks()})
 
-        # Ray
-        with B_ray.Graph() as g:
-            define_graph(B_ray, *a, **kw)
-        g.run(duration=duration)
-        results.extend(
-            get_block_stats(g2.get_block(name), group='ray', size=size, data_size=size[0]*size[1])
-            for name in ['Builtin_Write_Bundle', 'Object_Detector'])
+    for size in SIZES:
+        kind = 'ray'
+        header(kind, ('size:', size))
+        g = run_graph(Bs[kind], *a, size=size, duration=duration, **kw)
+        results.extend({
+            b.name: get_block_stats(b, group=kind, size=size, data_size=size[0]*size[1], status=g.status())
+            for b in g.iter_blocks()})
 
-        # Waggle
-        with B_waggle.Graph() as g:
-            define_graph(B_waggle, *a, **kw)
-        g.run(duration=duration)
-        results.extend(
-            get_block_stats(g2.get_block(name), group='waggle', size=size, data_size=size[0]*size[1])
-            for name in ['Builtin_Write_Bundle', 'Object_Detector'])
+    for size in SIZES:
+        kind = 'waggle'
+        header(kind, ('size:', size))
+        g = run_graph(Bs[kind], *a, size=size, duration=duration, **kw)
+        results.extend({
+            b.name: get_block_stats(b, group=kind, size=size, data_size=size[0]*size[1], status=g.status())
+            for b in g.iter_blocks()})
 
-        # # Deepstream
-        # with reip.Graph() as g:
-        #     define_graph(*a, **kw)
-        # g.run(duration=duration)
-    return dump_results(results, 4)
+    return dump_results(results, 4, out_dir=out_dir)
+
+
+def compare_4_sep(kind, *a, duration=DURATION, out_dir=OUT_DIR, **kw):
+    '''4) Comparing to other systems:'''
+    results = []
+    for size in SIZES:
+        header(kind, ('size:', size))
+        g = run_graph(Bs[kind], *a, size=size, duration=duration, **kw)
+        results.extend({
+            b.name: get_block_stats(b, group=kind, size=size, data_size=size[0]*size[1], status=g.status())
+            for b in g.iter_blocks()})
+    return dump_results(results, f'4_{kind}', out_dir=out_dir)
 
 
 if __name__ == '__main__':
