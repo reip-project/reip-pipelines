@@ -22,6 +22,8 @@ class BlockExit(SystemExit):
 LOG_STR = 'short_str'
 
 
+# auto-incrementing names
+
 _NAMESPACES_IDX = {}
 def auto_name(block, name=None, attrs=None, ns=None, leading=2):
     # create a name from the block attributes
@@ -36,30 +38,8 @@ def auto_name_clear():
     _NAMESPACES_IDX.clear()
 auto_name.clear = auto_name_clear
 
-def aslist(x):
-    return x if isinstance(x, list) else [] if x is None else [x]
 
-
-def run(worker, duration=None, stats_interval=None):
-    try:
-        t0 = time.time()
-        worker.init()
-        stat_th = reip.util.iters.HitThrottle(stats_interval)
-        while worker.running:
-            if duration and time.time() - t0 >= duration:
-                worker.log.info('finished duration')
-                break
-            worker.poll()
-            if stats_interval and stat_th:
-                worker.log.info(worker.status())
-            time.sleep(worker._delay)
-    except BlockExit:
-        worker.log.info('Exiting...')
-    except KeyboardInterrupt as e:
-        worker.log.exception(e)
-        worker.log.warning('Interrupting... {}'.format(worker.status()))
-    finally:
-        worker.finish()
+# queue tweaks queue.Queue and multiprocessing.Queue fix
 
 
 class QMix:  # patch class for basic queue objects to make them work like reip queues
@@ -106,7 +86,6 @@ class QMix:  # patch class for basic queue objects to make them work like reip q
         (getattr(self, 'close', None) or (lambda: None))()
 
 
-
 def extend_queue(QMix):
     class Queue(QMix, queue.Queue):  # patched queue class
         pass
@@ -122,7 +101,7 @@ def extend_queue(QMix):
 Queue, mpQueue = extend_queue(QMix)
 
 
-
+# core implementation
 
 class Graph:
     default = None
@@ -379,19 +358,6 @@ class Task(Graph):
         self._should_exit = None
 
 
-def pickle_worker(obj, drop=()):  # tweaking how blocks get pickled
-    cls = type(obj)
-    drop = drop or ()
-    attrs = obj.__dict__
-    attrs = {k: v if k not in drop else None for k, v in attrs.items()}
-    return unpickle_worker, (cls, attrs)
-
-def unpickle_worker(cls, attrs):
-    obj = object.__new__(cls)
-    obj.__dict__ = attrs
-    return obj
-
-
 class CoreBlock:  # a basic base block to make sure that all required methods are defined
     def __init__(self, **kw):
         pass
@@ -429,20 +395,6 @@ class QWrap:  # wraps reip Customer so it works like the other queues
     #    return x
     def full(self):
         return len(self.wrapped) >= self.wrapped.maxsize
-
-
-def process(block, *inputs):  # block process code (separate so we can use it in different places)
-    if inputs and all(x is None for x in inputs):
-        return
-    inputs, meta = convert_inputs(*inputs)
-    #self.log.debug('%d inputs. meta: %s', len(inputs), meta)
-    result = block.process(*inputs, meta=meta)
-    if result is None:
-        return
-    [result], meta = reip.block.prepare_output(result, meta)
-    return result, meta
-
-
 
 
 class Block:
@@ -638,11 +590,57 @@ class Block:
         return export_state(self)
 
 
-def wrap_blocks(cls, *blocks):
-    return cls.Module(*blocks, _monitor(cls.Cls), cls=cls, Graph=cls.Graph, Task=cls.Task)#, Monitor=_monitor(cls)
+# block/graph internal helpers
 
-Block.wrap_blocks = classmethod(wrap_blocks)
 
+
+def run(worker, duration=None, stats_interval=None):
+    try:
+        t0 = time.time()
+        worker.init()
+        stat_th = reip.util.iters.HitThrottle(stats_interval)
+        while worker.running:
+            if duration and time.time() - t0 >= duration:
+                worker.log.info('finished duration')
+                break
+            worker.poll()
+            if stats_interval and stat_th:
+                worker.log.info(worker.status())
+            time.sleep(worker._delay)
+    except BlockExit:
+        worker.log.info('Exiting...')
+    except KeyboardInterrupt as e:
+        worker.log.exception(e)
+        worker.log.warning('Interrupting... {}'.format(worker.status()))
+    finally:
+        worker.finish()
+
+
+
+
+def pickle_worker(obj, drop=()):  # tweaking how blocks get pickled
+    cls = type(obj)
+    drop = drop or ()
+    attrs = obj.__dict__
+    attrs = {k: v if k not in drop else None for k, v in attrs.items()}
+    return unpickle_worker, (cls, attrs)
+
+def unpickle_worker(cls, attrs):
+    obj = object.__new__(cls)
+    obj.__dict__ = attrs
+    return obj
+
+
+def process(block, *inputs):  # block process code (separate so we can use it in different places)
+    if inputs and all(x is None for x in inputs):
+        return
+    inputs, meta = convert_inputs(*inputs)
+    #self.log.debug('%d inputs. meta: %s', len(inputs), meta)
+    result = block.process(*inputs, meta=meta)
+    if result is None:
+        return
+    [result], meta = reip.block.prepare_output(result, meta)
+    return result, meta
 
 
 def export_state(self, *types, _getattrs=True, recurse=False, **kw):
@@ -678,6 +676,19 @@ def convert_inputs(*inputs):  # take the items from multiple queues and convert 
 
 
 
+def aslist(x):
+    return x if isinstance(x, list) else [] if x is None else [x]
+
+
+
+# Wrapping blocks in a module
+
+
+def wrap_blocks(cls, *blocks):
+    return cls.Module(*blocks, _monitor(cls.Cls), cls=cls, Graph=cls.Graph, Task=cls.Task)#, Monitor=_monitor(cls)
+
+Block.wrap_blocks = classmethod(wrap_blocks)
+
 class BaseBlocksModule(dict):  # wraps the blocks into a pseudo-module with block classes as attributes
     def __init__(self, *blocks, cls=Block, **kw):
         self.cls = cls
@@ -708,6 +719,9 @@ class BlocksModule(BaseBlocksModule):  # wraps a block in another block class (l
 
 
 Block.Module = BlocksModule  # lets a block class override the Module class
+
+
+# sample application
 
 
 def _monitor(Block):
@@ -773,6 +787,8 @@ def example(Block):
 
 B = example(Block)
 
+
+# cli
 
 def test(slow=False, duration=10, n=20, monitor=5, B=B):
     kw = dict(max_processed=n)
