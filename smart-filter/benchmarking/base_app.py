@@ -55,12 +55,16 @@ class QMix:  # patch class for basic queue objects to make them work like reip q
     def __len__(self):
         return self.qsize()
 
+    #def empty(self):
+    #    return self.qsize() == 0    
+
     def get(self, block=False, timeout=None):
         if self.strategy == 'latest':
-            print('using latest strategy', self)
+            # print('using latest strategy', self)
             x, dropped = self._get_latest()
             if dropped > 0:
                 self.dropped += dropped
+            return x
         try:
             return super().get(block, timeout)
         except queue.Empty:
@@ -78,7 +82,7 @@ class QMix:  # patch class for basic queue objects to make them work like reip q
         try:
             while True:
                 x = super().get(block=False)
-                print('latest strategy skipping sample.', self, flush=True)
+                # print('latest strategy skipping sample.', self, flush=True)
                 dropped += 1
         except queue.Empty:
             return x, dropped
@@ -413,7 +417,7 @@ class Block:
     Queue = Queue
     mpQueue = staticmethod(mpQueue)
 
-    def __init__(self, *a, queue=10, block=None, max_processed=None, max_rate=None, wait_when_full=False, source_strategy=all, name=None, graph=None, _kw=None, log_level='info', **kw):
+    def __init__(self, *a, queue=100, block=None, max_processed=None, max_rate=None, wait_when_full=False, source_strategy=all, name=None, graph=None, _kw=None, log_level='info', **kw):
         self.max_queue = queue
         self.max_processed = max_processed
         self.wait_when_full = wait_when_full
@@ -546,7 +550,7 @@ class Block:
         return self.src_strategy(not q.empty() for q in self.inputs)
 
     def poll(self):
-        #self.log.info('poll %s', [not q.empty() for q in self.inputs])
+        #self.log.debug('poll %s', [not q.empty() for q in self.inputs])
         #if 'write' in self.name:
         #    self.log.info(self)
         if not self.sources_available():
@@ -564,21 +568,24 @@ class Block:
         inputs = [qi.get(block=False) for qi in self.inputs]
         #self.log.debug('getting inputs: %s', inputs)
         result = self.process(*inputs)
+        self.processed += 1
+
+        if self.max_processed and self.processed >= self.max_processed:
+            self.running = False
+
         #self.log.debug('got outputs: %s', type(result))
         if result is None:
             return True
         for q in self.output_customers:
             if q.full():
-                q.get()
+                # q.get()
                 self.dropped += 1
                 if self.dropped == 1 or self.dropped % 10 == 0:
                     self.log.warning('%d samples dropped due to full queue', self.dropped)
-            # self.log.info(str(q))
-            q.put(result)
+            else:
+                # self.log.info(str(q))
+                q.put(result)
 
-        self.processed += 1
-        if self.max_processed and self.processed >= self.max_processed:
-            self.running = False
         return True
 
     def run(self, *a, **kw):
@@ -802,8 +809,8 @@ def test(slow=False, duration=10, n=20, monitor=5, B=B):
         x1 = B.BlockA(**kw).to(B.BlockB(10)).to(B.BlockB(10)).to(B.Print())
         with B.Graph():
             B.BlockA(**kw).to(B.Print())
-        with B.Task():
-            x1.to(B.BlockB(50)).to(B.Print())
+        # with B.Task():
+        #     x1.to(B.BlockB(50)).to(B.Print())
         if monitor:
             B.Monitor(g, interval=monitor)
 

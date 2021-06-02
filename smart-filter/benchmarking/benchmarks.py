@@ -19,11 +19,13 @@ from bundles import Bundle
 from dummies import Generator, BlackHole
 # from cv_utils import ImageConvert, ImageDisplay
 # from controls import BulkUSB, Follower, Controller, ConsoleInput
+from benchmark import DummyContext
 
 import base_app
 
 DATA_DIR = '/mnt/ssd/test_data/'
-DATA_DIR = './data'
+#DATA_DIR = './data'
+MODEL_DIR = '../models'
 datafile = lambda *f: os.path.join(DATA_DIR, *f)
 
 
@@ -32,14 +34,14 @@ reip.Task._delay = 2e-1
 #reip.Block._delay = 1e-1
 reip.Block.USE_META_CLASS = True
 reip.Block.KW_TO_ATTRS = True
-reip.Block.run_profiler = True
-reip.Task.run_profiler = True
+reip.Block.run_profiler = False
+reip.Task.run_profiler = False
 
 OUT_DIR = './results'
 DURATION = 60
 
 MIC_DEVICE = "hw:2,0" #'Mic' #
-MIC_CHANNELS = 16 #None #
+MIC_CHANNELS = 1 #None #
 
 
 def get_blocks(*blocks):
@@ -132,6 +134,64 @@ def define_graph_alt2(B, audio_length=10, rate=4, data_dir='./data', use_tasks=T
         (spl.to(B.Csv(spl_fname, headers=[f'l{w}eq' for w in weights.lower()], max_rows=10))
             .to(B.BlackHole(name="spl-bh")))
 #define_graph_alt = define_graph_alt2
+
+def build_full_benchmark(B, stereo=False, max_fps=15, save_raw=False, meta_only=False,
+                    motion=True, do_hist=True, objects=False, thr=0.5, display=False,
+                    threads_only=False, all_processes=False, throughput='large',
+                    debug=False, verbose=False, config_id=-1):
+
+    assert not (threads_only and all_processes), "Choose either threads_only or all_processes"
+
+    n_cams = 2 if stereo else 1
+    cams = [None] * n_cams
+
+    for i in range(n_cams):
+        with DummyContext() if threads_only else B.Task("Camera_%d_Task" % i):
+            cams[i] = B.UsbCamGStreamer(name="Camera_%d" % i, filename=DATA_DIR + "/video/%d_{time}.avi",
+                                      dev=i, bundle=None, rate=max_fps, debug=debug, verbose=verbose)
+
+    if motion:
+        with DummyContext() if threads_only else B.Task("Motion_Task"):
+            mv = B.MotionDetector(name="Motion_Detector", do_hist=do_hist, debug=debug, verbose=verbose, log_level='debug')
+
+            if not all_processes and not threads_only:
+                mv.to(B.ImageWriter(name="Motion_Writer", path=DATA_DIR + "/motion/",
+                                  make_bgr=False, save_raw=save_raw, meta_only=meta_only))
+                if display:
+                    mv.to(B.ImageDisplay(name="Motion_Display", make_bgr=False), strategy="latest")
+
+        if all_processes or threads_only:
+            with DummyContext() if threads_only else B.Task("Motion_Writer_Task"):
+                mv.to(B.ImageWriter(name="Motion_Writer", path=DATA_DIR + "/motion/", make_bgr=False,
+                                  save_raw=save_raw, meta_only=meta_only), throughput=throughput)
+            if display:
+                with DummyContext() if threads_only else reip.Task("Motion_Display_Task"):
+                    mv.to(B.ImageDisplay(name="Motion_Display", make_bgr=False), throughput=throughput, strategy="latest")
+
+        for i, cam in enumerate(cams):
+            cam.to(mv, throughput=throughput, strategy="latest")#, index=i)
+
+    if objects:
+        with DummyContext() if threads_only else B.Task("Objects_Task"):
+            obj = B.ObjectDetector(name="Objects_Detector", model="ssd-mobilenet-v2", thr=thr, labels_dir=MODEL_DIR,
+                                 draw=True, cuda_out=False, zero_copy=False, debug=debug, verbose=verbose, log_level='debug')
+
+            if not all_processes and not threads_only:
+                obj.to(B.ImageWriter(name="Objects_Writer", path=DATA_DIR + "/objects/",
+                                   make_bgr=True, save_raw=save_raw, meta_only=meta_only))
+                if display:
+                    obj.to(B.ImageDisplay(name="Objects_Display", make_bgr=True), strategy="latest")
+
+        if all_processes or threads_only:
+            with DummyContext() if threads_only else B.Task("Objects_Writer_Task"):
+                obj.to(B.ImageWriter(name="Objects_Writer", path=DATA_DIR + "/objects/", make_bgr=True,
+                                   save_raw=save_raw, meta_only=meta_only), throughput=throughput)
+            if display:
+                with DummyContext() if threads_only else B.Task("Objects_Display_Task"):
+                    obj.to(B.ImageDisplay(name="Objects_Display", make_bgr=True), throughput=throughput, strategy="latest")
+
+        for i, cam in enumerate(cams):
+            cam.to(obj, throughput=throughput, strategy="latest")#, index=i)
 
 
 # def define_graph(B, use_tasks=True, throughput='large'):
@@ -237,12 +297,25 @@ def define_graph(B, audio_length=10, rate=4, data_dir='./data', cam_2nd=True, us
 
 
 try:
-    from ai import ObjectDetector
+    # raise ImportError()
+
+    from cv_utils import ImageWriter, ImageDisplay
     from usb_cam import UsbCamGStreamer
+    from motion import MotionDetector
+    from ai import ObjectDetector
+
     B_ray, B_reip, B_waggle, B_base = get_blocks(
-        UsbCamGStreamer, ObjectDetector, Bundle, NumpyWriter, BlackHole, 
+        UsbCamGStreamer, ObjectDetector, MotionDetector, ImageWriter, ImageDisplay, Bundle, NumpyWriter, BlackHole,
         B.audio.Mic, B.FastRebuffer, B.audio.AudioFile, B.audio.SPL, B.Csv)
-    BLOCKS = ['cam0', 'cam1', 'detect']
+
+    define_graph = build_full_benchmark
+
+    # from ai import ObjectDetector
+    # from usb_cam import UsbCamGStreamer
+    # B_ray, B_reip, B_waggle, B_base = get_blocks(
+    #     UsbCamGStreamer, ObjectDetector, Bundle, NumpyWriter, BlackHole,
+    #     B.audio.Mic, B.FastRebuffer, B.audio.AudioFile, B.audio.SPL, B.Csv)
+    # BLOCKS = ['cam0', 'cam1', 'detect']
 except ImportError:
     import traceback
     traceback.print_exc()
@@ -251,7 +324,7 @@ except ImportError:
     B_ray, B_reip, B_waggle, B_base = get_blocks(
             Generator, Bundle, NumpyWriter, BlackHole,
             B.audio.Mic, B.FastRebuffer, B.audio.AudioFile, B.audio.SPL, B.Csv, B.Debug)
-    define_graph = define_graph_alt
+    define_graph = define_graph_alt2
     BLOCKS = ['Basler_Cam', 'Builtin_Cam', 'Basler_Write_Bundle', 'Builtin_Write_Bundle', 'mic', 'spl-task']
 
 Bs = {'ray': B_ray, 'reip': B_reip, 'waggle': B_waggle, 'base': B_base}
@@ -279,7 +352,11 @@ def run_graph(B, *a, duration=15, stats_interval=5, **kw):
 
 
 
-def test(module='reip', *a, duration=10, **kw):
+def test(module='reip', *a, duration=22, **kw):
+    if module == "ray":
+        import ray
+        ray.init()
+
     g = run_graph(Bs[module], *a, duration=duration, **kw)
 
 

@@ -23,13 +23,13 @@ class QMix(base_app.QMix):
     cache = None
     def spawn(self):
         self.cache = None
-
+    
     def qsize(self):
         return super().qsize() + int(self.cache is not None)
-
+    
     def empty(self):
-        return self.get(peek=True) is None  # make empty take into consideration if the future is ready or not
-
+         return self.get(peek=True) is None  # make empty take into consideration if the future is ready or not
+    
     def get(self, block=False, timeout=None, peek=False):
         fut = self.cache
         if fut is None:  # get the next element
@@ -42,7 +42,7 @@ class QMix(base_app.QMix):
         if not peek:
             self.cache = None
         return fut
-
+    
     def join(self):
         if self.cache is not None:
             ray.cancel(self.cache)
