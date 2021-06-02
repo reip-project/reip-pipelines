@@ -1,5 +1,5 @@
+import functools
 import base_app
-
 from waggle import plugin
 
 plugin.init()
@@ -18,10 +18,16 @@ class PublishQueue:
     def put(self, x):
         plugin.publish(self.key, x)
 
+    def get(self, **kw):
+        return
+
 
 class FileQueue(PublishQueue):
     def put(self, x):
         plugin.upload_file(x)
+
+    def get(self, **kw):
+        return
 
 
 class Block(base_app.Block):
@@ -56,15 +62,9 @@ class FileBlock(Block):
         plugin.upload_file(x)
 
 
+B = base_app.example(Block)
+test = functools.partial(base_app.test, B=B)
+
 if __name__ == '__main__':
-    B = base_app.example(Block)
-
-    with B.Graph() as g:
-        x1 = B.BlockA(max_processed=10).to(B.BlockB(10)).to(B.BlockB(10)).to(B.Print())
-        with B.Graph():
-            B.BlockA(max_processed=10).to(B.Print())
-        with B.Task():
-            x1.to(B.BlockB(50)).to(B.Print())
-
-    print(g)
-    print(g.run())
+    import fire
+    fire.Fire(test)

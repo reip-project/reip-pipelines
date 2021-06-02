@@ -81,7 +81,7 @@ class Mic(reip.Block):
             pcm = np.ascontiguousarray(pcm[:,self.mono])
         if self.mic_compensation is not None:
             pcm, self.filter_zi = self._lfilter(self.mic_compensation, [1.0], pcm, zi=self.filter_zi)
-        return [pcm], {'sr': self.sr, 'time': meta["time"]}
+        return [pcm], dict(meta, **{'sr': self.sr})
 
     def finish(self):
         '''Stop pyaudio'''

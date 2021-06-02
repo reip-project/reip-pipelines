@@ -1,73 +1,65 @@
+import functools
 import reip
 import base_app
 
 reip.Block.KW_TO_ATTRS = True
 
 
-class Graph(reip.Graph):
-    def __init__(self, name_=None, *a, name=None, **kw):
-        super().__init__(*a, name=base_app.auto_name(self, name=name_ or name), **kw)
+#class Graph(reip.Graph):
+#    def __init__(self, name_=None, *a, name=None, **kw):
+#        super().__init__(*a, name=base_app.auto_name(self, name=name_ or name), **kw)
 
+Graph = reip.Graph
 Task = reip.Task
 #class Task(reip.Task):
 #    def __init__(self, name_, *a, name=None, **kw):
 #        super().__init__(*a, name=base_app.auto_name(self, name=name_ or name), **kw)
 
 
-class Block(reip.Block):
-    #Cls = base_app.CoreBlock
+class BlocksModule(base_app.BlocksModule):
+    def _make_item(self, c, cls):
+        if issubclass(c, reip.Block):
+            return c
+        return super()._make_item(c, cls)
+
+class Block(reip.Block):  # this class is only used for non-reip blocks that implement init/process/finish
+    Cls = base_app.CoreBlock
     Graph = Graph
     Task = Task
     wrap_blocks = classmethod(base_app.wrap_blocks)
-    Module = base_app.BaseBlocksModule
+    Module = BlocksModule
 
-    #def __init__(self, *a, block=None, **kw):
-    #    super().__init__(n_inputs=None, name='{}_{}'.format(block.__class__.__name__, id(self)), **kw)
-    #    if block is None:
-    #        block = self.Cls(**self.extra_k)
-    #    self.block = block
-    #    block.__block__ = self
+    def __init__(self, *a, block=None, n_inputs=None, name=None, **kw):
+        # rename the block class name
+        if block is not None or self.Cls.__class__ is not base_app.CoreBlock:
+            self.__class__ = type(
+                    getattr(block, 'name', None) or block.__class__.__name__ 
+                    if block is not None else 
+                    self.Cls.__name__, 
+                    (self.__class__,), {})
+        super().__init__(n_inputs=n_inputs, name=name, extra_kw=True, **kw)
+        if block is None:
+            block = self.Cls(*a, **self.extra_kw)
+        self.block = block
+        block.__block__ = self
+        block.log = self.log
+        self.max_rate = getattr(block, 'max_rate', None) or self.max_rate
 
-    #def init(self):
-    #    self.block.init()
+    def init(self):
+        self.block.init()
 
-    #def process(self, *xs, meta):
-    #    return [self.block.process(*xs)], meta
+    def process(self, *xs, meta):
+        return self.block.process(*xs, meta=meta)
+        #return [self.block.process(*xs)], meta  # originally I was going to simplify by not using meta, but since we're using existing reip blocks
 
-    #def finish(self):
-    #    self.block.finish()
+    def finish(self):
+        self.block.finish()
 
+
+B = base_app.example(Block)
+test = functools.partial(base_app.test, B=B)
 
 if __name__ == '__main__':
-    B = base_app.example(Block)
+    import fire
+    fire.Fire(test)
 
-    with B.Graph() as g:
-        x1 = B.BlockA(max_processed=10).to(B.BlockB(10)).to(B.BlockB(10)).to(B.Print())
-        with B.Graph():
-            B.BlockA(max_processed=10).to(B.Print())
-        with B.Task():
-            x1.to(B.BlockB(50)).to(B.Print())
-
-    print(g)
-    print(g.run())
-
-# with reip.Graph() as g:
-#     with reip.Task():
-#         cam1 = Block(core.Camera(), max_processed=100)
-#     with reip.Task():
-#         cam2 = Block(core.Camera())
-
-#     with reip.Task():
-#         stitch = Block(core.Stitch())(cam1, cam2)
-#         filtered = Block(core.MotionFilter())(stitch)
-    
-#     with reip.Task():  # XXX maybe delete
-#         ml = Block(core.ML())(filtered)
-
-#     write_video = Block(core.Write())(filtered)
-#     write_ml = Block(core.Write())(ml)
-
-
-# g.run()
-# for b in g.blocks:
-#     print(b.status())
