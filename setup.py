@@ -19,21 +19,23 @@ setuptools.setup(
         'fire', 'colorlog',
         # core packages
         'numpy',
-        'remoteobj>=0.3.1',
+        'remoteobj>=0.4.0',
         # 'pyarrow',
         # block packages
         # 'watchdog',
-        'tflit>=0.0.13',
-        # status messages
-        'psutil', 'ifcfg', 'ixconfig>=0.1.1', 'netswitch', 'requests',
+        #'tflit>=0.0.13',
+        ## status messages
+        #'psutil', 'ifcfg', 'ixconfig>=0.1.1', 'netswitch', 'requests',
     ],
     extras_require={
-        # 'status': ['psutil', 'ixconfig', 'netswitch'],
         'audio': ['sounddevice', 'librosa'],
         'video': ['opencv-python'],  # already installed on Jetson by default
         'encrypt': ['pycrypto'],
+        'ml': ['tflit>=0.0.13'],
         'vis': ['matplotlib'],
         'docs': ['sphinx!=1.3.1', 'sphinx_theme', 'sphinx-gallery'],
+        'status': ['psutil', 'ifcfg', 'ixconfig>=0.1.1', 'netswitch'],
+        'upload': ['requests'],
     },
     license='BSD 3-Clause Clear License',
     keywords='iot embedded app pipeline block multiprocessing')
