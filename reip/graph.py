@@ -35,6 +35,8 @@ def auto_name(block, *attrs, name=None, ns=None):
     count = namespace[name] = namespace.get(name, -1) + 1
     return '{}-{:02.0f}'.format(name, count) if count else name
 
+def _auto_name_clear():
+    _NAMESPACES_IDX.clear()
 
 
 class _ContextScope:
@@ -152,6 +154,10 @@ class BaseContext:  # (metaclass=_MetaContext)
         # everything checks out.
         parent.add(child)
         return parent.name, task_id or parent.task_id
+
+    @classmethod
+    def reset_names(self):
+        return _auto_name_clear()
 
     @classmethod
     def detached(cls, *blocks, **kw):

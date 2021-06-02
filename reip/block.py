@@ -695,7 +695,7 @@ class Block:
         e.g. `Block_123    +   2 buffers (2.09 x/s),   9 total (1.47 x/s avg),  sources=[1], sinks=[0]`
         '''
         n = self.processed
-        total_time = self._sw.elapsed()
+        total_time = self._sw.total() # self._sw.elapsed()
         init_time = self._sw.stats("init").sum if 'init' in self._sw else 0
         speed_avg = n / (total_time - init_time)
 
