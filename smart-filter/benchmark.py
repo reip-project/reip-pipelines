@@ -20,7 +20,7 @@ class DummyContext:
 def build_benchmark(stereo=False, max_fps=15, save_raw=False, meta_only=False,
                     motion=True, do_hist=True, objects=True, thr=0.5, display=False,
                     threads_only=False, all_processes=False, throughput='large',
-                    debug=False, verbose=False):
+                    debug=False, verbose=False, config_id=-1):
 
     assert not (threads_only and all_processes), "Choose either threads_only or all_processes"
 
@@ -76,7 +76,7 @@ def build_benchmark(stereo=False, max_fps=15, save_raw=False, meta_only=False,
             cam.to(obj, index=i, throughput=throughput, strategy="latest")
 
 
-def run_benchmark(duration=16, stats_interval=3, **kw):
+def run_benchmark(duration=42, stats_interval=10, **kw):
     print("\nRunning for %d seconds:\n" % duration, kw, "\n")
 
     build_benchmark(**kw)
@@ -88,16 +88,21 @@ def run_benchmark(duration=16, stats_interval=3, **kw):
 def gen_script():
     with open("benchmark.sh", "w") as f:
         f.write("#!/bin/bash\n\n")
+
         f.write("rm -fr logs\n")
         f.write("mkdir logs\n\n")
 
-        template = "python3 benchmark.py --throughput=%s"
+        template = "python3 benchmark.py --stereo=%s --threads_only=%s --all_processes=%s --throughput=%s --config_id=%d"
 
-        for throughput in ["small", "medium", "large"]:
-            cmd = template % throughput
-            cmd += " | tee \'logs/%s.log\'\n\n" % cmd
+        config = 0
+        for stereo in [True, False]:
+            for threads_only, all_processes in [(False, False), (True, False), (False, True)]:
+                for throughput in ["small", "medium", "large"]:
+                    cmd = template % (str(stereo), str(threads_only), str(all_processes), throughput, config)
+                    cmd += " | tee \'logs/config_%d.log\'\n\n" % config
+                    config += 1
 
-            f.write(cmd)
+                    f.write(cmd)
 
     exit(0)
 
@@ -105,7 +110,7 @@ def gen_script():
 if __name__ == '__main__':
     # run_benchmark(stereo=True, motion=True, objects=True, display=False, threads_only=False, all_processes=False, debug=True)
 
-    gen_script()
+    # gen_script()
 
     import fire
     fire.Fire(run_benchmark)
