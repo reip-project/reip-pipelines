@@ -2,7 +2,7 @@ import queue
 import time
 import remoteobj
 import multiprocessing as mp
-# import mpqueue_fix
+import mpqueue_fix
 
 import reip
 try:
@@ -494,7 +494,7 @@ class Block:
                     self.inputs.append(QWrap(src) if not isinstance(src, QWrap) else src)
 
     def __reduce__(self):
-        return pickle_worker(self)
+        return pickle_worker(self, drop=['inputs', 'output_customers'])
 
     # str representations
 

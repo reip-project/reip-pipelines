@@ -157,5 +157,6 @@ B = base_app.example(Block)
 test = functools.partial(base_app.test, B=B)
 
 if __name__ == '__main__':
+    ray_init()
     import fire
     fire.Fire(test)
