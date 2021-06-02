@@ -24,7 +24,10 @@ class QMix(base_app.QMix):
     def spawn(self):
         self.cache = None
 
-    def get(self, block=False, timeout=None):
+    def empty(self):
+        return self.get(peek=True) is not None  # make empty take into consideration if the future is ready or not
+
+    def get(self, block=False, timeout=None, peek=False):
         fut = self.cache
         if fut is None:  # get the next element
             self.cache = fut = super().get(block=block, timeout=timeout)
@@ -32,7 +35,10 @@ class QMix(base_app.QMix):
             return
         if not ray.wait([fut], timeout=0, fetch_local=False)[0]:  # not ready
             return
-        return fut  # the future is ready, but don't pull the item
+        # the future is ready, but don't pull the item, let the future just be passed to the next function
+        if not peek:
+            self.cache = None
+        return fut
 
     def join(self):
         if self.cache is not None:
