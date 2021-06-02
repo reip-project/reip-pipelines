@@ -7,7 +7,7 @@ import time
 from .constants import *
 from . import exceptions
 from . import util
-from .util import status, Meta
+from .util import Meta
 
 from .interface import *
 from . import stores
