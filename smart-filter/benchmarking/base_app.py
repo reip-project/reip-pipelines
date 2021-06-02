@@ -2,7 +2,7 @@ import queue
 import time
 import remoteobj
 import multiprocessing as mp
-import mpqueue_fix
+# import mpqueue_fix
 
 import reip
 try:
@@ -55,7 +55,8 @@ def run(worker, duration=None, stats_interval=None):
             time.sleep(worker._delay)
     except BlockExit:
         worker.log.info('Exiting...')
-    except KeyboardInterrupt:
+    except KeyboardInterrupt as e:
+        worker.log.exception(e)
         worker.log.warning('Interrupting... {}'.format(worker.status()))
     finally:
         worker.finish()
@@ -462,7 +463,7 @@ class Block:
         self.max_queue = queue
         self.max_processed = max_processed
         self.wait_when_full = wait_when_full
-        self.throttle = Throttler(max_rate)
+        self.throttle = reip.util.iters.HitThrottle(max_rate)
         self.src_strategy = source_strategy
 
         if block is None:
@@ -587,15 +588,18 @@ class Block:
         # for q in self.output_customers:
         #     q.clear()
 
+    def sources_available(self):
+        return self.src_strategy(not q.empty() for q in self.inputs)
+
     def poll(self):
-        #self.log.debug('poll')
-        if 'Write' in self.name:
-            self.log.info(self)
-        if not self.src_strategy(not q.empty() for q in self.inputs):
+        #self.log.info('poll %s', [not q.empty() for q in self.inputs])
+        #if 'write' in self.name:
+        #    self.log.info(self)
+        if not self.sources_available():
             #self.log.debug('no sources available %s', self.inputs)
             return False
 
-        if self.throttle():
+        if not self.throttle:
             #self.log.debug('throttling %d/%d', self.throttle.time_left, self.throttle.interval)
             return True
 
@@ -615,6 +619,7 @@ class Block:
                 self.dropped += 1
                 if self.dropped == 1 or self.dropped % 10 == 0:
                     self.log.warning('%d samples dropped due to full queue', self.dropped)
+            # self.log.info(str(q))
             q.put(result)
 
         self.processed += 1
@@ -703,37 +708,6 @@ class BlocksModule(BaseBlocksModule):  # wraps a block in another block class (l
 
 
 Block.Module = BlocksModule  # lets a block class override the Module class
-
-
-class Throttler:  # use this to throttle a loop: th = Throttler(); for _ in loop: if th(): continue
-    t_last = None
-    def __init__(self, max_rate=None):
-        self.interval = 1/max_rate if max_rate else None
-
-    def clear(self):
-        self.t_last = None
-        return self
-
-    def __call__(self):
-        interval = self.interval
-        if interval is None:
-            return False
-        last = self.t_last
-        now = time.time()
-        if last is None or (self.interval and now - last > interval):
-            self.t_last = now
-            #print(last and now - last, interval)
-            return False
-        return True
-
-    @property
-    def elapsed(self):
-        last = self.t_last
-        return time.time() - last if last is not None else self.interval or 0
-
-    @property
-    def time_left(self):
-        return max(0, self.interval - self.elapsed) if self.interval else 0
 
 
 def _monitor(Block):

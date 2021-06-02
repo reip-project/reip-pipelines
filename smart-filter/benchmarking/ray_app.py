@@ -24,6 +24,9 @@ class QMix(base_app.QMix):
     def spawn(self):
         self.cache = None
 
+    def qsize(self):
+        return super().qsize() + int(self.cache is not None)
+
     def empty(self):
         return self.get(peek=True) is not None  # make empty take into consideration if the future is ready or not
 
@@ -68,13 +71,16 @@ class BlockAgent:
         self.block.log.info(reip.util.text.green('ready'))
 
     def process(self, *inputs):
-        # print(1, self.block.__block__.name)
-        if inputs and all(x is None for x in inputs):
-            return
-        # print(2, self.block.__block__.name)
-        inputs, meta = convert_inputs(*inputs)
+        output = base_app.process(self.block, *inputs)
+        print(self.block.__block__.name, output)
+        return output
+        #print(1, self.block.__block__.name)
+        #if inputs and all(x is None for x in inputs):
+        #    return
+        #print(2, self.block.__block__.name)
+        #inputs, meta = convert_inputs(*inputs)
         #print(meta)
-        return self.block.process(*inputs, meta=meta)
+        #return self.block.process(*inputs, meta=meta)
 
     def finish(self):
         self.block.log.info(reip.util.text.blue('finishing'))
@@ -158,6 +164,9 @@ class Block(base_app.Block):
 
     def finish(self, get=True):
         return maybeget(self.agent.finish.remote(), get)
+
+    #def sources_available(self):
+    #    return self.src_strategy(not )
 
 
 B = base_app.example(Block)

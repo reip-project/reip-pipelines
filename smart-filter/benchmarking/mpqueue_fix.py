@@ -46,6 +46,7 @@ class Queue(multiprocessing.queues.Queue):
     def __init__(self, *a, **kw):
         super().__init__(*a, **kw)
         self.size = SharedCounter(0)
+        #self.maxsize = None
 
     def put(self, *a, **kw):
         super().put(*a, **kw)
@@ -63,6 +64,9 @@ class Queue(multiprocessing.queues.Queue):
     def empty(self):
         """ Reliable implementation of multiprocessing.Queue.empty() """
         return not self.qsize()
+
+    #def full(self):
+    #    return self.maxsize and self.qsize() > self.maxsize
 
     def clear(self):
         """ Remove all elements from the Queue. """
