@@ -58,14 +58,14 @@ class BlockAgent:
     duration = None
     def __init__(self, block):
         self.block = block
-        print('initializing ray init', block)
+        print('initializing ray actor for', block)
 
     def init(self):
-        self.log.info(reip.util.text.blue('initializing'))
+        self.block.log.info(reip.util.text.blue('initializing'))
         self.outer_time = time.time()
         self.block.init()
         self.inner_time = time.time()
-        self.log.info(reip.util.text.green('ready'))
+        self.block.log.info(reip.util.text.green('ready'))
 
     def process(self, *inputs):
         # print(1, self.block.__block__.name)
@@ -73,18 +73,21 @@ class BlockAgent:
             return
         # print(2, self.block.__block__.name)
         inputs, meta = convert_inputs(*inputs)
-        print(meta)
+        #print(meta)
         return self.block.process(*inputs, meta=meta)
 
     def finish(self):
-        self.log.info(reip.util.text.blue('finishing'))
+        self.block.log.info(reip.util.text.blue('finishing'))
         self.duration = time.time() - self.inner_time
         self.block.finish()
         self.outer_duration = time.time() - self.outer_time
-        self.log.info(reip.util.text.green('done'))
+        self.block.log.info(reip.util.text.green('done'))
 
     def get_duration(self):
         return self.duration
+
+    def get_inner_time(self):
+        return self.inner_time
 
 
 def maybeget(futs, get=True):
@@ -139,6 +142,10 @@ class Block(base_app.Block):
     @property
     def duration(self):
         return ray.get(self.agent.get_duration.remote())
+
+    @property
+    def inner_time(self):
+        return ray.get(self.agent.get_inner_time.remote())
 
     def init(self, get=True):
         self.processed = 0
