@@ -77,4 +77,6 @@ class Queue(multiprocessing.queues.Queue):
         except queue.Empty:
             return
 
-multiprocessing.queues.Queue = Queue
+_OldQueue = multiprocessing.queues.Queue
+def patch(yes=True):
+    multiprocessing.queues.Queue = Queue if yes else _OldQueue

@@ -1,8 +1,14 @@
+import faulthandler
+faulthandler.enable()
+
 import queue
 import time
+import warnings
 import remoteobj
 import multiprocessing as mp
-# import mpqueue_fix
+import mpqueue_fix
+# mpqueue_fix.patch()
+from mpqueue_fix import SharedCounter
 
 import reip
 try:
@@ -72,10 +78,6 @@ class QMix:  # patch class for basic queue objects to make them work like reip q
                 raise
             return None
 
-    def clear(self):
-        '''Clears all items from the queue.'''
-        self._get_latest()
-
     def _get_latest(self):
         x = None
         dropped = -1
@@ -88,9 +90,42 @@ class QMix:  # patch class for basic queue objects to make them work like reip q
             return x, dropped
 
     def join(self):
-        self.clear()
+        self._get_latest()
         (getattr(self, 'close', None) or (lambda: None))()
 
+
+class CountProxy(int):
+    def __new__(cls, counter):
+        x = super().__new__(cls, counter.value)
+        x.counter = counter
+
+    def __iadd__(self, value):
+        self.counter.increment(value)
+
+class mpCount:
+    def __init__(self, initial=0):
+        self.initial = initial
+        self.key = '_counter_{}'.format(id(self))
+
+    def __get__(self, instance, owner):
+        # return self.getprop(instance).value
+        return CountProxy(self.getprop(instance))
+
+    def __set__(self, instance, value):
+        prop = self.getprop(instance)
+        prop.value = value
+
+    def getprop(self, instance):
+        try:
+            return getattr(instance, self.key)
+        except AttributeError:
+            x = SharedCounter()
+            setattr(instance, self.key, x)
+            return x
+
+
+class mpQMix:
+    dropped = mpCount(0)
 
 def extend_queue(QMix):
     class Queue(QMix, queue.Queue):  # patched queue class
@@ -99,7 +134,7 @@ def extend_queue(QMix):
     def mpQueue(*a, strategy='all', **kw):  # patched multiprocessing queue - need to use function because of internal mp context wrappers
         q = mp.Queue(*a, **kw)
         cls = q.__class__
-        q.__class__ = type('mpQueue', (QMix, cls), {'_qstr': 'mQ', 'maxsize': q._maxsize})
+        q.__class__ = type('mpQueue', (mpQMix, QMix, cls), {'_qstr': 'mQ', 'maxsize': q._maxsize})
         q.strategy = strategy
         return q
     return Queue, mpQueue
@@ -205,20 +240,17 @@ class Graph:
         for block in self.blocks:
             try:
                 block.init()
-                self.log.info(self.status())
+                # self.log.info(self.status())
             except Exception as e:
                 self.log.exception(e)
                 raise
-        self.log.info(reip.util.text.green('ready\n') + self.status())
+        self.log.info(reip.util.text.green('ready'))# + self.status()
 
     def poll(self):
         if any(not b.running for b in self.blocks): # just added this to make graphs end immediately
             return False
         did_something = False  # let blocks finish
         for block in self.blocks:
-            if not block.running:
-                block.log.warning('not running')
-                continue
             did_something = block.poll() or did_something
             time.sleep(self._delay)
         return did_something
@@ -358,7 +390,7 @@ class Task(Graph):
             self.__import_state__(result)
         except Exception as e:
             self.log.exception(e)
-            print('Could not pull block state from process. This means that block duration and processed counts will not be accurate.')
+            warnings.warn('Could not pull block state from process. This means that block duration and processed counts will not be accurate.')
         self._process.exc.raise_any()
         self._process = None
         self._should_exit = None
@@ -389,7 +421,7 @@ class QWrap:  # wraps reip Customer so it works like the other queues
         try:
             return getattr(self.wrapped, k)
         except RecursionError:
-            print('Recursion error for {}'.format(k))
+            warnings.warn('Recursion error for {}'.format(k))
             raise
     def get(self, *a, **kw):
         x = self.wrapped.get(*a, **kw)
@@ -421,16 +453,15 @@ class Block:
         self.max_queue = queue
         self.max_processed = max_processed
         self.wait_when_full = wait_when_full
-        self.throttle = reip.util.iters.HitThrottle(max_rate)
         self.src_strategy = source_strategy
 
         if block is None:
             block = self.Cls(*a, **dict(kw, **(_kw or {})))
         self.block = block
-        block.__block__ = block._ = self
-        block_max_rate = getattr(block, 'max_rate', None)
-        if block_max_rate:
-            self.throttle.interval = 1/block_max_rate
+        
+        
+        max_rate = max_rate or getattr(block, 'max_rate', None)
+        self.throttle = reip.util.iters.HitThrottle(1/max_rate if max_rate else None)
 
         self.inputs = []
         #self.input_blocks = []
@@ -465,10 +496,11 @@ class Block:
 
     def status(self):
         dt = self.elapsed()
-        return '[{} {} processed {} dropped. ran {:.3f}s. (avg: {:.5f} x/s), sources={}, sinks={}]'.format(
-            self.name, self.processed, self.dropped, dt, self.processed/dt if dt else 0,
+        return '[{} {} processed. ran {:.3f}s. (avg: {:.5f} x/s), sources={}, sinks={} dropped={}]'.format(
+            self.name, self.processed, dt, self.processed/dt if dt else 0,
             [len(s) if s is not None else None for s in self.inputs],
             [len(s) if s is not None else None for s in self.output_customers],
+            [getattr(s, 'dropped', None) if s is not None else None for s in self.output_customers],
         )
 
     # serializing across processes
@@ -526,7 +558,8 @@ class Block:
         self.inner_time = time.time()
 
     def process(self, *inputs):
-        return process(self.block, *inputs)
+        outputs = process(self.block, *inputs)
+        return outputs
 
     def close(self):
         self.log.info('closing')
@@ -547,44 +580,47 @@ class Block:
         #     q.clear()
 
     def sources_available(self):
-        return self.src_strategy(not q.empty() for q in self.inputs)
+        return not self.inputs or self.src_strategy(not q.empty() for q in self.inputs)
+
+    def sinks_unavailable(self):
+        return self.wait_when_full and any(q.full() for q in self.output_customers)
 
     def poll(self):
-        #self.log.debug('poll %s', [not q.empty() for q in self.inputs])
-        #if 'write' in self.name:
-        #    self.log.info(self)
-        if not self.sources_available():
-            #self.log.debug('no sources available %s', self.inputs)
+        # self.log.debug('poll %s', self.inputs)
+        if not self.running:
             return False
 
-        if not self.throttle:
-            #self.log.debug('throttling %d/%d', self.throttle.time_left, self.throttle.interval)
+        if not self.sources_available():
+            # self.log.debug('no sources available %s', [not q.empty() for q in self.inputs])
+            return False
+
+        if self.sinks_unavailable():
+            # self.log.debug('output full: %s', self.output_customers)
             return True
 
-        if self.wait_when_full and any(q.full() for q in self.output_customers):
-            #self.log.debug('output full: %s', self.output_customers)
+        if not self.throttle:
+            # self.log.debug('throttling %d/%d', self.throttle.remaining, self.throttle.interval)
             return True
 
         inputs = [qi.get(block=False) for qi in self.inputs]
         #self.log.debug('getting inputs: %s', inputs)
         result = self.process(*inputs)
         self.processed += 1
-
         if self.max_processed and self.processed >= self.max_processed:
-            self.running = False
+            raise BlockExit()
 
         #self.log.debug('got outputs: %s', type(result))
         if result is None:
             return True
-        for q in self.output_customers:
-            if q.full():
-                # q.get()
-                self.dropped += 1
-                if self.dropped == 1 or self.dropped % 10 == 0:
-                    self.log.warning('%d samples dropped due to full queue', self.dropped)
-            else:
-                # self.log.info(str(q))
-                q.put(result)
+        for q in self.output_customers:                
+            try:
+                q.put(result, block=False)  # drops
+            except queue.Full:
+                q.dropped += 1
+                dropped = q.dropped
+                if dropped == 1 or dropped % 10 == 0:
+                    self.log.warning('%d samples dropped due to full queue', dropped)
+                continue
 
         return True
 
@@ -605,12 +641,15 @@ class Block:
 
 def run(worker, duration=None, stats_interval=None):
     try:
+        # time.sleep(20)
         t0 = time.time()
         worker.init()
         stat_th = reip.util.iters.HitThrottle(stats_interval)
+        worker.log.info('ready\n' + worker.status() + '\n')
+        # time.sleep(10)
         while worker.running:
             if duration and time.time() - t0 >= duration:
-                worker.log.info('finished duration')
+                worker.log.info('finished after {:.1f} seconds.'.format(time.time() - t0))
                 break
             worker.poll()
             if stats_interval and stat_th:
@@ -773,7 +812,7 @@ def example(Block):
             self.add = add
 
         def process(self, x, meta):
-            self.log.info(x)
+            # self.log.info(x)
             return [x + self.add], {}
 
         def finish(self):
@@ -783,7 +822,8 @@ def example(Block):
 
     class Print(CoreBlock):
         def process(self, x, meta):
-            self.log.info(x)
+            # self.log.info(x)
+            print(x)
             return [x], {}
 
         def finish(self):
@@ -806,16 +846,16 @@ def test(slow=False, duration=10, n=20, monitor=5, B=B):
     print(kw)
 
     with B.Graph() as g:
-        x1 = B.BlockA(**kw).to(B.BlockB(10)).to(B.BlockB(10)).to(B.Print())
+        x1 = B.BlockA(**kw).to(B.BlockB(10))#.to(B.BlockB(10))#.to(B.Print())
         with B.Graph():
-            B.BlockA(**kw).to(B.Print())
-        # with B.Task():
-        #     x1.to(B.BlockB(50)).to(B.Print())
-        if monitor:
-            B.Monitor(g, interval=monitor)
+            B.BlockA(**kw)#.to(B.Print())
+        with B.Task():
+            x1.to(B.BlockB(50))#.to(B.Print())
+        # if monitor:
+        #     B.Monitor(g, interval=monitor)
 
     print(g)
-    assert g.get_block('print') is x1
+    # assert g.get_block('blocka') is x1
     print(g.run(duration=duration))
     print(g.status())
 
