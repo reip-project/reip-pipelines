@@ -20,6 +20,8 @@ from dummies import Generator, BlackHole
 # from cv_utils import ImageConvert, ImageDisplay
 # from controls import BulkUSB, Follower, Controller, ConsoleInput
 # from benchmark import DummyContext
+from cv_utils import ImageWriter
+from motion import MotionDetector
 
 import base_app
 
@@ -74,33 +76,26 @@ def get_blocks(*blocks):
 
 
 def define_graph_alt(
-        B, size=(1280, 1280), #sizeA=(720, 1280), sizeB=(2000, 2500),
-        rate_divider=1, rate=60, throughput='large', use_tasks=True,
-        gen_debug=None, bundle_debug=False, bundle_log=True,
-        io_debug=None, bh_debug=None, include_audio=False):
+        B, size=(1280, 1280), rate=60, ncams=1, 
+        throughput='large', use_tasks=True, 
+        save_raw=False, meta_only=False, do_hist=True,
+        motion=True, include_audio=False, 
+        gen_debug=None, bundle_debug=False, bundle_log=True, io_debug=None, bh_debug=None, log_level='info'):
 
     Graph = B.Task if use_tasks else B.Graph
-    with Graph("basler"):
-        #rate = 120
-        basler = (
-            B.Generator(name="basler-cam", size=size, dtype=np.uint8, max_rate=rate // rate_divider, debug=gen_debug, queue=rate*2, log_level=bundle_log)
-                .to(B.Bundle(name="basler-bundle", size=max(int(rate/10), 1), queue=10*2, debug=bundle_debug)))#, log_level=bundle_log
 
-    with Graph("builtin"):
-        #rate = 30
-        builtin = (
-            B.Generator(name="builtin-cam", size=size, dtype=np.uint8, max_rate=rate // rate_divider, debug=gen_debug, queue=rate*2)
-                .to(B.Bundle(name="builtin-bundle", size=max(int(rate/10), 1), queue=10*2, debug=bundle_debug)))#, strategy="skip", skip=3)#, log_level=bundle_log
+    cams = []
+    for i in range(ncams):
+        with Graph(f"cam{i}-task"):
+            #rate = 120
+            cam = B.Generator(name=f"cam{i}", size=size, inc=True, dtype=np.uint8, max_rate=rate, queue=rate*2, meta={'pixel_format': None}, log_level=log_level)
+            cams.append(cam)
 
-    (basler
-        .to(B.Bundle(name="basler-write-bundle", size=5, queue=5, debug=bundle_debug, log_level=bundle_log), throughput=throughput)
-        .to(B.NumpyWriter(name="basler-write", filename_template=datafile("basler_%d"), debug=io_debug))
-        .to(B.BlackHole(name="basler-bh", debug=bh_debug)))
-
-    (builtin
-        .to(B.Bundle(name="builtin-write-bundle", size=5, queue=5, debug=bundle_debug, log_level=bundle_log), throughput=throughput)
-        .to(B.NumpyWriter(name="builtin-write", filename_template=datafile("builtin_%d"), debug=io_debug))
-        .to(B.BlackHole(name="builtin-bh", debug=bh_debug)))
+    if motion:
+        with Graph(f"motion-task"):
+            mv = B.MotionDetector(len(cams), name="motion", do_hist=do_hist, log_level=log_level)
+            mv.to(B.ImageWriter(name="motion-write", path=DATA_DIR + "/motion/", make_bgr=False, save_raw=save_raw, meta_only=meta_only), throughput=throughput)
+        mv(*cams, throughput=throughput, strategy="latest")
 
     if include_audio:
         define_graph_alt2(B, throughput=throughput, use_tasks=use_tasks)
@@ -288,9 +283,8 @@ def define_graph(B, audio_length=10, rate=4, data_dir='./data', cam_2nd=True, us
 try:
     # raise ImportError()
 
-    from cv_utils import ImageWriter, ImageDisplay
+    from cv_utils import ImageDisplay
     from usb_cam import UsbCamGStreamer
-    from motion import MotionDetector
     from ai import ObjectDetector
 
     B_ray, B_reip, B_waggle, B_base = get_blocks(
@@ -311,7 +305,7 @@ except ImportError:
     print('Continuing on with dummy graph...')
 
     B_ray, B_reip, B_waggle, B_base = get_blocks(
-            Generator, Bundle, NumpyWriter, BlackHole,
+            Generator, Bundle, NumpyWriter, BlackHole, MotionDetector, ImageWriter,
             B.audio.Mic, B.FastRebuffer, B.audio.AudioFile, B.audio.SPL, B.Csv, B.Debug)
     # define_graph = define_graph_alt2
     define_graph = define_graph_alt

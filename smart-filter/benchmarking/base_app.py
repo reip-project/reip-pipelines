@@ -591,7 +591,7 @@ class Block:
             return False
 
         if not self.sources_available():
-            # self.log.debug('no sources available %s', [not q.empty() for q in self.inputs])
+            self.log.debug('no sources available %s', [not q.empty() for q in self.inputs])
             return False
 
         if self.sinks_unavailable():
@@ -603,7 +603,10 @@ class Block:
             return True
 
         inputs = [qi.get(block=False) for qi in self.inputs]
-        #self.log.debug('getting inputs: %s', inputs)
+        # self.log.debug('getting inputs: %s', inputs)
+        if self.name == 'motion-write':
+            import ray
+            self.log.info('getting inputs: %s', [type(ray.get(x, timeout=None)) for x in inputs])
         result = self.process(*inputs)
         self.processed += 1
         if self.max_processed and self.processed >= self.max_processed:
@@ -794,7 +797,7 @@ def _monitor(Block):
 
 
 def example(Block):
-    class BlockA(CoreBlock):
+    class Inc(CoreBlock):
         def init(self):
             self.i = -1
 
@@ -802,36 +805,33 @@ def example(Block):
             self.i += 1
             return [self.i], {}
 
-        def finish(self):
-            pass
-            #b = self.__block__
-            #b.log.info(b.drain_inputs())
-
-    class BlockB(CoreBlock):
-        def __init__(self, add):
+    class Add(CoreBlock):
+        def __init__(self, add=1):
             self.add = add
 
         def process(self, x, meta):
             # self.log.info(x)
             return [x + self.add], {}
 
-        def finish(self):
-            pass
-            #b = self.__block__
-            #b.log.info(b.drain_inputs())
+    import random
+    class Filter(CoreBlock):
+        def __init__(self, ratio=0.5):
+            self.ratio = ratio
+
+        def process(self, x, meta):
+            if random.random() < self.ratio:
+                return
+            return [x], meta
 
     class Print(CoreBlock):
+        # def __init__(self, every=1):
+        #     self.every = every
+
         def process(self, x, meta):
-            # self.log.info(x)
             print(x)
             return [x], {}
 
-        def finish(self):
-            pass
-            #b = self.__block__
-            #b.log.info(b.drain_inputs())
-
-    B = Block.wrap_blocks(BlockA, BlockB, Print)
+    B = Block.wrap_blocks(Inc, Add, Filter, Print)
     return B
 
 B = example(Block)
@@ -846,11 +846,13 @@ def test(slow=False, duration=1, n=None, monitor=5, B=B):
     print(kw)
 
     with B.Graph() as g:
-        x1 = B.BlockA(**kw).to(B.BlockB(10))#.to(B.BlockB(10))#.to(B.Print())
-        with B.Graph():
-            B.BlockA(**kw)#.to(B.Print())
+        x1 = B.Inc(**kw).to(B.Add(10)).to(B.Add(10))#.to(B.Print())
+        # with B.Graph():
+        #     B.Inc(**kw).to(B.Print())
         with B.Task():
-            x1.to(B.BlockB(50))#.to(B.Print())
+            x1.to(B.Filter(0.5)).to(B.Filter(0.5), strategy='latest').to(B.Print())
+        with B.Task():
+            x1.to(B.Filter(0.5), strategy='latest').to(B.Print())
         # if monitor:
         #     B.Monitor(g, interval=monitor)
 

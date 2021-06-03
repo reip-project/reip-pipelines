@@ -15,51 +15,14 @@ def ray_init(*a, **kw):
     #     print('ray already initialized.')
     #     return
     if not ray.is_initialized():
-        ray.init(*a, ignore_reinit_error=True, num_cpus=4, **kw)
+        ray.init(*a, ignore_reinit_error=True, num_cpus=-2, **kw)
 #     ray_init.done = True
 # ray_init.done = False
 
 
 import reip
-class QMix(base_app.QMix):
-    cache = None
-    def spawn(self):
-        self.cache = None
 
-    def qsize(self):
-        return super().qsize() + int(self.cache is not None)
-    
-    def empty(self):
-        return self.get(peek=True) is None  # make empty take into consideration if the future is ready or not
-    
-    def get(self, block=False, timeout=None, peek=False):
-        fut = self.cache
-        if fut is None:  # get the next element
-            fut = super().get(block=block, timeout=timeout)
-            if fut is None:  # there's nothing right now
-                return
-            self.cache = fut
-        if not ray.wait([fut], timeout=0, fetch_local=False)[0]:  # not ready
-            return
-        # the future is ready, but don't pull the item, let the future just be passed to the next function
-        if not peek:
-            self.cache = None
-        return fut
-
-    def _drain(self):
-        if self.cache is not None:
-            yield self.cache
-        while self.qsize():
-            fut = self.get()
-            if fut is not None:
-                yield fut
-    
-    def join(self):
-        # ray.cancel(list(self._drain()))
-        ray.wait(list(self._drain()))
-
-#Queue, mpQueue = base_app.extend_queue(QMix)
-
+import queue
 import collections
 class Queue2(collections.deque):
     def __init__(self, maxsize, strategy='all'):
@@ -79,9 +42,7 @@ class Queue2(collections.deque):
 
     def put(self, x, block=False, timeout=None):
         if self.full():
-            self.dropped += 1
-            print('dropped when putting to', self)
-            return False
+            raise queue.Full()
         self.appendleft(x)
 
     def _check_ready(self, x):
@@ -90,28 +51,56 @@ class Queue2(collections.deque):
     def get(self, block=False, timeout=None, peek=False):
         if not self:
             return
+
         if self.strategy == 'latest':
-            it = iter(self)
-            try:
-                for x in it:
-                    if self._check_ready(x):
-                        if not peek:
-                            self.clear()
-                        return x
-            finally:
+            it = iter(list(self))
+            for i, x in enumerate(it):
+                if x is None:
+                    continue
+                # check if the buffer is ready
+                if not self._check_ready(x):
+                    continue
+                # check if the buffer is None
+                if ray.get(x, timeout=0) is None:
+                    print('dropping None sample latest')
+                    self[i] = None
+                    continue
+                # the buffer is not None
                 if not peek:
-                    for x in it:  # remove any remaining values
-                        print('dropping non-latest sample', self)
+                    self.pop()  # remove that value
+                    for x in it:  # remove skipped values
                         self.pop()
+                return x
             return
-        if not self._check_ready(self[-1]):
-            return
-        if peek:
-            return self[-1]
-        return self.pop()
+        
+        # if self.gotcha:
+        #     print(1, peek, self, list(self))
+        # iterate from oldest to newest
+        i = len(self)
+        while i > 0:
+            i -= 1
+            x = self[i]
+            if x is None:
+                if not peek:
+                    self.pop()
+                continue
+
+            if not self._check_ready(x):
+                return
+            if not peek:
+                self.pop()
+            if ray.get(x, timeout=0) is None:
+                # print('dropping None sample', id(self))
+                # self.gotcha = True
+                continue
+            # if self.gotcha:
+            #     print(2, peek, x, list(self))
+            return x
+    # gotcha = False
+
 
     def join(self):
-        oids = list(self)
+        oids = [x for x in self if x is not None]
         # print('awaiting', oids, self)
         if oids:
             # ray.cancel(oids)
@@ -120,7 +109,7 @@ class Queue2(collections.deque):
 
 
 
-@ray.remote(num_cpus=1)
+@ray.remote
 class BlockAgent:
     inner_time = None
     duration = None
@@ -163,7 +152,7 @@ def maybeget(futs, get=True):
     return ray.get(futs) if get else futs
 
 class Graph(base_app.Graph):
-    # _delay = 1e-2
+    _delay = 1e-2
     def init(self, get=True):
         self.log.info(reip.util.text.blue('initializing'))
         return maybeget([fut for block in self.blocks for fut in base_app.aslist(block.init(get=False))], get)
@@ -175,8 +164,6 @@ class Graph(base_app.Graph):
 
 class Task(Graph):  # XXX: ray does not need to spawn a process because blocks are their own process
     pass
-
-Queue, mpQueue = base_app.extend_queue(QMix)
 
 
 def agent_property(name):
@@ -193,9 +180,7 @@ class Block(base_app.Block):
     Graph = Graph
     Task = Task
     Queue = Queue2
-    # Queue = Queue
-    # Queue = mpQueue = staticmethod(mpQueue)
-    wait_when_full = True
+    # wait_when_full = True
 
     def __init__(self, *a, queue=100, **kw):
         super().__init__(*a, queue=queue, **kw)

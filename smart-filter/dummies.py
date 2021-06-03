@@ -6,19 +6,20 @@ class Generator(reip.Block):
     debug = False
     inc = False
 
-    def __init__(self, size=(1,), dtype=np.int, **kw):
+    def __init__(self, size=(1,), dtype=np.int, meta=None, **kw):
         self.size = size
         self.dtype = np.dtype(dtype)
         self.array_0, self.array_1 = None, None
         
         super().__init__(n_inputs=None, **kw)
+        self.added_meta = meta or {}
 
     def init(self):
         self.array_0 = np.zeros(self.size, self.dtype)
         self.array_1 = np.ones(self.size, self.dtype)
 
     def process(self, *xs, meta=None):
-        meta = {"size": self.size, "dtype": self.dtype.name, "i": self.processed}
+        meta = {"size": self.size, "dtype": self.dtype.name, "i": self.processed, "fps": self.max_rate, **self.added_meta}
 
         if self.debug:
             print("Generated:", meta)
