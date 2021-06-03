@@ -155,7 +155,7 @@ def build_full_benchmark(B, stereo=False, max_fps=15, save_raw=False, meta_only=
 
     if motion:
         with Group("Motion_Task"):
-            mv = B.MotionDetector(name="Motion_Detector", do_hist=do_hist, debug=debug, verbose=verbose, log_level='debug')
+            mv = B.MotionDetector(name="Motion_Detector", n_in=n_cams, do_hist=do_hist, debug=debug, verbose=verbose, log_level='debug')
 
         with Group2("Motion_Writer_Task"):
             mv.to(B.ImageWriter(name="Motion_Writer", path=DATA_DIR + "/motion/", make_bgr=False,
@@ -169,7 +169,7 @@ def build_full_benchmark(B, stereo=False, max_fps=15, save_raw=False, meta_only=
 
     if objects:
         with Group("Objects_Task"):
-            obj = B.ObjectDetector(name="Objects_Detector", model="ssd-mobilenet-v2", thr=thr, labels_dir=MODEL_DIR,
+            obj = B.ObjectDetector(name="Objects_Detector", n_in=n_cams, model="ssd-mobilenet-v2", thr=thr, labels_dir=MODEL_DIR,
                                  draw=True, cuda_out=False, zero_copy=False, debug=debug, verbose=verbose, log_level='debug')
 
         with Group2("Objects_Writer_Task"):

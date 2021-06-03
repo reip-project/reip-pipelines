@@ -61,6 +61,7 @@ class QMix(base_app.QMix):
 #Queue, mpQueue = base_app.extend_queue(QMix)
 
 import collections
+import queue
 class Queue2(collections.deque):
     def __init__(self, maxsize, strategy='all'):
         self.maxsize = maxsize
@@ -79,36 +80,40 @@ class Queue2(collections.deque):
 
     def put(self, x, block=False, timeout=None):
         if self.full():
-            self.dropped += 1
-            print('dropped when putting to', self)
-            return False
+            raise queue.Full()
+            #self.dropped += 1
+            #print('dropped when putting to', self)
+            #return False
         self.appendleft(x)
 
     def _check_ready(self, x):
+#        return ray.get(x, timeout=0) is not None
         return ray.wait([x], timeout=0, fetch_local=False)[0]
 
     def get(self, block=False, timeout=None, peek=False):
         if not self:
             return
         if self.strategy == 'latest':
-            it = iter(self)
+            it = iter(list(self))
             try:
                 for x in it:
                     if self._check_ready(x):
-                        if not peek:
-                            self.clear()
-                        return x
+                        # if not peek:
+                        #     self.clear()
+                        self.pop()
+                        return x#.get()
             finally:
                 if not peek:
                     for x in it:  # remove any remaining values
-                        print('dropping non-latest sample', self)
+                        #print('dropping non-latest sample', self)
                         self.pop()
+                        #self.dropped += 1
             return
         if not self._check_ready(self[-1]):
             return
         if peek:
             return self[-1]
-        return self.pop()
+        return self.pop()#.get()
 
     def join(self):
         oids = list(self)
@@ -210,6 +215,11 @@ class Block(base_app.Block):
         self.dropped = 0
         self.running = True
         return maybeget(self.agent.init.remote(), get)
+
+    def sources_available(self):
+        futs = (q.get(peek=True) for q in self.inputs)
+        futs = (ray.get(f, timeout=0) if f is not None else None for f in futs)
+        return self.src_strategy(x is not None for x in futs)
 
     def process(self, *inputs):
         fut = self.agent.process.remote(*inputs)

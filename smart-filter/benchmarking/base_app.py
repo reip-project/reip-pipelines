@@ -134,7 +134,7 @@ def extend_queue(QMix):
     def mpQueue(*a, strategy='all', **kw):  # patched multiprocessing queue - need to use function because of internal mp context wrappers
         q = mp.Queue(*a, **kw)
         cls = q.__class__
-        q.__class__ = type('mpQueue', (mpQMix, QMix, cls), {'_qstr': 'mQ', 'maxsize': q._maxsize})
+        q.__class__ = type('mpQueue', (QMix, cls), {'_qstr': 'mQ', 'maxsize': q._maxsize})
         q.strategy = strategy
         return q
     return Queue, mpQueue
@@ -604,6 +604,11 @@ class Block:
 
         inputs = [qi.get(block=False) for qi in self.inputs]
         #self.log.debug('getting inputs: %s', inputs)
+
+        #for inp in inputs:
+        #    if inp is None:
+        #        return False
+
         result = self.process(*inputs)
         self.processed += 1
         if self.max_processed and self.processed >= self.max_processed:
@@ -839,7 +844,7 @@ B = example(Block)
 
 # cli
 
-def test(slow=False, duration=1, n=None, monitor=5, B=B):
+def test(slow=False, duration=10, n=None, monitor=5, B=B):
     kw = dict(max_processed=n)
     if slow:
         kw['max_rate'] = 5 if slow is True else slow
