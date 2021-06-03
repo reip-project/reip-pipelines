@@ -24,6 +24,7 @@ import reip
 
 import queue
 import collections
+import queue
 class Queue2(collections.deque):
     def __init__(self, maxsize, strategy='all'):
         self.maxsize = maxsize
@@ -46,6 +47,7 @@ class Queue2(collections.deque):
         self.appendleft(x)
 
     def _check_ready(self, x):
+#        return ray.get(x, timeout=0) is not None
         return ray.wait([x], timeout=0, fetch_local=False)[0]
 
     def get(self, block=False, timeout=None, peek=False):
@@ -195,6 +197,11 @@ class Block(base_app.Block):
         self.dropped = 0
         self.running = True
         return maybeget(self.agent.init.remote(), get)
+
+    def sources_available(self):
+        futs = (q.get(peek=True) for q in self.inputs)
+        futs = (ray.get(f, timeout=0) if f is not None else None for f in futs)
+        return self.src_strategy(x is not None for x in futs)
 
     def process(self, *inputs):
         fut = self.agent.process.remote(*inputs)

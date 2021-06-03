@@ -6,6 +6,7 @@ class MotionDetector(reip.Block):
     verbose = False  # Detailed debug output
     do_hist = True # Compute histogram of differences if True
     sel = 0  # Input selection
+    n_in = 1
     inner_sw = None
 
     def __init__(self, n_in, n_inputs=None, **kw):
@@ -20,12 +21,12 @@ class MotionDetector(reip.Block):
         self.refs, self.metas = [None] * self.n_in, [None] * self.n_in
 
     def process(self, *xs, meta=None):
-        n_in = len(xs)
-
-        if n_in == 1:
+        # n_in = len(xs)
+        assert len(xs) == self.n_in
+        if self.n_in == 1:
             meta = [dict(meta)]
         
-        self.sel = (self.sel + 1) % n_in
+        self.sel = (self.sel + 1) % self.n_in
         sel = self.sel
         x, meta = xs[sel], dict(meta[sel])
         pixel_format = (meta.get("pixel_format") or '').lower()
