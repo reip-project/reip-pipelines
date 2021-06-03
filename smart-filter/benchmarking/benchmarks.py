@@ -19,7 +19,7 @@ from bundles import Bundle
 from dummies import Generator, BlackHole
 # from cv_utils import ImageConvert, ImageDisplay
 # from controls import BulkUSB, Follower, Controller, ConsoleInput
-from benchmark import DummyContext
+# from benchmark import DummyContext
 
 import base_app
 
@@ -77,20 +77,20 @@ def define_graph_alt(
         B, size=(1280, 1280), #sizeA=(720, 1280), sizeB=(2000, 2500),
         rate_divider=1, rate=60, throughput='large', use_tasks=True,
         gen_debug=None, bundle_debug=False, bundle_log=True,
-        io_debug=None, bh_debug=None, include_audio=True):
+        io_debug=None, bh_debug=None, include_audio=False):
 
     Graph = B.Task if use_tasks else B.Graph
     with Graph("basler"):
         #rate = 120
         basler = (
-            B.Generator(name="basler-cam", size=size, dtype=np.uint8, max_rate=rate // rate_divider, debug=gen_debug, queue=rate*2)
-                .to(B.Bundle(name="basler-bundle", size=int(rate/10), queue=10*2, debug=bundle_debug)))#, log_level=bundle_log
+            B.Generator(name="basler-cam", size=size, dtype=np.uint8, max_rate=rate // rate_divider, debug=gen_debug, queue=rate*2, log_level=bundle_log)
+                .to(B.Bundle(name="basler-bundle", size=max(int(rate/10), 1), queue=10*2, debug=bundle_debug)))#, log_level=bundle_log
 
     with Graph("builtin"):
         #rate = 30
         builtin = (
             B.Generator(name="builtin-cam", size=size, dtype=np.uint8, max_rate=rate // rate_divider, debug=gen_debug, queue=rate*2)
-                .to(B.Bundle(name="builtin-bundle", size=int(rate/10), queue=10*2, debug=bundle_debug)))#, strategy="skip", skip=3)#, log_level=bundle_log
+                .to(B.Bundle(name="builtin-bundle", size=max(int(rate/10), 1), queue=10*2, debug=bundle_debug)))#, strategy="skip", skip=3)#, log_level=bundle_log
 
     (basler
         .to(B.Bundle(name="basler-write-bundle", size=5, queue=5, debug=bundle_debug, log_level=bundle_log), throughput=throughput)
@@ -145,50 +145,39 @@ def build_full_benchmark(B, stereo=False, max_fps=15, save_raw=False, meta_only=
     n_cams = 2 if stereo else 1
     cams = [None] * n_cams
 
+    Group = B.Graph if threads_only else B.Task
+    Group2 = B.Task if all_processes else B.Graph
+
     for i in range(n_cams):
-        with DummyContext() if threads_only else B.Task("Camera_%d_Task" % i):
+        with Group("Camera_%d_Task" % i):
             cams[i] = B.UsbCamGStreamer(name="Camera_%d" % i, filename=DATA_DIR + "/video/%d_{time}.avi",
                                       dev=i, bundle=None, rate=max_fps, debug=debug, verbose=verbose)
 
     if motion:
-        with DummyContext() if threads_only else B.Task("Motion_Task"):
+        with Group("Motion_Task"):
             mv = B.MotionDetector(name="Motion_Detector", do_hist=do_hist, debug=debug, verbose=verbose, log_level='debug')
 
-            if not all_processes and not threads_only:
-                mv.to(B.ImageWriter(name="Motion_Writer", path=DATA_DIR + "/motion/",
-                                  make_bgr=False, save_raw=save_raw, meta_only=meta_only))
-                if display:
-                    mv.to(B.ImageDisplay(name="Motion_Display", make_bgr=False), strategy="latest")
-
-        if all_processes or threads_only:
-            with DummyContext() if threads_only else B.Task("Motion_Writer_Task"):
-                mv.to(B.ImageWriter(name="Motion_Writer", path=DATA_DIR + "/motion/", make_bgr=False,
-                                  save_raw=save_raw, meta_only=meta_only), throughput=throughput)
-            if display:
-                with DummyContext() if threads_only else reip.Task("Motion_Display_Task"):
-                    mv.to(B.ImageDisplay(name="Motion_Display", make_bgr=False), throughput=throughput, strategy="latest")
+        with Group2("Motion_Writer_Task"):
+            mv.to(B.ImageWriter(name="Motion_Writer", path=DATA_DIR + "/motion/", make_bgr=False,
+                                save_raw=save_raw, meta_only=meta_only), throughput=throughput)
+        if display:
+            with Group2("Motion_Display_Task"):
+                mv.to(B.ImageDisplay(name="Motion_Display", make_bgr=False), throughput=throughput, strategy="latest")
 
         for i, cam in enumerate(cams):
             cam.to(mv, throughput=throughput, strategy="latest")#, index=i)
 
     if objects:
-        with DummyContext() if threads_only else B.Task("Objects_Task"):
+        with Group("Objects_Task"):
             obj = B.ObjectDetector(name="Objects_Detector", model="ssd-mobilenet-v2", thr=thr, labels_dir=MODEL_DIR,
                                  draw=True, cuda_out=False, zero_copy=False, debug=debug, verbose=verbose, log_level='debug')
 
-            if not all_processes and not threads_only:
-                obj.to(B.ImageWriter(name="Objects_Writer", path=DATA_DIR + "/objects/",
-                                   make_bgr=True, save_raw=save_raw, meta_only=meta_only))
-                if display:
-                    obj.to(B.ImageDisplay(name="Objects_Display", make_bgr=True), strategy="latest")
-
-        if all_processes or threads_only:
-            with DummyContext() if threads_only else B.Task("Objects_Writer_Task"):
-                obj.to(B.ImageWriter(name="Objects_Writer", path=DATA_DIR + "/objects/", make_bgr=True,
-                                   save_raw=save_raw, meta_only=meta_only), throughput=throughput)
-            if display:
-                with DummyContext() if threads_only else B.Task("Objects_Display_Task"):
-                    obj.to(B.ImageDisplay(name="Objects_Display", make_bgr=True), throughput=throughput, strategy="latest")
+        with Group2("Objects_Writer_Task"):
+            obj.to(B.ImageWriter(name="Objects_Writer", path=DATA_DIR + "/objects/", make_bgr=True,
+                                save_raw=save_raw, meta_only=meta_only), throughput=throughput)
+        if display:
+            with Group2("Objects_Display_Task"):
+                obj.to(B.ImageDisplay(name="Objects_Display", make_bgr=True), throughput=throughput, strategy="latest")
 
         for i, cam in enumerate(cams):
             cam.to(obj, throughput=throughput, strategy="latest")#, index=i)
@@ -324,7 +313,8 @@ except ImportError:
     B_ray, B_reip, B_waggle, B_base = get_blocks(
             Generator, Bundle, NumpyWriter, BlackHole,
             B.audio.Mic, B.FastRebuffer, B.audio.AudioFile, B.audio.SPL, B.Csv, B.Debug)
-    define_graph = define_graph_alt2
+    # define_graph = define_graph_alt2
+    define_graph = define_graph_alt
     BLOCKS = ['Basler_Cam', 'Builtin_Cam', 'Basler_Write_Bundle', 'Builtin_Write_Bundle', 'mic', 'spl-task']
 
 Bs = {'ray': B_ray, 'reip': B_reip, 'waggle': B_waggle, 'base': B_base}
