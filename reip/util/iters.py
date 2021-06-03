@@ -111,7 +111,7 @@ class HitThrottle:
         
     '''
     t0 = 0
-    def __init__(self, interval, fire=True, smudge=0.00001):
+    def __init__(self, interval, *, fire=True, smudge=1e-5):
         self.interval = interval
         self.smudge = smudge
         self.fire = fire
@@ -124,6 +124,9 @@ class HitThrottle:
         return True
 
     def __bool__(self):
+        return self.__call__()
+
+    def __call__(self, sleep=None):
         '''Whether or not we are throttling. The sign convention is determined by self.fire.'''
         interval = self.interval
         if not interval:
@@ -131,9 +134,13 @@ class HitThrottle:
 
         now = time.time()
         last = self.t0
-        if not last or now - last + self.smudge > interval:
+        remaining = max(interval - (now - last + self.smudge), 0) if last else 0
+        if not remaining:
             self.t0 = now
             return self.fire
+
+        if sleep:
+            time.sleep(max(0, min(remaining, sleep)))
         return not self.fire
         
     @property
@@ -147,6 +154,7 @@ class HitThrottle:
         '''The amount of time before the next hit.'''
         interval = self.interval
         return max(0, interval - self.elapsed) if interval and self.t0 else 0
+        
 
 
 

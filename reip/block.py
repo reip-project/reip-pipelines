@@ -128,12 +128,12 @@ class Block:
         if min_interval and max_rate:
             warnings.warn((
                 'Both max_rate ({}) and min_interval ({}) are set, but are '
-                'mutually exclusive (max_rate=1. / min_interval). min_interval will'
+                'mutually exclusive (max_rate=1. / min_interval). max_rate will'
                 'be used.').format(max_rate, min_interval))
         if max_rate:
-            self.max_rate = max_rate
-        if min_interval:
-            self.min_interval = min_interval
+            min_interval = 1 / max_rate
+        self.throttle = reip.util.iters.HitThrottle(min_interval, smudge=1e-3*min_interval if min_interval else None)
+        
         self.max_processed = max_processed
         self.max_generated = max_generated
         self._put_blocking = blocking
@@ -163,7 +163,7 @@ class Block:
             self.EXTRA_KW = extra_kw
         if self.EXTRA_KW:
             self.extra_kw = kw
-        elif kw:
+        elif kw and not self.KW_TO_ATTRS:
             raise TypeError('{} received {} unexpected keyword arguments: {}.'.format(
                 self, len(kw), set(kw)))
 
@@ -174,12 +174,21 @@ class Block:
         self._reset_state()
 
     @property
+    def max_rate(self):
+        interval = self.min_interval
+        return 1 / interval if interval else interval
+
+    @max_rate.setter
+    def max_rate(self, value):
+        self.min_interval = 1. / value if value else value
+
+    @property
     def min_interval(self):
-        return 1 / self.max_rate
+        return self.throttle.interval
 
     @min_interval.setter
     def min_interval(self, value):
-        self.max_rate = 1. / value if value is not None else value
+        self.throttle.interval = value if value is not None else value
 
     def set_block_source_count(self, n):
         # NOTE: if n is -1, no resize will happen
@@ -393,23 +402,12 @@ class Block:
                     self.close()
                     break
                 # throttle
-                if self.max_rate:
-                    self._sw.tick('sleep')
-                    # NOTE: sleep in chunks so that if we have a really high
-                    #       interval (e.g. run once per hour), then we don't
-                    #       have to wait an hour to shut down
-                    if not sleep_amt:
-                        ti = time.time()
-                        sleep_amt = max(0, 1/self.max_rate - (ti - t_last))
-                        t_last = ti
-                    sleep_amt_prev, sleep_amt = sleep_amt, max(
-                        0, sleep_amt - self.__MAX_RATE_CHUNK)
-                    dt = sleep_amt_prev - sleep_amt
-                    if dt:
-                        time.sleep(dt)
+                self._sw.tick('sleep')
+                if not self.throttle(self.__MAX_RATE_CHUNK):
                     self._sw.tock('sleep')
-                    if sleep_amt:
-                        continue
+                    continue
+                self._sw.tock('sleep')
+
                 # play pause
                 if not self.running:
                     continue

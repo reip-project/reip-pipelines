@@ -96,6 +96,7 @@ class Stopwatch:
 
     def total(self, name=_BLANK):
         untocked = time.time() - self._ticks[name] if name in self._ticks else 0
+        total = self._stats[name].sum if name in self._stats else 0
         return self._stats[name].sum + untocked
 
     def sleep(self, delay=1e-6, name="sleep"):

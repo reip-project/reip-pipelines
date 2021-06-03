@@ -48,3 +48,27 @@ def excline(e):
 
 def print_excline(e):
     return print(excline)
+
+
+def _call_str(x, *a, **kw):
+    return str(x(*a, **kw) if callable(x) else x if x else '')
+
+def debug_property(name, initial_value=None, on_get=False, on_set=True, message=None):
+    key = '_'+name
+    def getter(self):
+        if on_get:
+            print_stack('getting {} {}'.format(name, _call_str(message, self)))
+        try:
+            return getattr(self, key)
+        except AttributeError:
+            setattr(self, key, initial_value)
+            return initial_value
+
+    def setter(self, value):
+        if on_set:
+            print_stack('setting {} to {}. {}'.format(name, value, _call_str(message, self, value)))
+        getattr(self, '_'+name, value)
+
+    getter.__name__ = setter.__name__ = name
+    prop = property(getter, setter)
+    return prop
