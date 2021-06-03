@@ -839,7 +839,7 @@ B = example(Block)
 
 # cli
 
-def test(slow=False, duration=10, n=20, monitor=5, B=B):
+def test(slow=False, duration=1, n=None, monitor=5, B=B):
     kw = dict(max_processed=n)
     if slow:
         kw['max_rate'] = 5 if slow is True else slow
