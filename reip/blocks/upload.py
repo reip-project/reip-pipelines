@@ -186,6 +186,9 @@ class UploadJSON(BaseUpload):
             for _ in self.retry_loop():
                 response, secs, speed = self.request(data=datajson, headers={'Content-Type': 'application/json'})
                 return [response], {'upload_time': secs, 'upload_kbs': speed, 'status_code': response.status_code}
+        # connection error
+        except requests.exceptions.Timeout as e:
+            self.log.error('Timeout when uploading JSON. {}'.format(reip.util.excline(e)))
         except Exception as e:
             self.log.exception(e)
             return
