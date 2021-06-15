@@ -16,7 +16,7 @@ class UploadError(requests.exceptions.RequestException):
     response = None
     def __init__(self, message, response=None, **kw):
         super().__init__(message, **kw)
-        self.response = request if self.response is None else self.response
+        self.response = response if self.response is None else self.response
 
 
 def reword_exception(exc, message):
@@ -85,7 +85,7 @@ class BaseUpload(reip.Block):
         url = self.get_url()
         datastr = self.data_str(**kw)
         response = self.sess.request(self.method, url, **kw, timeout=self.timeout)
-        output = self.handle_response(response)
+        self.handle_response(response)
         try:
             response.raise_for_status()
         except Exception as e:
