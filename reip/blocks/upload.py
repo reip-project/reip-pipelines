@@ -85,6 +85,7 @@ class BaseUpload(reip.Block):
         url = self.get_url()
         datastr = self.data_str(**kw)
         response = self.sess.request(self.method, url, **kw, timeout=self.timeout)
+        output = self.handle_response(response)
         try:
             response.raise_for_status()
         except Exception as e:
@@ -119,6 +120,9 @@ class BaseUpload(reip.Block):
 
     def data_str(self, **kw):
         return ''
+
+    def handle_response(self, response):
+        return response
 
     def on_success(self, resp, url, **kw):
         pass
