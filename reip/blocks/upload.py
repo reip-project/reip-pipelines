@@ -114,6 +114,8 @@ class BaseUpload(reip.Block):
                     self.on_failure(response, url, **kw)
                     raise e
                 self.log.error(reip.util.excline(e))
+            else:
+                break
 
     def calc_size(self, **kw):
         return os.path.getsize(kw)
@@ -181,6 +183,11 @@ class UploadFile(BaseUpload):
 
 
 class UploadJSON(BaseUpload):
+    def __init__(self, *a, timeout_sleep=3, connection_error_sleep=3, **kw):
+        self.timeout_sleep = timeout_sleep
+        self.connection_error_sleep = connection_error_sleep
+        super().__init__(*a, **kw)
+
     def process(self, *data, meta=None):
         try:
             merged = {k: v for d in data for k, v in d.items() if d}
@@ -193,6 +200,12 @@ class UploadJSON(BaseUpload):
         # connection error
         except requests.exceptions.Timeout as e:
             self.log.error('Timeout when uploading JSON. {}'.format(reip.util.excline(e)))
+            time.sleep(self.timeout_sleep)
+        except requests.exceptions.ConnectionError as e:
+            self.log.error('Connection Error when uploading JSON. {}'.format(reip.util.excline(e)))
+            time.sleep(self.connection_error_sleep)
+        except requests.exceptions.RequestException as e:
+            self.log.error(reip.util.excline(e))
         except Exception as e:
             self.log.exception(e)
             return
