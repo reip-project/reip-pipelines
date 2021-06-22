@@ -39,7 +39,7 @@ class NumpyReader(reip.Block):
         self.verbose = verbose
         self.id = 0
 
-        super().__init__(**kw)
+        super().__init__(n_inputs=0, **kw)
 
     def process(self, *xs, meta=None):
         filename, self.id = self.filename_template % self.id, self.id + 1

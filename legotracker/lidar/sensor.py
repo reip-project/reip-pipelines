@@ -8,7 +8,7 @@ import numpy as np
 import socket
 import socketserver
 from socketserver import UDPServer
-from os1.api import OS1API
+from api import OS1API
 
 
 class TempSource(reip.Block):
