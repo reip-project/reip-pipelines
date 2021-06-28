@@ -18,7 +18,7 @@ class Formatter(reip.Block):
             "H"  # Signal photons
             "H"  # Noise photons
             "H"  # Unused
-        )
+        )  # 96 bits
         self.azimuth_block_fmt = (
             "Q"  # Timestamp
             "H"  # Measurement ID
@@ -27,7 +27,7 @@ class Formatter(reip.Block):
             "{}"  # Channel Data
             "I"  # Status
         ).format(self.channel_block_fmt * self.channel_block_count)
-        self.packet_fmt = "<" + self.azimuth_block_fmt
+        self.packet_fmt = "<" + (self.azimuth_block_fmt)
         self.mode = mode
         self.fps = int(self.mode.split("x")[1])  # default
         self.resolution = int(self.mode.split("x")[0])  # default
@@ -55,6 +55,7 @@ class Formatter(reip.Block):
     def unpack(self, rawframe):
         frame = list()
         for block in rawframe:
+            # block = bytes(list(map(int, block)))
             block = bytes(list(map(int, block)))
             frame.append(self._unpack(block))
         frame = np.array(frame)  # 1024*85
@@ -84,7 +85,8 @@ class Formatter(reip.Block):
         angle_block = np.tile(frame[:, 3].reshape((-1, 1)), (1, self.channel_block_count))  # n*16
 
         data_block = frame[:, 4:84].reshape((-1, len(self.channel_block_fmt)))  # N *5
-        r = data_block[:, 0] * self.range_bit_mask / 1000  # N
+        r = data_block[:, 0] & self.range_bit_mask
+        r = r / 1000  # (N,)
         feat_refl, feat_signal, feat_noise = data_block[:, 1], data_block[:, 2], data_block[:, 3]
 
         n = frame.shape[0]
@@ -99,7 +101,7 @@ class Formatter(reip.Block):
 
         r_xy = np.multiply(r, np.tile(self._trig_table[:, 1].reshape((1, -1)), (n, 1)).ravel())  # N
 
-        feat_x = -np.multiply(r_xy, cos_angle)  # x
+        feat_x = -np.multiply(r_xy, cos_angle)  # x: (N,)
         feat_y = np.multiply(r_xy, sin_angle)  # y
         feat_z = np.multiply(r, np.tile(self._trig_table[:, 0].reshape((1, -1)), (n, 1)).ravel())  # z
 
