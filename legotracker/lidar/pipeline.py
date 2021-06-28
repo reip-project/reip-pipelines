@@ -24,7 +24,7 @@ def sensor_dump():
 
 
 def sensor_plot():
-    reader = NumpyReader(name="Reader", filename_template="dump/%d", max_rate=5)
+    reader = NumpyReader(name="Reader", filename_template="dump/%d", max_rate=5)  # raw data
     plotter = Plotter(name="Plotter")
 
     reader.to(plotter, strategy="latest").to(BH(name="Plotter_BH"))
@@ -35,15 +35,12 @@ def sensor_stream(live=True, plot=True):
         with reip.Task("Stream_Task"):
             sensor = OS1(name="Sensor", sensor_ip=SENSOR_IP, dest_ip=DEST_IP, mode=MODE)
         stream = Formatter(name="Formatter")(sensor)
+        writer = NumpyWriter(name="Writer", filename_template="save/%d")
+        stream.to(writer).to(BH(name="Writer_BH"))
     else:
-        stream = NumpyReader(name="Reader", filename_template="save/%d", max_rate=20)
-
-    writer = NumpyWriter(name="Writer", filename_template="save/%d")
-    stream.to(writer).to(BH(name="Writer_BH"))
-
+        stream = NumpyReader(name="Reader", filename_template="save/%d", max_rate=20)  # formatted data
     if plot:
         stream.to(Plotter(name="Plotter", scatter=True), strategy="latest")
-
 
 if __name__ == '__main__':
     # sensor_test()
