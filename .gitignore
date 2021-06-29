@@ -3,6 +3,8 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+legotracker/lidar/save
+
 # mac
 .DS_Store
 

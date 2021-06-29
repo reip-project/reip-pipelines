@@ -86,7 +86,7 @@ class Formatter(reip.Block):
         data_block = frame[:, 4:84].reshape((-1, len(self.channel_block_fmt)))  # N *5
         r = data_block[:, 0] & self.range_bit_mask
         r = r / 1000  # N
-        print(r)
+
         feat_refl, feat_signal, feat_noise = data_block[:, 1], data_block[:, 2], data_block[:, 3]
 
         n = frame.shape[0]

@@ -40,7 +40,7 @@ def sensor_stream(live=True, plot=True):
     else:
         stream = NumpyReader(name="Reader", filename_template="save/%d", max_rate=20)  # formatted data
     if plot:
-        stream.to(Plotter(name="Plotter", scatter=True), strategy="latest")
+        stream.to(Plotter(name="Plotter", scatter=True, type="3D"), strategy="latest")
 
 if __name__ == '__main__':
     # sensor_test()
