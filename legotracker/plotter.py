@@ -5,11 +5,12 @@ logging.getLogger('matplotlib').setLevel(logging.WARNING)
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 
+
 class Plotter(reip.Block):
     scatter = True  # Plot points if True
-    type = "2D"
+    type = "2D"  # 2D or 3D
 
-    def init(self, ):
+    def init(self):
         plt.figure(self.name, (12, 8))
         plt.clf()
         self.shown = False
@@ -29,19 +30,12 @@ class Plotter(reip.Block):
         plt.xlabel("x")
         plt.ylabel("y")
 
-
-        if not self.shown:
-            plt.show(block=False)
-            self.shown = True
-
-        plt.gcf().canvas.draw()
-        plt.gcf().canvas.start_event_loop(0.01)
-
     def plot_3d(self, xs):
         plt.clf()
         ax = plt.axes(projection='3d')
 
         ax.scatter3D(xs[0][:, 0], xs[0][:, 1], xs[0][:, 2],s=7)
+        ax.view_init(elev=30, azim=-120)
 
         plt.xlim([-5, 50])
         plt.ylim([-5, 20])
@@ -51,7 +45,26 @@ class Plotter(reip.Block):
 
         ax.set_xlabel('x')
         ax.set_ylabel('y')
-        ax.set_zlabel('z');
+        ax.set_zlabel('z')
+
+    def plot_img(self, xs):
+        plt.clf()
+        plt.title(str(self.processed))
+
+        plt.imshow(xs[0][:, :, 0])#, vmax=1000)
+
+        plt.colorbar()
+        plt.tight_layout()
+
+    def process(self, *xs, meta=None):
+        if self.type == "2D":
+            self.plot_2d(xs)
+        elif self.type == "3D":
+            self.plot_3d(xs)
+        elif self.type == "IMG":
+            self.plot_img(xs)
+        else:
+            raise RuntimeError("Unknown format")
 
         if not self.shown:
             plt.show(block=False)
@@ -59,9 +72,3 @@ class Plotter(reip.Block):
 
         plt.gcf().canvas.draw()
         plt.gcf().canvas.start_event_loop(0.01)
-
-    def process(self, *xs, meta=None):
-        if self.type == "2D":
-            self.plot_2d(xs)
-        else:
-            self.plot_3d(xs)
