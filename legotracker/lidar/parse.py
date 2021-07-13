@@ -86,13 +86,3 @@ class Parser(reip.Block):
         meta["timestamp"] = int(timestamp)
 
         return [features], meta
-
-"""
-To do:
-1. Framebuffer: keep order of packets 
-2. Formatter -> parser:
-    1). [ r, adjusted_angle, feat_refl, (feat_signal, feat_noise)]
-    2) unpack --> np.frombuffer(np.uint32), then slicing for each column (might need bit mask and bit operation).
-3. Formatter:
-  ["x", "y", "z", "r [meters]", "angle", "reflectivity"]
-"""

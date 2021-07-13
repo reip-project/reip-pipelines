@@ -7,7 +7,6 @@ from mpl_toolkits.mplot3d import Axes3D
 
 
 class Plotter(reip.Block):
-    scatter = True  # Plot points if True
     type = "2D"  # 2D or 3D
 
     def init(self):
@@ -17,10 +16,8 @@ class Plotter(reip.Block):
 
     def plot_2d(self, xs):
         plt.clf()
-        if self.scatter:
-            plt.scatter(xs[0][:, 0], xs[0][:, 1], c=xs[0][:, 2], s=7, alpha=0.5, cmap='viridis', vmin=-2.0, vmax=2.0)
-        else:
-            plt.imshow(xs[0])
+        d = xs[0].reshape((-1, xs[0].shape[-1]))
+        plt.scatter(d[:, 0], d[:, 1], c=d[:, 2], s=7, alpha=0.5, cmap='viridis', vmin=-2.0, vmax=2.0)
 
         plt.colorbar()
         plt.xlim([-5, 50])
@@ -34,7 +31,8 @@ class Plotter(reip.Block):
         plt.clf()
         ax = plt.axes(projection='3d')
 
-        ax.scatter3D(xs[0][:, 0], xs[0][:, 1], xs[0][:, 2],s=7)
+        d = xs[0].reshape((-1, xs[0].shape[-1]))
+        ax.scatter3D(d[:, 0], d[:, 1], d[:, 2], s=7)
         ax.view_init(elev=30, azim=-120)
 
         plt.xlim([-5, 50])
@@ -51,7 +49,7 @@ class Plotter(reip.Block):
         plt.clf()
         plt.title(str(self.processed))
 
-        plt.imshow(xs[0][:, :, 0])#, vmax=1000)
+        plt.imshow(xs[0][:, :, 0])  # , vmax=1000)
 
         plt.colorbar()
         plt.tight_layout()

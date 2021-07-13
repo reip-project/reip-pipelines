@@ -33,11 +33,6 @@ class BlackHole(reip.Block):
         # raise RuntimeError("Boom")
         return None
 
-
-# The original OS1 class is object, wrap it into reip.block
-
-## 1. create empty numpy array(bytes) 2. packet-> numpy array 3. slice+binary operation-> frame id 4. fid changes return
-## unpack: in formatter
 class OS1(reip.Block):
     MODES = ("512x10", "512x20", "1024x10", "1024x20", "2048x10")
 
@@ -157,7 +152,6 @@ class OS1(reip.Block):
             if len(request) == self.packet_size:
                 break
 
-        # with self.sw("new_parsePacket"):
         frame, fid = self.new_parsePacket(request)
 
         if frame is not None:

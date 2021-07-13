@@ -12,7 +12,7 @@ class Formatter(reip.Block):
     _trig_table = None
 
     def __init__(self,  **kw):
-        self.columns = ["x", "y", "z", "r", "angle""reflectivity"]
+        self.columns = ["x", "y", "z", "r", "angle","reflectivity"]
 
         super().__init__(**kw)
 
@@ -50,9 +50,9 @@ class Formatter(reip.Block):
 
         x = -np.multiply(r_xy, cos_angle)  # x: (N,)
         y = np.multiply(r_xy, sin_angle)
-        z = np.multiply(r, np.tile(self._trig_table[:, 0].reshape((1, -1)), (self.resolution, 1)).ravel())
+        z = np.multiply(r, np.tile(self._trig_table[:, 0].reshape((1, -1)), (self.resolution, 1))).ravel()
 
-        ret = np.stack([x, y, z, r, adjusted_angle, reflectivity], axis=1)
+        ret = np.stack([x, y, z, r.ravel(), adjusted_angle, reflectivity], axis=1)
 
         return ret.reshape((self.resolution, self.channel_block_count, len(self.columns)))
 
