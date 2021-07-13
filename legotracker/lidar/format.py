@@ -5,48 +5,51 @@ import numpy as np
 
 
 class Formatter(reip.Block):
+    resolution = None
+    _trig_table = None
+
     def __init__(self, azimuth_block_count=16, channel_block_count=16, packet_size=3392, mode="1024x20", **kw):
         self.packet_size = packet_size
         self.ticks_per_revolution = 90112
         self.radians_360 = 2 * math.pi
         self.range_bit_mask = 0x000FFFFF
-        self.azimuth_block_count = azimuth_block_count
-        self.channel_block_count = channel_block_count
-        self.channel_block_fmt = (
-            "I"  # Range (20 bits, 12 unused)
-            "H"  # Reflectivity
-            "H"  # Signal photons
-            "H"  # Noise photons
-            "H"  # Unused
-        )
-        self.azimuth_block_fmt = (
-            "Q"  # Timestamp
-            "H"  # Measurement ID
-            "H"  # Frame ID
-            "I"  # Encoder Count
-            "{}"  # Channel Data
-            "I"  # Status
-        ).format(self.channel_block_fmt * self.channel_block_count)
+        # self.azimuth_block_count = azimuth_block_count
+        # self.channel_block_count = channel_block_count
+        # self.channel_block_fmt = (
+        #     "I"  # Range (20 bits, 12 unused)
+        #     "H"  # Reflectivity
+        #     "H"  # Signal photons
+        #     "H"  # Noise photons
+        #     "H"  # Unused
+        # )
+        # self.azimuth_block_fmt = (
+        #     "Q"  # Timestamp
+        #     "H"  # Measurement ID
+        #     "H"  # Frame ID
+        #     "I"  # Encoder Count
+        #     "{}"  # Channel Data
+        #     "I"  # Status
+        # ).format(self.channel_block_fmt * self.channel_block_count)
         self.packet_fmt = "<" + self.azimuth_block_fmt
         self.mode = mode
         self.fps = int(self.mode.split("x")[1])  # default
         self.resolution = int(self.mode.split("x")[0])  # default
         self.data_per_frame = self.resolution * self.channel_block_count  # default:16384
-        self._trig_table = None
-        self.full_columns = [
-            "x",
-            "y",
-            "z",
-            "r",  # optional
-            "theta",  # optional
-            "reflectivity",  # optional
-            "signal_photon",  # optional
-            "noise_photon",  # optional
-            "timestamp",
-            "frame_id",
-            "measurement_id",
-            "channel",
-        ]
+        # self._trig_table = None
+        # self.full_columns = [
+        #     "x",
+        #     "y",
+        #     "z",
+        #     "r",  # optional
+        #     "theta",  # optional
+        #     "reflectivity",  # optional
+        #     "signal_photon",  # optional
+        #     "noise_photon",  # optional
+        #     "timestamp",
+        #     "frame_id",
+        #     "measurement_id",
+        #     "channel",
+        # ]
 
         super().__init__(**kw)
 
@@ -78,14 +81,16 @@ class Formatter(reip.Block):
 
     def format_frame(self, frame):
         """
-        Input: data n* 85, n*16=N
+        Input shape: resolution * channel_block_count *
+        Input columns: [ r, encoder_angle, reflectivity, siangle photons, noise photons
         Returns a tuple of features:
-        x, y, z, r, theta, refl, signal, noise, time, fid,mid, ch
+        Return columns: [x, y, z, r (meters), angle, reflectivity
         """
-        feat_time = np.repeat(frame[:, 0], self.channel_block_count)  # Wrong values (32 bits not enough)
-        feat_mid = np.repeat(frame[:, 1], self.channel_block_count)
-        feat_fid = np.repeat(frame[:, 2], self.channel_block_count)
-        angle_block = np.tile(frame[:, 3][:, None], (1, self.channel_block_count))  # n*16
+        encoder_angle = frame[:, :, 1]
+        adjusted_angle = (encoder_angle * self.radians_360 / self.ticks_per_revolution + np.tile(
+            self._trig_table[:, 2].reshape((1, -1)), (n, 1))).ravel()  # N
+
+        # angle_block = np.tile(frame[:, 3][:, None], (1, self.channel_block_count))  # n*16
 
         data_block = frame[:, 4:84].reshape((-1, len(self.channel_block_fmt)))  # N *5
         r = data_block[:, 0] & self.range_bit_mask
@@ -95,9 +100,6 @@ class Formatter(reip.Block):
 
         n = frame.shape[0]
         feat_ch = np.tile(np.arange(self.channel_block_count), n)
-
-        adjusted_angle = (angle_block * self.radians_360 / self.ticks_per_revolution + np.tile(
-            self._trig_table[:, 2].reshape((1, -1)), (n, 1))).ravel()  # N
 
         cos_angle = np.cos(adjusted_angle)  # N
         sin_angle = np.sin(adjusted_angle)  # N
@@ -115,28 +117,23 @@ class Formatter(reip.Block):
         return
 
     def process(self, data, meta):
-        assert (meta["data_type"] == "numpy"), "Invalid packet"
+        assert (meta["data_type"] == "lidar_parsed"), "Invalid packet"
         intrinsics = meta["beam_intrinsics"]
         if self._trig_table is None:
             self.build_trig_table(intrinsics["beam_altitude_angles"], intrinsics["beam_azimuth_angles"])
+        self.resolution = meta["resolution"]
 
-        frame, timestamps = self.unpack(data)
-        fid = frame[0, 2]
-        timestamp = int(np.frombuffer(timestamps[0], dtype=np.uint64)[0])
+        # frame, timestamps = self.unpack(data)
+        # fid = frame[0, 2]
+        # timestamp = int(np.frombuffer(timestamps[0], dtype=np.uint64)[0])
         # print(timestamp)
-        feature = self.format_frame(frame)
-        feature = np.array(feature).T
 
-        metadata = {
-            "sr": self.data_per_frame * self.fps,
-            "data_type": "format",
-            "features": self.full_columns,
-            "frame_id": int(meta["frame_id"]),  # int(fid)
-            "timestamp": timestamp  # full length: 64 bit
+        feature = self.format_frame(data)
+        # feature = np.array(feature).T
 
-        }
-
-        return [feature], metadata
+        meta["data_type"] = "lidar_formatted"
+        meta["features"] = self.full_columns
+        return [feature], meta
 
 
 """
