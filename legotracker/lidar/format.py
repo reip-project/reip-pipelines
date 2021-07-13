@@ -53,13 +53,16 @@ class Formatter(reip.Block):
         self._unpack = struct.Struct(self.packet_fmt).unpack
 
     def unpack(self, rawframe):
-        frame = list()
-        for block in rawframe:
-            # block = bytes(list(map(int, block)))
-            block = bytes(list(map(int, block)))
-            frame.append(self._unpack(block))
-        frame = np.array(frame)  # 1024*85
-        return frame
+        n = rawframe.shape[0]
+        timestamps = list()
+        frame = np.zeros((n, 85), dtype=np.uint32)
+        for i in range(n):
+            block = rawframe[i, :].tobytes()  # 1024*85
+            unpacked = self._unpack(block)
+            frame[i, :] = unpacked  # Loses timestamp info because it would require 64 bit integers
+            timestamps.append(unpacked[0])
+        timestamps = np.array(timestamps)
+        return frame, timestamps
 
     def build_trig_table(self, beam_altitude_angles, beam_azimuth_angles):
         self._trig_table = []
@@ -79,19 +82,19 @@ class Formatter(reip.Block):
         Returns a tuple of features:
         x, y, z, r, theta, refl, signal, noise, time, fid,mid, ch
         """
-        feat_time = np.tile(frame[:, 0].reshape((-1, 1)), (1, self.channel_block_count)).ravel()  # N, timestamp
-        feat_mid = np.tile(frame[:, 1].reshape((-1, 1)), (1, self.channel_block_count)).ravel()  # N, measurementID
-        feat_fid = np.tile(frame[:, 2].reshape((-1, 1)), (1, self.channel_block_count)).ravel()  # N, frameID
-        angle_block = np.tile(frame[:, 3].reshape((-1, 1)), (1, self.channel_block_count))  # n*16
+        feat_time = np.repeat(frame[:, 0], self.channel_block_count)  # Wrong values (32 bits not enough)
+        feat_mid = np.repeat(frame[:, 1], self.channel_block_count)
+        feat_fid = np.repeat(frame[:, 2], self.channel_block_count)
+        angle_block = np.tile(frame[:, 3][:, None], (1, self.channel_block_count))  # n*16
 
         data_block = frame[:, 4:84].reshape((-1, len(self.channel_block_fmt)))  # N *5
         r = data_block[:, 0] & self.range_bit_mask
-        r = r / 1000  # (N,)
+        r = r / 1000.  # N
+
         feat_refl, feat_signal, feat_noise = data_block[:, 1], data_block[:, 2], data_block[:, 3]
 
         n = frame.shape[0]
-        feat_ch = np.array(
-            [c for c in range(self.channel_block_count)] * n).ravel()  # channel
+        feat_ch = np.tile(np.arange(self.channel_block_count), n)
 
         adjusted_angle = (angle_block * self.radians_360 / self.ticks_per_revolution + np.tile(
             self._trig_table[:, 2].reshape((1, -1)), (n, 1))).ravel()  # N
@@ -112,13 +115,15 @@ class Formatter(reip.Block):
         return
 
     def process(self, data, meta):
-        assert (meta["data_type"] == "bytes"), "Invalid packet"
+        assert (meta["data_type"] == "numpy"), "Invalid packet"
         intrinsics = meta["beam_intrinsics"]
         if self._trig_table is None:
             self.build_trig_table(intrinsics["beam_altitude_angles"], intrinsics["beam_azimuth_angles"])
 
-        frame = self.unpack(data.tolist())
+        frame, timestamps = self.unpack(data)
         fid = frame[0, 2]
+        timestamp = int(np.frombuffer(timestamps[0], dtype=np.uint64)[0])
+        # print(timestamp)
         feature = self.format_frame(frame)
         feature = np.array(feature).T
 
@@ -126,7 +131,19 @@ class Formatter(reip.Block):
             "sr": self.data_per_frame * self.fps,
             "data_type": "format",
             "features": self.full_columns,
-            "frame_id": int(fid)
+            "frame_id": int(meta["frame_id"]),  # int(fid)
+            "timestamp": timestamp  # full length: 64 bit
+
         }
 
         return [feature], metadata
+
+
+"""
+To do:
+1. Framebuffer: keep order of packets 
+2. Formatter -> parser:
+    1). [ r, adjusted_angle, feat_refl, (feat_signal, feat_noise)]
+3. Formatter:
+    distance, angle -> x, y, z
+"""

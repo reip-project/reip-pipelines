@@ -41,40 +41,44 @@ class BlackHole(reip.Block):
 class OS1(reip.Block):
     MODES = ("512x10", "512x20", "1024x10", "1024x20", "2048x10")
 
-    def __init__(self, sensor_ip, dest_ip, packet_size=3392, azimuth_block_count=16, channel_block_count=16,
-                 udp_port=7502, tcp_port=7501, mode="1024x20", **kw):
-        assert mode in self.MODES, "Mode must be one of {}".format(self.MODES)
-        self.dest_host = dest_ip
-        self.udp_port = udp_port
-        self.packet_size = packet_size
-        self.mode = mode
-        self.fps = int(self.mode.split("x")[1])  # default
-        self.resolution = int(self.mode.split("x")[0])  # default: 1024
-        self.packet_per_frame = self.resolution // 16  # default:64
-        self.api = OS1API(host=sensor_ip)
-        self._beam_intrinsics = None
-        self._server = None
+    sensor_ip = "172.24.113.151"
+    dest_ip = "216.165.113.240"
+    udp_port = 7502
+    tcp_port = 7501
+    packet_size = 3392
+    mode = "1024x20"
+    azimuth_block_count = 16
+    channel_block_count = 16
+    api = None
 
-        self.azimuth_block_count = azimuth_block_count
-        self.channel_block_count = channel_block_count
-        self.azimuth_block_size = self.packet_size // self.azimuth_block_count  # default: 212
-        self.bytesFrame = np.zeros((self.resolution, self.azimuth_block_size))  # 1024* 212 (bytes)
-        self.fid = None
-        self.row = 0
-
+    def __init__(self, **kw):
         super().__init__(n_inputs=0, **kw)
+        self.api = OS1API(host=self.sensor_ip)
 
     def __getattr__(self, name):
         return getattr(self.api, name)
 
     def init(self):
+        assert self.mode in self.MODES, "Mode must be one of {}".format(self.MODES)
+
+        self.fps = int(self.mode.split("x")[1])  # default
+        self.resolution = int(self.mode.split("x")[0])  # default: 1024
+
+        self.packet_per_frame = self.resolution // self.azimuth_block_count  # default:64
+        self.azimuth_block_size = self.packet_size // self.azimuth_block_count  # default: 212
+        self.bytesFrame = np.zeros((self.resolution, self.azimuth_block_size), dtype=np.uint8)  # 1024* 212 (bytes)
+
+        self.fid, self.row = None, 0
+        self.sw = reip.util.Stopwatch("Packets", max_samples=1000000)
+
+        # Init Sensor
         self.set_config_param("lidar_mode", self.mode)
         self.raise_for_error()
         # If we don't have a brief wait between calls the device will close the
         # TCP connection.
         time.sleep(0.1)
 
-        self.set_config_param("udp_ip", self.dest_host)
+        self.set_config_param("udp_ip", self.dest_ip)
         self.raise_for_error()
         time.sleep(0.1)
 
@@ -84,22 +88,31 @@ class OS1(reip.Block):
         self.raise_for_error()
         self._beam_intrinsics = json.loads(self.get_beam_intrinsics())
 
+        # Init Server
         UDPServer.max_packet_size = self.packet_size
         self._socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self._socket.bind((self.dest_host, self.udp_port))
+        self._socket.bind((self.dest_ip, self.udp_port))
         self._socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self._socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 30000000)
 
-    def parsePacket(self, packet):
+    def old_parsePacket(self, packet):
+        # print(type(packet), len(packet), packet)
         frame = None
-        packet = np.array(bytearray(packet)).reshape((self.azimuth_block_count, -1))
+        packet = np.frombuffer(packet, dtype=np.uint8).reshape((self.azimuth_block_count, -1))
+        # packet = np.array(bytearray(packet)).reshape((self.azimuth_block_count, -1))
+
+        # LOOK HERE
+        # mid_fid = np.frombuffer(packet[:, 8:12].tobytes(), dtype=np.uint16).reshape((-1, 2))
+        # mid, fid = mid_fid[:, 0], mid_fid[:, 1]
         frameID = packet[:, 10:12]
 
         if self.fid is None:
             self.fid = frameID[0]
+            # print(self.fid)
         boolfid = np.all(frameID == self.fid, axis=1)
         nrows = np.count_nonzero(boolfid)
-        self.bytesFrame[self.row:self.row + nrows] = packet[boolfid].reshape((-1, self.azimuth_block_size))
+        self.bytesFrame[self.row:self.row + nrows] = packet[boolfid].reshape((-1, self.azimuth_block_size),
+                                                                             dtype=np.uint8)
         self.row += nrows
         # check if frame id changed, update self.bytesFrame, self.fid, self.row
         if nrows < self.azimuth_block_count:
@@ -107,7 +120,34 @@ class OS1(reip.Block):
             frame, self.bytesFrame = self.bytesFrame, np.zeros((self.resolution, self.azimuth_block_size))
             self.row = self.azimuth_block_count - nrows
             self.bytesFrame[:self.row] = packet[boolfid == False].reshape((-1, self.azimuth_block_size))
+        # print(self.bytesFrame.dtype)
         return frame
+
+    def new_parsePacket(self, packet):
+        frame, fid_saved = None, None
+        packet = np.frombuffer(packet, dtype=np.uint8).reshape((self.azimuth_block_count, -1))  # bytes to np.uint8
+
+        frameID = np.frombuffer(packet[:, 10:12].tobytes(), dtype=np.uint16)
+        measurementID = np.frombuffer(packet[:, 8:10].tobytes(), dtype=np.uint16)
+
+        if self.fid is None:
+            self.fid = frameID[0]
+        boolfid=frameID == self.fid
+        nrows = np.count_nonzero(boolfid)
+
+        self.bytesFrame[measurementID[boolfid], :] = packet[boolfid, :].reshape((-1, self.azimuth_block_size))
+
+        # check if frame id changed, update self.bytesFrame, self.fid, self.row
+        if nrows < self.azimuth_block_count:
+            fid_saved, self.fid = self.fid, frameID[frameID != self.fid][0]
+            frame, self.bytesFrame = self.bytesFrame, np.zeros((self.resolution, self.azimuth_block_size),
+                                                               dtype=np.uint8)
+
+            newboolfid = frameID == self.fid
+            self.bytesFrame[measurementID[newboolfid], :] = packet[newboolfid, :].reshape(
+                (-1, self.azimuth_block_size))
+
+        return frame, fid_saved
 
     def process(self, *data, meta=None):
         # filename = self.template %  self.processed
@@ -116,13 +156,20 @@ class OS1(reip.Block):
 
             if len(request) == self.packet_size:
                 break
-        frame = self.parsePacket(request)
 
-        metadata = {
-            "sr": self.resolution * self.fps,
-            "data_type": "bytes",
-            "packet_size": self.resolution,
-            "beam_intrinsics": self._beam_intrinsics,
-        }
+        # with self.sw("new_parsePacket"):
+        frame, fid = self.new_parsePacket(request)
+
         if frame is not None:
+            metadata = {
+                "sr": self.fps,
+                "fps": self.fps,
+                "data_type": "lidar_raw",
+                "resolution": self.resolution,
+                "beam_intrinsics": self._beam_intrinsics,
+                "frame_id": int(fid)
+            }
             return [frame], metadata
+
+    def finish(self):
+        print("\nPackets sw:\n", self.sw)
