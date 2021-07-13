@@ -76,10 +76,6 @@ class Parser(reip.Block):
     def process(self, data, meta):
         assert (meta["data_type"] == "lidar_raw"), "Invalid packet"
 
-        # if self._trig_table is None:
-        #     intrinsics = meta["beam_intrinsics"]
-        #     self.build_trig_table(intrinsics["beam_altitude_angles"], intrinsics["beam_azimuth_angles"])
-
         frame, timestamps = self.unpack(data)
         timestamp = timestamps[0]
 
