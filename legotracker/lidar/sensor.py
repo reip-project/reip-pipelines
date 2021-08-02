@@ -1,37 +1,12 @@
-from __future__ import unicode_literals
-
 import reip
 import json
 import time
 import numpy as np
 
 import socket
-import socketserver
 from socketserver import UDPServer
 from api import OS1API
 
-
-class TempSource(reip.Block):
-    def __init__(self, **kw):
-        super().__init__(n_inputs=0, **kw)
-
-    def process(self, *data, meta=None):
-        data = [x for x in range(10)]
-        metadata = {
-            "sr": 1,
-            "data_type": "temp",
-        }
-        return [data], metadata
-
-
-class BlackHole(reip.Block):
-    def __init__(self, **kw):
-        # super().__init__(n_sink=0, **kw)
-        super().__init__(**kw)
-
-    def process(self, *data, meta=None):
-        # raise RuntimeError("Boom")
-        return None
 
 class OS1(reip.Block):
     MODES = ("512x10", "512x20", "1024x10", "1024x20", "2048x10")
@@ -56,8 +31,8 @@ class OS1(reip.Block):
     def init(self):
         assert self.mode in self.MODES, "Mode must be one of {}".format(self.MODES)
 
-        self.fps = int(self.mode.split("x")[1])  # default
         self.resolution = int(self.mode.split("x")[0])  # default: 1024
+        self.fps = int(self.mode.split("x")[1])  # default
 
         self.packet_per_frame = self.resolution // self.azimuth_block_count  # default:64
         self.azimuth_block_size = self.packet_size // self.azimuth_block_count  # default: 212
@@ -90,35 +65,7 @@ class OS1(reip.Block):
         self._socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self._socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 30000000)
 
-    def old_parsePacket(self, packet):
-        # print(type(packet), len(packet), packet)
-        frame = None
-        packet = np.frombuffer(packet, dtype=np.uint8).reshape((self.azimuth_block_count, -1))
-        # packet = np.array(bytearray(packet)).reshape((self.azimuth_block_count, -1))
-
-        # LOOK HERE
-        # mid_fid = np.frombuffer(packet[:, 8:12].tobytes(), dtype=np.uint16).reshape((-1, 2))
-        # mid, fid = mid_fid[:, 0], mid_fid[:, 1]
-        frameID = packet[:, 10:12]
-
-        if self.fid is None:
-            self.fid = frameID[0]
-            # print(self.fid)
-        boolfid = np.all(frameID == self.fid, axis=1)
-        nrows = np.count_nonzero(boolfid)
-        self.bytesFrame[self.row:self.row + nrows] = packet[boolfid].reshape((-1, self.azimuth_block_size),
-                                                                             dtype=np.uint8)
-        self.row += nrows
-        # check if frame id changed, update self.bytesFrame, self.fid, self.row
-        if nrows < self.azimuth_block_count:
-            self.fid = frameID[boolfid == False][0]
-            frame, self.bytesFrame = self.bytesFrame, np.zeros((self.resolution, self.azimuth_block_size))
-            self.row = self.azimuth_block_count - nrows
-            self.bytesFrame[:self.row] = packet[boolfid == False].reshape((-1, self.azimuth_block_size))
-        # print(self.bytesFrame.dtype)
-        return frame
-
-    def new_parsePacket(self, packet):
+    def parse_packet(self, packet):
         frame, fid_saved = None, None
         packet = np.frombuffer(packet, dtype=np.uint8).reshape((self.azimuth_block_count, -1))  # bytes to np.uint8
 
@@ -147,12 +94,12 @@ class OS1(reip.Block):
     def process(self, *data, meta=None):
         # filename = self.template %  self.processed
         while True:
-            request, addr = self._socket.recvfrom(self.packet_size)
+            packet, addr = self._socket.recvfrom(self.packet_size)
 
-            if len(request) == self.packet_size:
+            if len(packet) == self.packet_size:
                 break
 
-        frame, fid = self.new_parsePacket(request)
+        frame, fid = self.parse_packet(packet)
 
         if frame is not None:
             metadata = {

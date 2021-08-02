@@ -1,71 +1,61 @@
 import reip
-import math
-import struct
 import numpy as np
 
 
 class Formatter(reip.Block):
     channel_block_count = 16
     ticks_per_revolution = 90112
-    radians_360 = 2 * math.pi
-    resolution = None
-    _trig_table = None
+    trig_table = None
+    columns = ["x", "y", "z", "r", "timestamps", "angle", "reflectivity", "signal_photon", "noise_photon"]
 
-    def __init__(self,  **kw):
-        self.columns = ["x", "y", "z", "r", "angle","reflectivity"]
-
-        super().__init__(**kw)
-
-    def build_trig_table(self, beam_altitude_angles, beam_azimuth_angles):
-        self._trig_table = []
-        for i in range(self.channel_block_count):
-            self._trig_table.append(
-                [
-                    math.sin(math.radians(beam_altitude_angles[i])),
-                    math.cos(math.radians(beam_altitude_angles[i])),
-                    math.radians(beam_azimuth_angles[i]),
-                ]
-            )
-        self._trig_table = np.array(self._trig_table)  # 16 *3
-
-    def format_frame(self, frame):
+    def format_frame(self, frame, resolution, n):
         """
-        Input shape: resolution * 16 * 5
-        Input columns: r, encoder_angle, reflectivity, signal photon, noise photon
+        Input shape: resolution * channel_block_count * 5
+        Input columns: r, timestamps, encoder_angle, reflectivity, signal photon, noise photon
 
-        Returns columns: x, y, z, r, angle. reflectivity
+        Return shape: resolution * channel_block_count * 6
+        Returns columns: x, y, z, r, timestamps, angle. reflectivity
         """
-        r = frame[:, :, 0].astype(np.float32) / 1000 # n * 16
+        assert self.channel_block_count == frame.shape[1], "Invalid number of channels"
 
-        encoder_block = frame[:, :, 1]
-        adjusted_angle = (encoder_block * self.radians_360 / self.ticks_per_revolution + np.tile(
-            self._trig_table[:, 2].reshape((1, -1)), (self.resolution, 1))).ravel()  # N
+        r = frame[:, :, 0].ravel().astype(np.float32) / 1000  # (resolution * self.channel_block_count,)
 
-        cos_angle = np.cos(adjusted_angle)  # N
-        sin_angle = np.sin(adjusted_angle)  # N
+        timestamps = frame[:, :, 1].ravel()  # (resolution * self.channel_block_count,)
+        encoder_block = frame[:, :, 2].ravel()  # (resolution * self.channel_block_count,)
+        reflectivity = frame[:, :, 3].ravel()  # (resolution * self.channel_block_count,)
+        signal = frame[:, :, 4].ravel()  # (resolution * self.channel_block_count,)
+        noise = frame[:, :, 5].ravel()  # (resolution * self.channel_block_count,)
 
-        reflectivity = frame[:, :, 2].ravel()
+        # adjusted_angle = 2 * np.pi * (1 - encoder_block / self.ticks_per_revolution) + \
+        #                     np.tile(self.trig_table[:, 2].ravel(), (resolution,))
 
-        r_xy = np.multiply(r, np.tile(self._trig_table[:, 1].reshape((1, -1)), (self.resolution, 1))).ravel()  # N
+        encoder_angle = 2 * np.pi * (1 - encoder_block / self.ticks_per_revolution)
+        adjusted_angle = encoder_angle - np.tile(self.trig_table[:, 2].ravel(), (resolution,))  # encoder+ azimuth
 
-        x = -np.multiply(r_xy, cos_angle)  # x: (N,)
-        y = np.multiply(r_xy, sin_angle)
-        z = np.multiply(r, np.tile(self._trig_table[:, 0].reshape((1, -1)), (self.resolution, 1))).ravel()
+        r_xy = (r - n) * np.tile(self.trig_table[:, 1].ravel(), (resolution,))
 
-        ret = np.stack([x, y, z, r.ravel(), adjusted_angle, reflectivity], axis=1)
+        # x, y = -r_xy * np.cos(adjusted_angle), r_xy * np.sin(adjusted_angle) # assume orgin n= 0 mm
+        x = r_xy * np.cos(adjusted_angle) + n * np.cos(encoder_block)
+        y = r_xy * np.sin(adjusted_angle) + n * np.sin(encoder_block)
 
-        return ret.reshape((self.resolution, self.channel_block_count, len(self.columns)))
+        z = (r - n) * np.tile(self.trig_table[:, 0].ravel(), (resolution,))
+
+        ret = np.stack([x, y, z, r, timestamps, adjusted_angle, reflectivity, signal, noise], axis=1)
+
+        return ret.reshape((resolution, self.channel_block_count, len(self.columns)))
 
     def process(self, data, meta):
         assert (meta["data_type"] == "lidar_parsed"), "Invalid packet"
         intrinsics = meta["beam_intrinsics"]
-        if self._trig_table is None:
-            self.build_trig_table(intrinsics["beam_altitude_angles"], intrinsics["beam_azimuth_angles"])
-        self.resolution = meta["resolution"]
 
-        feature = self.format_frame(data)
+        if self.trig_table is None:
+            alt, azim = np.radians(intrinsics["beam_altitude_angles"]), np.radians(intrinsics["beam_azimuth_angles"])
+            self.trig_table = np.array(
+                [[np.sin(alt[i]), np.cos(alt[i]), azim[i]] for i in range(self.channel_block_count)])
+
+        features = self.format_frame(data, meta["resolution"], intrinsics["lidar_origin_to_beam_origin_mm"] / 1000)
 
         meta["data_type"] = "lidar_formatted"
         meta["features"] = self.columns
 
-        return [feature], meta
+        return [features], meta

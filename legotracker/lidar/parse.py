@@ -1,5 +1,4 @@
 import reip
-import math
 import struct
 import numpy as np
 
@@ -8,6 +7,7 @@ class Parser(reip.Block):
     channel_block_count = 16
     ticks_per_revolution = 90112
     range_bit_mask = 0x000FFFFF
+    columns = ["r", "timestamps", "encoder", "reflectivity", "signal_photon", "noise_photon"]
 
     def init(self):
         self.channel_block_fmt = (
@@ -26,10 +26,8 @@ class Parser(reip.Block):
             "I"  # Status
         ).format(self.channel_block_fmt * self.channel_block_count)
 
-        self._unpack, self._trig_table = struct.Struct("<" + self.azimuth_block_fmt).unpack, None
-        self.columns = ["r", "encoder", "reflectivity", "signal_photon", "noise_photon"]
-        # In the formatter block (dtype=np.float32):
-        # self.columns = ["x", "y", "z", "r [meters]", "angle", "reflectivity"]
+        # self._unpack, self._trig_table = struct.Struct("<" + self.azimuth_block_fmt).unpack, None
+        self._unpack = struct.Struct("<" + self.azimuth_block_fmt).unpack
 
     def unpack(self, rawframe):
         n, timestamps = rawframe.shape[0], []
@@ -44,42 +42,57 @@ class Parser(reip.Block):
 
         return frame, timestamps
 
-    def parse_frame(self, frame, resolution):
-        """
-        Input: data n* 85, n*16=N
-        Returns a tuple of features:
-        x, y, z, r, theta, refl, signal, noise, time, fid,mid, ch
-        """
-        # feat_time = np.repeat(frame[:, 0], self.channel_block_count)  # Wrong values (32 bits not enough)
-        # feat_mid = np.repeat(frame[:, 1], self.channel_block_count)
-        # feat_fid = np.repeat(frame[:, 2], self.channel_block_count)
-        encoder_block = np.tile(frame[:, 3][:, None], (1, self.channel_block_count))  # n*16
+    # def parse_frame(self, frame, resolution):
+    #     """
+    #     Input: data n* 85, n*16=N
+    #     Returns a tuple of features:
+    #     x, y, z, r, theta, refl, signal, noise, time, fid,mid, ch
+    #     """
+    #     encoder_block = np.tile(frame[:, 3][:, None], (1, self.channel_block_count))  # n*16
+    #
+    #     data_block = frame[:, 4:84].reshape((-1, len(self.channel_block_fmt)))  # N *5
+    #     r = data_block[:, 0] & self.range_bit_mask
+    #
+    #     feat_refl, feat_signal, feat_noise = data_block[:, 1], data_block[:, 2], data_block[:, 3]
+    #
+    #     ret = np.stack([r, encoder_block.ravel(), feat_refl, feat_signal, feat_noise], axis=1)
+    #
+    #     return ret.reshape((resolution, self.channel_block_count, len(self.columns)))
 
-        data_block = frame[:, 4:84].reshape((-1, len(self.channel_block_fmt)))  # N *5
+    def parse_frame(self, data8, resolution):
+        data = data8.view(np.uint32).reshape((-1, data8.shape[1]//4))
+        # print(data8.shape, data.shape)
+
+        # Thius didn't work because of odd number of words in one measurement block:
+        # all_timestamps = data8.view(np.uint64).reshape((-1, data8.shape[1]//8))[:, 0]  # nanoseconds
+        # all_timestamps = (all_timestamps // 1000000).astype(np.uint32)  # milliseconds
+
+        all_timestamps = data[:, 1].astype(np.uint64) * 2 ** 32 + data[:, 0].astype(np.uint64)  # nanoseconds, (n,)
+        all_timestamps = (all_timestamps // 1000000).astype(np.uint32)  # milliseconds, (n,)
+        all_timestamps = np.tile(all_timestamps[:, None], (1, self.channel_block_count))  # milliseconds, (n, 16)
+        timestamp = int(data[0, 1]) * 2**32 + int(data[0, 0])  # Might be zero if the packet containing first column (measurement_id=0) was lost
+        # print(timestamp, all_timestamps[0])
+
+        encoder_block = np.tile(data[:, 3][:, None], (1, self.channel_block_count))  # n*16
+        data_block = data[:, 4:52].reshape((-1, 3))  # n*16*3
         r = data_block[:, 0] & self.range_bit_mask
-        # r = r / 1000.  # N
+        feat_refl = data_block[:, 1] & 0x0000FFFF
+        feat_signal = np.right_shift(data_block[:, 1] & 0xFFFF0000, 16)
+        feat_noise = data_block[:, 2] & 0x0000FFFF
 
-        feat_refl, feat_signal, feat_noise = data_block[:, 1], data_block[:, 2], data_block[:, 3]
+        ret = np.stack([r, all_timestamps.ravel(), encoder_block.ravel(), feat_refl, feat_signal, feat_noise], axis=1)
 
-        # cos_angle = np.cos(adjusted_angle)  # N
-        # sin_angle = np.sin(adjusted_angle)  # N
-
-        # r_xy = np.multiply(r, np.tile(self._trig_table[:, 1].reshape((1, -1)), (n, 1)).ravel())  # N
-
-        # feat_x = -np.multiply(r_xy, cos_angle)  # x
-        # feat_y = np.multiply(r_xy, sin_angle)  # y
-        # feat_z = np.multiply(r, np.tile(self._trig_table[:, 0].reshape((1, -1)), (n, 1)).ravel())  # z
-        ret = np.stack([r, encoder_block.ravel(), feat_refl, feat_signal, feat_noise], axis=1)
-
-        return ret.reshape((resolution, self.channel_block_count, len(self.columns)))
+        return ret.reshape((resolution, self.channel_block_count, len(self.columns))), timestamp
 
     def process(self, data, meta):
         assert (meta["data_type"] == "lidar_raw"), "Invalid packet"
 
-        frame, timestamps = self.unpack(data)
-        timestamp = timestamps[0]
+        # frame, timestamps = self.unpack(data)
+        # timestamp = timestamps[0]
+        #
+        # features = self.parse_frame(frame, meta["resolution"])
 
-        features = self.parse_frame(frame, meta["resolution"])
+        features, timestamp = self.parse_frame(data, meta["resolution"])
 
         meta["data_type"] = "lidar_parsed"
         meta["features"] = self.columns
