@@ -17,7 +17,7 @@ class Plotter(reip.Block):
     def plot_2d(self, xs):
         plt.clf()
         d = xs[0].reshape((-1, xs[0].shape[-1]))
-        plt.scatter(d[:, 0], d[:, 1], c=d[:, -2], s=7, alpha=0.5, cmap='viridis', vmin=-2.0, vmax=2.0)
+        plt.scatter(d[:, 0], d[:, 1], c=d[:, 5], s=7, alpha=0.5, cmap='viridis')#, vmin=-2.0, vmax=2.0)
 
         plt.colorbar()
         # plt.xlim([-5, 50])

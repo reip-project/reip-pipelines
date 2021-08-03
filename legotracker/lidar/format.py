@@ -35,8 +35,8 @@ class Formatter(reip.Block):
         r_xy = (r - n) * np.tile(self.trig_table[:, 1].ravel(), (resolution,))
 
         # x, y = -r_xy * np.cos(adjusted_angle), r_xy * np.sin(adjusted_angle) # assume orgin n= 0 mm
-        x = r_xy * np.cos(adjusted_angle) + n * np.cos(encoder_block)
-        y = r_xy * np.sin(adjusted_angle) + n * np.sin(encoder_block)
+        x = r_xy * np.cos(adjusted_angle) + n * np.cos(encoder_angle)
+        y = r_xy * np.sin(adjusted_angle) + n * np.sin(encoder_angle)
 
         z = (r - n) * np.tile(self.trig_table[:, 0].ravel(), (resolution,))
 
