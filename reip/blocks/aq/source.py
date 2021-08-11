@@ -7,7 +7,7 @@ import reip
 
 class Piera7100Reader:
     header = ['datetime','PC0.1','PC0.3','PC0.5','PC1.0','PC2.5','PC5.0','PC10','PM0.1','PM0.3','PM0.5','PM1.0','PM2.5','PM5.0','PM10']
-    def __init__(self, port='/dev/ttyAMA0', baudrate=115200, timeout=1):
+    def __init__(self, port='/dev/serial0', baudrate=115200, timeout=1):
         # Setup Serial Port:
         self.ser = serial.Serial(
             port=port,
