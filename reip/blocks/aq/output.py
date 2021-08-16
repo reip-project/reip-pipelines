@@ -1,11 +1,14 @@
 import os
 import reip
+import csv
+from time import strftime
 
 
 class CSVWriter(reip.Block):
-    def __init__(self, filename, n_rows=60, max_rate=1, **kw):
+    def __init__(self, filename, header=None, n_rows=60, max_rate=1, **kw):
         self.filename_pattern = filename
         self.n_rows = n_rows
+        self.header = header
         super().__init__(max_rate=max_rate, **kw)
 
     def _new(self):
