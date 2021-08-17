@@ -32,13 +32,15 @@ class Formatter(reip.Block):
         encoder_angle = 2 * np.pi * (1 - encoder_block / self.ticks_per_revolution)
         adjusted_angle = encoder_angle - np.tile(self.trig_table[:, 2].ravel(), (resolution,))  # encoder+ azimuth
 
-        r_xy = (r - n) * np.tile(self.trig_table[:, 1].ravel(), (resolution,))
+        r_xy = r * np.tile(self.trig_table[:, 1].ravel(), (resolution,))
 
         # x, y = -r_xy * np.cos(adjusted_angle), r_xy * np.sin(adjusted_angle) # assume orgin n= 0 mm
         x = r_xy * np.cos(adjusted_angle) + n * np.cos(encoder_angle)
         y = r_xy * np.sin(adjusted_angle) + n * np.sin(encoder_angle)
 
-        z = (r - n) * np.tile(self.trig_table[:, 0].ravel(), (resolution,))
+        # z = (r - n) * np.tile(self.trig_table[:, 0].ravel(), (resolution,))
+        z = r * np.tile(self.trig_table[:, 0].ravel(), (resolution,))
+
 
         ret = np.stack([x, y, z, r, timestamps, adjusted_angle, reflectivity, signal, noise], axis=1)
 

@@ -10,6 +10,7 @@ from numpy_io import NumpyReader
 
 if __name__ == '__main__':
     reader = NumpyReader(name="Reader", filename_template="save/%d", max_rate=20)
+    reader.id = 341
 
     for i in range(10):
         data, meta = reader.process(None)
