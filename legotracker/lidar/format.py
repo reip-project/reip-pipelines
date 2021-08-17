@@ -8,7 +8,7 @@ class Formatter(reip.Block):
     trig_table = None
     columns = ["x", "y", "z", "r", "timestamps", "angle", "reflectivity", "signal_photon", "noise_photon"]
 
-    def format_frame(self, frame, resolution, n):
+    def format_frame(self, frame, resolution, n,roll):
         """
         Input shape: resolution * channel_block_count * 5
         Input columns: r, timestamps, encoder_angle, reflectivity, signal photon, noise photon
@@ -26,21 +26,22 @@ class Formatter(reip.Block):
         signal = frame[:, :, 4].ravel()  # (resolution * self.channel_block_count,)
         noise = frame[:, :, 5].ravel()  # (resolution * self.channel_block_count,)
 
-        # adjusted_angle = 2 * np.pi * (1 - encoder_block / self.ticks_per_revolution) + \
-        #                     np.tile(self.trig_table[:, 2].ravel(), (resolution,))
-
         encoder_angle = 2 * np.pi * (1 - encoder_block / self.ticks_per_revolution)
-        adjusted_angle = encoder_angle - np.tile(self.trig_table[:, 2].ravel(), (resolution,))  # encoder+ azimuth
+        azimuth_angle = - np.tile(self.trig_table[:, 2].ravel(), (resolution,)).reshape((resolution,-1))
+
+        # Roll azimuth_angle if roll in parse
+        if roll:
+            for i in range(self.channel_block_count):
+                azimuth_angle[:, i] = np.roll(azimuth_angle[:, i], round(1024 * self.trig_table[i,2] / 360), axis=0)
+
+        adjusted_angle = encoder_angle + azimuth_angle.reshape(encoder_angle.shape)  # encoder+ azimuth
 
         r_xy = r * np.tile(self.trig_table[:, 1].ravel(), (resolution,))
 
-        # x, y = -r_xy * np.cos(adjusted_angle), r_xy * np.sin(adjusted_angle) # assume orgin n= 0 mm
         x = r_xy * np.cos(adjusted_angle) + n * np.cos(encoder_angle)
         y = r_xy * np.sin(adjusted_angle) + n * np.sin(encoder_angle)
 
-        # z = (r - n) * np.tile(self.trig_table[:, 0].ravel(), (resolution,))
         z = r * np.tile(self.trig_table[:, 0].ravel(), (resolution,))
-
 
         ret = np.stack([x, y, z, r, timestamps, adjusted_angle, reflectivity, signal, noise], axis=1)
 
@@ -55,7 +56,8 @@ class Formatter(reip.Block):
             self.trig_table = np.array(
                 [[np.sin(alt[i]), np.cos(alt[i]), azim[i]] for i in range(self.channel_block_count)])
 
-        features = self.format_frame(data, meta["resolution"], intrinsics["lidar_origin_to_beam_origin_mm"] / 1000)
+        features = self.format_frame(data, meta["resolution"], intrinsics["lidar_origin_to_beam_origin_mm"] / 1000,
+                                     meta["roll"])
 
         meta["data_type"] = "lidar_formatted"
         meta["features"] = self.columns

@@ -47,7 +47,7 @@ def sensor_stream(live=True, plot=True):
     if plot:
         # stream.to(Plotter(name="Plotter", type="3D"), strategy="latest")
         # detector = BackgroundDetector(name="detector", window_size=20*5)
-        stream.to(Plotter(name="Plotter", type="2D"), strategy="latest")
+        stream.to(Plotter(name="Plotter", type="parsed"), strategy="latest")
 
 
 if __name__ == '__main__':

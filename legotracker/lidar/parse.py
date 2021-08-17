@@ -7,18 +7,20 @@ class Parser(reip.Block):
     ticks_per_revolution = 90112
     range_bit_mask = 0x000FFFFF
     columns = ["r", "timestamps", "encoder", "reflectivity", "signal_photon", "noise_photon"]
+    trig_table = None
+
+    def __init__(self, roll=True, **kw):
+        super().__init__(**kw)
+        self.roll = roll
 
     def parse_frame(self, data8, resolution):
-        data = data8.view(np.uint32).reshape((-1, data8.shape[1]//4))
-
-        # Thius didn't work because of odd number of words in one measurement block:
-        # all_timestamps = data8.view(np.uint64).reshape((-1, data8.shape[1]//8))[:, 0]  # nanoseconds
-        # all_timestamps = (all_timestamps // 1000000).astype(np.uint32)  # milliseconds
+        data = data8.view(np.uint32).reshape((-1, data8.shape[1] // 4))
 
         all_timestamps = data[:, 1].astype(np.uint64) * 2 ** 32 + data[:, 0].astype(np.uint64)  # nanoseconds, (n,)
         all_timestamps = (all_timestamps // 1000000).astype(np.uint32)  # milliseconds, (n,)
         all_timestamps = np.tile(all_timestamps[:, None], (1, self.channel_block_count))  # milliseconds, (n, 16)
-        timestamp = int(data[0, 1]) * 2**32 + int(data[0, 0])  # Might be zero if the packet containing first column (measurement_id=0) was lost
+        timestamp = int(data[0, 1]) * 2 ** 32 + int(data[0, 0])
+        # Might be zero if the packet containing first column (measurement_id=0) was lost
         # print(timestamp, all_timestamps[0])
 
         encoder_block = np.tile(data[:, 3][:, None], (1, self.channel_block_count))  # n*16
@@ -30,17 +32,27 @@ class Parser(reip.Block):
 
         ret = np.stack([r, all_timestamps.ravel(), encoder_block.ravel(), feat_refl, feat_signal, feat_noise], axis=1)
 
+        ret = ret.reshape((resolution, self.channel_block_count, len(self.columns)))
         # Roll HERE
-
-        return ret.reshape((resolution, self.channel_block_count, len(self.columns))), timestamp
+        if self.roll:
+            for i in range(self.channel_block_count):
+                ret[:, i, :] = np.roll(ret[:, i, :], round(1024 * self.trig_table[i, 2] / 360), axis=0)
+        return ret, timestamp
 
     def process(self, data, meta):
         assert (meta["data_type"] == "lidar_raw"), "Invalid packet"
+
+        intrinsics = meta["beam_intrinsics"]
+        if self.trig_table is None:
+            alt, azim = np.radians(intrinsics["beam_altitude_angles"]), np.radians(intrinsics["beam_azimuth_angles"])
+            self.trig_table = np.array(
+                [[np.sin(alt[i]), np.cos(alt[i]), azim[i]] for i in range(self.channel_block_count)])
 
         features, timestamp = self.parse_frame(data, meta["resolution"])
 
         meta["data_type"] = "lidar_parsed"
         meta["features"] = self.columns
         meta["timestamp"] = int(timestamp)
+        meta["roll"] = self.roll
 
         return [features], meta
