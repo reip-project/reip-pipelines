@@ -80,8 +80,8 @@ class Plotter(reip.Block):
 
         data = xs[0]
 
-        for i in range(data.shape[1]):
-            data[:, i, :] = np.roll(data[:, i, :], round(1024 * self.ang[i] / 360), axis=0)
+        # for i in range(data.shape[1]):
+        #     data[:, i, :] = np.roll(data[:, i, :], round(1024 * self.ang[i] / 360), axis=0)
 
         r = data[:, :, 0].T / 1000
         t = data[:, :, 1].T / 1000
@@ -104,6 +104,55 @@ class Plotter(reip.Block):
 
         plt.tight_layout()
 
+    def plot_formatted(self, xs):
+
+        data = xs[0]
+
+        # for i in range(data.shape[1]):
+        #     data[:, i, :] = np.roll(data[:, i, :], round(1024 * self.ang[i] / 360), axis=0)
+
+        r = data[:, :, 3].T
+        t = data[:, :, 4].T / 1000
+        e = data[:, :, 5].T
+        a = data[:, :, 6].T
+        s = data[:, :, 7].T
+        n = data[:, :, 8].T
+
+        plt.clf()
+        plt.title(str(self.processed))
+
+        for i, title, dat in zip(range(6), ["r", "t", "e", "a", "s", "n"], [r, t, e, a, s, n]):
+            plt.subplot(6, 1, i + 1)
+            if i == 0:
+                plt.imshow(np.repeat(dat, 3, axis=0), vmin=0, vmax=10)
+            else:
+                plt.imshow(np.repeat(dat, 3, axis=0))
+            plt.title(title)
+            plt.colorbar()
+
+        plt.tight_layout()
+
+    def plot_BG(self, xs):
+        data = xs[0]
+
+        ave = data[:, :, 0].T
+        std = data[:, :, 1].T
+        mask = data[:, :, 2].T
+
+        plt.clf()
+        plt.title(str(self.processed))
+
+        for i, title, dat in zip(range(6), ["mean", "std", "mask"], [ave, std,mask]):
+            plt.subplot(6, 1, i + 1)
+            if i == 0:
+                plt.imshow(np.repeat(dat, 3, axis=0), vmin=0, vmax=10)
+            else:
+                plt.imshow(np.repeat(dat, 3, axis=0))
+            plt.title(title)
+            plt.colorbar()
+
+        plt.tight_layout()
+
     def process(self, *xs, meta=None):
         if self.type == "2D":
             self.plot_2d(xs)
@@ -113,6 +162,10 @@ class Plotter(reip.Block):
             self.plot_img(xs)
         elif self.type == "parsed":
             self.plot_parsed(xs)
+        elif self.type == "formatted":
+            self.plot_formatted(xs)
+        elif self.type == "BG":
+            self.plot_BG(xs)
         else:
             raise RuntimeError("Unknown format")
 

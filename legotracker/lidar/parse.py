@@ -7,7 +7,22 @@ class Parser(reip.Block):
     ticks_per_revolution = 90112
     range_bit_mask = 0x000FFFFF
     columns = ["r", "timestamps", "encoder", "reflectivity", "signal_photon", "noise_photon"]
-    trig_table = None
+    ang = [-1.12,
+           3.08,
+           -1.1,
+           3.08,
+           -1.08,
+           3.1,
+           -1.06,
+           3.11,
+           -1.04,
+           3.13,
+           -1.02,
+           3.16,
+           -1,
+           3.19,
+           -0.99,
+           3.22]
 
     def __init__(self, roll=True, **kw):
         super().__init__(**kw)
@@ -36,17 +51,11 @@ class Parser(reip.Block):
         # Roll HERE
         if self.roll:
             for i in range(self.channel_block_count):
-                ret[:, i, :] = np.roll(ret[:, i, :], round(1024 * self.trig_table[i, 2] / 360), axis=0)
+                ret[:, i, :] = np.roll(ret[:, i, :], round(1024 * self.ang[i] / 360), axis=0)
         return ret, timestamp
 
     def process(self, data, meta):
         assert (meta["data_type"] == "lidar_raw"), "Invalid packet"
-
-        intrinsics = meta["beam_intrinsics"]
-        if self.trig_table is None:
-            alt, azim = np.radians(intrinsics["beam_altitude_angles"]), np.radians(intrinsics["beam_azimuth_angles"])
-            self.trig_table = np.array(
-                [[np.sin(alt[i]), np.cos(alt[i]), azim[i]] for i in range(self.channel_block_count)])
 
         features, timestamp = self.parse_frame(data, meta["resolution"])
 

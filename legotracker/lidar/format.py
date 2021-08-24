@@ -1,14 +1,34 @@
 import reip
 import numpy as np
+import json
 
 
 class Formatter(reip.Block):
     channel_block_count = 16
     ticks_per_revolution = 90112
-    trig_table = None
     columns = ["x", "y", "z", "r", "timestamps", "angle", "reflectivity", "signal_photon", "noise_photon"]
+    trig_table = None
+    ang = [-1.12,
+           3.08,
+           -1.1,
+           3.08,
+           -1.08,
+           3.1,
+           -1.06,
+           3.11,
+           -1.04,
+           3.13,
+           -1.02,
+           3.16,
+           -1,
+           3.19,
+           -0.99,
+           3.22]
 
-    def format_frame(self, frame, resolution, n,roll):
+    bg_mask = np.load(open("bg/bgmask.npy","rb"))[:, :, 2]
+    bg_meta = json.load(open("bg/bgmask.json","r"))
+
+    def format_frame(self, frame, resolution, n, rolled=False):
         """
         Input shape: resolution * channel_block_count * 5
         Input columns: r, timestamps, encoder_angle, reflectivity, signal photon, noise photon
@@ -27,12 +47,12 @@ class Formatter(reip.Block):
         noise = frame[:, :, 5].ravel()  # (resolution * self.channel_block_count,)
 
         encoder_angle = 2 * np.pi * (1 - encoder_block / self.ticks_per_revolution)
-        azimuth_angle = - np.tile(self.trig_table[:, 2].ravel(), (resolution,)).reshape((resolution,-1))
+        azimuth_angle = - np.tile(self.trig_table[:, 2].ravel(), (resolution,)).reshape((resolution, -1))
 
         # Roll azimuth_angle if roll in parse
-        if roll:
+        if not rolled:
             for i in range(self.channel_block_count):
-                azimuth_angle[:, i] = np.roll(azimuth_angle[:, i], round(1024 * self.trig_table[i,2] / 360), axis=0)
+                azimuth_angle[:, i] = np.roll(azimuth_angle[:, i], round(1024 * self.ang[i] / 360), axis=0)
 
         adjusted_angle = encoder_angle + azimuth_angle.reshape(encoder_angle.shape)  # encoder+ azimuth
 
@@ -43,14 +63,21 @@ class Formatter(reip.Block):
 
         z = r * np.tile(self.trig_table[:, 0].ravel(), (resolution,))
 
-        ret = np.stack([x, y, z, r, timestamps, adjusted_angle, reflectivity, signal, noise], axis=1)
+        res = np.stack([x, y, z, r, timestamps, adjusted_angle, reflectivity, signal, noise], axis=1)
 
-        return ret.reshape((resolution, self.channel_block_count, len(self.columns)))
+        res = res.reshape((resolution, self.channel_block_count, len(self.columns)))
+
+        masked_res = self.apply_bgmask(res)
+
+        return masked_res
+
+    def apply_bgmask(self, data):
+        data[self.bg_mask == 0, :] = 0
+        return data
 
     def process(self, data, meta):
         assert (meta["data_type"] == "lidar_parsed"), "Invalid packet"
         intrinsics = meta["beam_intrinsics"]
-
         if self.trig_table is None:
             alt, azim = np.radians(intrinsics["beam_altitude_angles"]), np.radians(intrinsics["beam_azimuth_angles"])
             self.trig_table = np.array(
