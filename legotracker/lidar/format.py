@@ -25,10 +25,16 @@ class Formatter(reip.Block):
            -0.99,
            3.22]
 
-    bg_mask = np.load(open("bg/bgmask.npy","rb"))[:, :, 2]
-    bg_meta = json.load(open("bg/bgmask.json","r"))
+    bg_mask_matrix = np.load(open("bg/bgmask.npy", "rb"))
+    bg_meta = json.load(open("bg/bgmask.json", "r"))
+    std_threshold = bg_meta["std_threshold"]
 
-    def format_frame(self, frame, resolution, n, rolled=False):
+    def __init__(self, background=True, q=None, **kw):
+        super().__init__(**kw)
+        self.background = background
+        self.q = q
+
+    def format_frame(self, frame, resolution, n, rolled=False, q=None):
         """
         Input shape: resolution * channel_block_count * 5
         Input columns: r, timestamps, encoder_angle, reflectivity, signal photon, noise photon
@@ -67,12 +73,27 @@ class Formatter(reip.Block):
 
         res = res.reshape((resolution, self.channel_block_count, len(self.columns)))
 
-        masked_res = self.apply_bgmask(res)
+        if not self.background:
+            res = self.remove_bg(res)
 
-        return masked_res
+        return res
 
-    def apply_bgmask(self, data):
-        data[self.bg_mask == 0, :] = 0
+    def remove_bg(self, data):
+        bg_mean = self.bg_mask_matrix[:, :, 0]
+        bg_std = self.bg_mask_matrix[:, :, 1]
+
+        if self.q is None:
+            bg_mask = self.bg_mask_matrix[:, :, 2]
+        else:
+            bg_mask = np.zeros(bg_mean.shape)
+            self.std_threshold = np.quantile(bg_std, q)
+            # bg_mask[bg_std < self.std_threshold] = 1
+        bg_mean[bg_std > self.std_threshold] = 0
+        r_captured = data[:, :, 3]
+        bg_mask[np.absolute(r_captured - bg_mean) < self.std_threshold] = 1
+        bg_mask[bg_std > self.std_threshold] = 0  # if bg_mean == 0, bg_mask == 0
+
+        data[bg_mask == 1, :] = 0  # remove background
         return data
 
     def process(self, data, meta):

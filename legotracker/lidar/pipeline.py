@@ -38,18 +38,17 @@ def sensor_stream(live=True, plot=True):
             sensor = OS1(name="Sensor", sensor_ip=SENSOR_IP, dest_ip=DEST_IP, mode=MODE)
             # sensor.to(BH(name="Sensor_BH"))
         stream = Parser(name="Parser", roll=True)(sensor) \
-            .to(Formatter(name="Formatter")) \
-            # .to(BackgroundDetector(name="BG"))
+            .to(Formatter(name="Formatter", background=True)) \
+            .to(BackgroundDetector(name="BG"))
         # stream.to(BH(name="Writer_BH"))
         # with reip.Task("Writer_Task"):
-        writer = NumpyWriter(name="Writer", filename_template="save/%d")
+        writer = NumpyWriter(name="Writer", filename_template="bg/%d")
         stream.to(writer).to(BH(name="Writer_BH"))
     else:
         stream = NumpyReader(name="Reader", filename_template="save/%d", max_rate=20)  # formatted data
     if plot:
         # stream.to(Plotter(name="Plotter", type="3D"), strategy="latest")
-        # detector = BackgroundDetector(name="detector", window_size=20*5)
-        stream.to(Plotter(name="Plotter", type="formatted"), strategy="latest")
+        stream.to(Plotter(name="Plotter", type="BG"), strategy="latest")
 
 
 if __name__ == '__main__':

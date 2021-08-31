@@ -156,6 +156,7 @@ class Plotter(reip.Block):
     def process(self, *xs, meta=None):
         if self.type == "2D":
             self.plot_2d(xs)
+
         elif self.type == "3D":
             self.plot_3d(xs)
         elif self.type == "IMG":
