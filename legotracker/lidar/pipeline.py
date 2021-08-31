@@ -6,7 +6,7 @@ from plotter import Plotter
 from sensor import OS1
 from format import Formatter
 from parse import Parser
-from background import BackgroundDetector
+from background import BackgroundDetector, BackgroundFilter
 
 SENSOR_IP = "172.24.113.151"
 DEST_IP = "216.165.113.240"
@@ -45,10 +45,12 @@ def sensor_stream(live=True, plot=True):
         writer = NumpyWriter(name="Writer", filename_template="bg/%d")
         stream.to(writer).to(BH(name="Writer_BH"))
     else:
-        stream = NumpyReader(name="Reader", filename_template="save/%d", max_rate=20)  # formatted data
+        stream = NumpyReader(name="Reader", filename_template="save/%d", max_rate=20) \
+            .to(BackgroundFilter(name="BG", q=0.98)) # quantile: 97%-99%
+
     if plot:
         # stream.to(Plotter(name="Plotter", type="3D"), strategy="latest")
-        stream.to(Plotter(name="Plotter", type="BG"), strategy="latest")
+        stream.to(Plotter(name="Plotter", type="formatted"), strategy="latest")
 
 
 if __name__ == '__main__':
@@ -56,6 +58,6 @@ if __name__ == '__main__':
     # sensor_dump()
     # sensor_plot()
 
-    sensor_stream(live=True, plot=True)
+    sensor_stream(live=False, plot=True)
 
     reip.default_graph().run(duration=None, stats_interval=1)

@@ -1,6 +1,6 @@
 import reip
-import struct
 import numpy as np
+import json
 
 
 class BackgroundDetector(reip.Block):
@@ -81,3 +81,40 @@ class BackgroundDetector(reip.Block):
             meta["std_threshold"] = self.std_threshold
 
             return [features], meta
+
+
+class BackgroundFilter(reip.Block):
+    bg_mask_matrix = np.load(open("bg/bgmask.npy", "rb"))
+    bg_meta = json.load(open("bg/bgmask.json", "r"))
+    std_threshold = bg_meta["std_threshold"]
+
+    def __init__(self, q=None, **kw):
+        super().__init__(**kw)
+        self.q = q
+
+    def remove_bg(self, data):
+        bg_mean = self.bg_mask_matrix[:, :, 0]
+        bg_std = self.bg_mask_matrix[:, :, 1]
+
+        if self.q is None:
+            bg_mask = self.bg_mask_matrix[:, :, 2]
+        else:
+            bg_mask = np.zeros(bg_mean.shape)
+            self.std_threshold = np.quantile(bg_std, self.q)
+            # bg_mask[bg_std < self.std_threshold] = 1
+        # bg_mean[bg_std > self.std_threshold] = 0
+        r_captured = data[:, :, 3]
+        bg_mask[np.absolute(r_captured - bg_mean) < self.std_threshold] = 1
+        # bg_mask[bg_std > self.std_threshold] = 0  # if bg_mean == 0, bg_mask == 0
+
+        data[bg_mask == 1, :] = 0  # remove background
+        return data
+
+    def process(self, data, meta):
+        assert (meta["data_type"] == "lidar_formatted"), "Invalid packet"
+
+        features = self.remove_bg(data)
+
+        meta["data_type"] = "lidar_bgfiltered"
+
+        return [features], meta

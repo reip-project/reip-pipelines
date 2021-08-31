@@ -86,7 +86,7 @@ class Formatter(reip.Block):
             bg_mask = self.bg_mask_matrix[:, :, 2]
         else:
             bg_mask = np.zeros(bg_mean.shape)
-            self.std_threshold = np.quantile(bg_std, q)
+            self.std_threshold = np.quantile(bg_std, self.q)
             # bg_mask[bg_std < self.std_threshold] = 1
         bg_mean[bg_std > self.std_threshold] = 0
         r_captured = data[:, :, 3]
@@ -109,5 +109,6 @@ class Formatter(reip.Block):
 
         meta["data_type"] = "lidar_formatted"
         meta["features"] = self.columns
+        meta["background"] = self.background
 
         return [features], meta
