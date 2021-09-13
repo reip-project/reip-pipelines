@@ -4,6 +4,15 @@ import json
 
 
 class BackgroundDetector(reip.Block):
+    """
+    To do:
+    1. Replace frame of missing data in buffer
+    2. build an additional mask for background filtering
+    To filter:
+    1) Undetectable data:
+        Too close to sensor, have small values of range in a single frame or average
+    2) Points around the edges: high std (> 0.2 meter)
+    """
     resolution = 1024
     channel_block_count = 16
     ang = [-1.12,
@@ -29,7 +38,8 @@ class BackgroundDetector(reip.Block):
         self.count = 0
         self.frame_buffer = np.zeros((self.resolution, self.channel_block_count, self.window_size), dtype=np.float32)
         self.time_st = None
-        self.std_threshold = 5
+        self.mean_threshold = 0
+        self.std_threshold = 0.2
 
     def accumulate_frames(self, data, timestamp, rolled=False):
         """
@@ -63,10 +73,13 @@ class BackgroundDetector(reip.Block):
         coor_mean = np.mean(data, axis=-1)
         coor_std = np.std(data, axis=-1)
 
-        bg_mask = np.zeros(coor_mean.shape)
-        bg_mask[coor_std < self.std_threshold] = 1
+        noise_mask = np.ones(coor_mean.shape)
+        # remove points around edges
+        noise_mask[coor_std > self.std_threshold] = 0
+        # remove undetected points
+        noise_mask[coor_mean < self.mean_threshold] = 0
 
-        res = np.stack([coor_mean, coor_std, bg_mask], axis=2)
+        res = np.stack([coor_mean, coor_std, noise_mask], axis=2)
 
         return res
 
@@ -84,30 +97,53 @@ class BackgroundDetector(reip.Block):
 
 
 class BackgroundFilter(reip.Block):
-    bg_mask_matrix = np.load(open("bg/bgmask.npy", "rb"))
-    bg_meta = json.load(open("bg/bgmask.json", "r"))
-    std_threshold = bg_meta["std_threshold"]
+    """
+    To do:
+    1. sigma'=(data-bg)/std
+    if sigma' > sigma (=3): moving objects
+    2. erosion: not suitable for the sparse points.
+    """
 
-    def __init__(self, q=None, **kw):
+    def __init__(self, q=None, sigma=None, noise_threshold=None, std_threshold=0.2, fidx=2, **kw):
         super().__init__(**kw)
+        self.sigma = sigma
         self.q = q
+        self.filename = "bg/bgmask/bgmask{:d}".format(fidx)
+        self.bg_mask_matrix = np.load(open(self.filename + ".npy", "rb"))
+        self.bg_meta = json.load(open(self.filename + ".json", "r"))
+        # self.std_threshold = self.bg_meta["std_threshold"]
+        self.noise_threshold = noise_threshold
+        self.std_threshold = std_threshold
+        self.mean_threshold = 0
 
     def remove_bg(self, data):
         bg_mean = self.bg_mask_matrix[:, :, 0]
         bg_std = self.bg_mask_matrix[:, :, 1]
+        # if self.noise_threshold is not None:
+        #     bg_std[bg_std > self.noise_threshold] = self.noise_threshold
 
-        if self.q is None:
-            bg_mask = self.bg_mask_matrix[:, :, 2]
-        else:
-            bg_mask = np.zeros(bg_mean.shape)
+        bg_mask = np.zeros(bg_mean.shape)
+        if self.q is not None:
             self.std_threshold = np.quantile(bg_std, self.q)
-            # bg_mask[bg_std < self.std_threshold] = 1
-        # bg_mean[bg_std > self.std_threshold] = 0
+
         r_captured = data[:, :, 3]
-        bg_mask[np.absolute(r_captured - bg_mean) < self.std_threshold] = 1
-        # bg_mask[bg_std > self.std_threshold] = 0  # if bg_mean == 0, bg_mask == 0
+        if self.sigma is None:
+            bg_mask[np.absolute(r_captured - bg_mean) < self.std_threshold] = 1
+        else:
+            bg_mask[np.absolute(r_captured - bg_mean) / bg_std < self.sigma] = 1
 
         data[bg_mask == 1, :] = 0  # remove background
+
+        # Create noise mask
+        if self.noise_threshold is not None:
+            # noise_mask = (~self.bg_mask_matrix[:, :, 2].astype(bool)).astype(int)
+            noise_mask = np.zeros(bg_mean.shape)
+            # remove points around edges
+            noise_mask[bg_std > self.noise_threshold] = 1
+            # remove undetected points
+            noise_mask[bg_mean <= self.mean_threshold] = 1
+            data[noise_mask == 1, :] = 0  # remove noise in background
+
         return data
 
     def process(self, data, meta):
