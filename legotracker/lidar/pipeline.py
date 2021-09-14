@@ -7,6 +7,8 @@ from sensor import OS1
 from format import Formatter
 from parse import Parser
 from background import BackgroundDetector, BackgroundFilter
+import matplotlib.pyplot as plt
+import numpy as np
 
 SENSOR_IP = "172.24.113.151"
 DEST_IP = "216.165.113.240"
@@ -39,18 +41,28 @@ def sensor_stream(live=True, plot=True):
             # sensor.to(BH(name="Sensor_BH"))
         stream = Parser(name="Parser", roll=True)(sensor) \
             .to(Formatter(name="Formatter", background=True)) \
-            .to(BackgroundDetector(name="BG"))
+            # .to(BackgroundDetector(name="BG"))
         # stream.to(BH(name="Writer_BH"))
         # with reip.Task("Writer_Task"):
-        writer = NumpyWriter(name="Writer", filename_template="bg/%d")
+        writer = NumpyWriter(name="Writer", filename_template="save01/%d")
         stream.to(writer).to(BH(name="Writer_BH"))
     else:
-        stream = NumpyReader(name="Reader", filename_template="save/%d", max_rate=20) \
-            .to(BackgroundFilter(name="BG", q=0.98)) # quantile: 97%-99%
+        stream = NumpyReader(name="Reader", filename_template="save01/%d", max_rate=20)
+        bg = BackgroundFilter(name="BG",
+                                 # q=0.87,
+                                 sigma=5,
+                                 # noise_threshold=None,
+                                 fidx=3)  # quantile: 97%-99%
+        stream.to(bg)
 
     if plot:
         # stream.to(Plotter(name="Plotter", type="3D"), strategy="latest")
-        stream.to(Plotter(name="Plotter", type="formatted"), strategy="latest")
+        stream.to(Plotter(name="Plotter", type="data_type", save=False), strategy="latest")
+
+    # bg.init()
+    # plt.imshow(np.repeat(bg.bg_mean.T, 3, axis=0), vmin=0, vmax=10)
+    # plt.colorbar()
+    # plt.show()
 
 
 if __name__ == '__main__':

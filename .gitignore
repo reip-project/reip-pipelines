@@ -3,12 +3,13 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-legotracker/lidar/save
+# legotracker data
 legotracker/lidar/plot
 legotracker/lidar/bg
+legotracker/lidar/save
 legotracker/lidar/save_lab
+legotracker/lidar/save01
 legotracker/lidar/moving
-
 
 # mac
 .DS_Store

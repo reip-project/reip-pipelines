@@ -25,6 +25,9 @@ class Plotter(reip.Block):
            3.19,
            -0.99,
            3.22]
+    count = 0
+    version = "plot"
+    save = False
 
     def init(self):
         plt.figure(self.name, (12, 8))
@@ -142,10 +145,12 @@ class Plotter(reip.Block):
         plt.clf()
         plt.title(str(self.processed))
 
-        for i, title, dat in zip(range(6), ["mean", "std", "mask"], [ave, std,mask]):
+        for i, title, dat in zip(range(6), ["mean", "std", "mask"], [ave, std, mask]):
             plt.subplot(6, 1, i + 1)
             if i == 0:
-                plt.imshow(np.repeat(dat, 3, axis=0), vmin=0, vmax=10)
+                plt.imshow(np.repeat(dat, 3, axis=0), vmin=0, vmax=50)
+            if i == 1:
+                plt.imshow(np.repeat(dat, 3, axis=0), vmin=0, vmax=1)
             else:
                 plt.imshow(np.repeat(dat, 3, axis=0))
             plt.title(title)
@@ -154,9 +159,14 @@ class Plotter(reip.Block):
         plt.tight_layout()
 
     def process(self, *xs, meta=None):
+        if self.type=="data_type":
+            if meta["data_type"] == "lidar_formatted" or meta["data_type"] == "lidar_bgfiltered":
+                self.type="formatted"
+            elif meta["data_type"] == "lidar_bgmask":
+                self.type="BG"
+
         if self.type == "2D":
             self.plot_2d(xs)
-
         elif self.type == "3D":
             self.plot_3d(xs)
         elif self.type == "IMG":
@@ -176,3 +186,8 @@ class Plotter(reip.Block):
 
         plt.gcf().canvas.draw()
         plt.gcf().canvas.start_event_loop(0.01)
+        if self.save:
+            plt.savefig("plot/{}_{}".format(self.version, self.count))
+            self.count += 1
+
+
