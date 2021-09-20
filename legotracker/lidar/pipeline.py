@@ -7,6 +7,8 @@ from sensor import OS1
 from format import Formatter
 from parse import Parser
 from background import BackgroundDetector, BackgroundFilter
+from detection import ObjectClustering
+
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -47,17 +49,17 @@ def sensor_stream(live=True, plot=True):
         writer = NumpyWriter(name="Writer", filename_template="save01/%d")
         stream.to(writer).to(BH(name="Writer_BH"))
     else:
-        stream = NumpyReader(name="Reader", filename_template="save01/%d", max_rate=20)
-        bg = BackgroundFilter(name="BG",
-                                 # q=0.87,
-                                 sigma=5,
-                                 # noise_threshold=None,
-                                 fidx=3)  # quantile: 97%-99%
-        stream.to(bg)
+        bg = BackgroundFilter(name="BG", sigma=5, fidx=3)
+        clustering = ObjectClustering(name="Clustering")
+        writer = NumpyWriter(name="Writer", filename_template="cluster/%d")
+        stream = NumpyReader(name="Reader", filename_template="save01/%d", max_rate=20)\
+            .to(bg) \
+            .to(clustering) \
+            .to(writer)
 
     if plot:
         # stream.to(Plotter(name="Plotter", type="3D"), strategy="latest")
-        stream.to(Plotter(name="Plotter", type="data_type", save=False), strategy="latest")
+        stream.to(Plotter(name="Plotter", type="data_type", savefig=False, savegif=False), strategy="latest")
 
     # bg.init()
     # plt.imshow(np.repeat(bg.bg_mean.T, 3, axis=0), vmin=0, vmax=10)

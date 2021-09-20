@@ -10,6 +10,7 @@ legotracker/lidar/save
 legotracker/lidar/save_lab
 legotracker/lidar/save01
 legotracker/lidar/moving
+legotracker/lidar/fast.py
 
 # mac
 .DS_Store

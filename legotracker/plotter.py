@@ -5,6 +5,7 @@ import numpy as np
 logging.getLogger('matplotlib').setLevel(logging.WARNING)
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
+from matplotlib import animation, rc
 
 
 class Plotter(reip.Block):
@@ -27,7 +28,8 @@ class Plotter(reip.Block):
            3.22]
     count = 0
     version = "plot"
-    save = False
+    savefig = False
+    savegif = False
 
     def init(self):
         plt.figure(self.name, (12, 8))
@@ -124,12 +126,15 @@ class Plotter(reip.Block):
         plt.clf()
         plt.title(str(self.processed))
 
-        for i, title, dat in zip(range(6), ["r", "t", "e", "a", "s", "n"], [r, t, e, a, s, n]):
+        for i, title, dat in zip(range(6), ["range", "timestamp", "encoder angle", "reflectivity", "signal photon",
+                                            "noise photon"], [r, t, e, a, s, n]):
             plt.subplot(6, 1, i + 1)
             if i == 0:
                 plt.imshow(np.repeat(dat, 3, axis=0), vmin=0, vmax=10)
             else:
                 plt.imshow(np.repeat(dat, 3, axis=0))
+            plt.ylabel("Channel")
+            plt.xlabel("Resolution")
             plt.title(title)
             plt.colorbar()
 
@@ -145,8 +150,8 @@ class Plotter(reip.Block):
         plt.clf()
         plt.title(str(self.processed))
 
-        for i, title, dat in zip(range(6), ["mean", "std", "mask"], [ave, std, mask]):
-            plt.subplot(6, 1, i + 1)
+        for i, title, dat in zip(range(3), ["mean", "std", "mask"], [ave, std, mask]):
+            plt.subplot(3, 1, i + 1)
             if i == 0:
                 plt.imshow(np.repeat(dat, 3, axis=0), vmin=0, vmax=50)
             if i == 1:
@@ -158,12 +163,46 @@ class Plotter(reip.Block):
 
         plt.tight_layout()
 
+    def plot_cluster(self, xs):
+        data = xs[0]
+
+        distance = data[:, :, 3].T
+        # labels = data[:, :, 4].T
+
+        plt.clf()
+        plt.title(str(self.processed))
+
+        # for i, title, dat in zip(range(2), ["Distance", "Clustering"], [distance, labels]):
+        #     plt.subplot(2, 1, i + 1)
+        #     if i == 0:
+        #         plt.imshow(np.repeat(dat, 3, axis=0), vmin=0, vmax=50)
+        #     else:
+        #         plt.imshow(np.repeat(dat, 3, axis=0))
+        #     plt.title(title)
+        #     plt.colorbar()
+
+
+        for i, title, dat in zip(range(1), ["Distance"], [distance]):
+            plt.subplot(2, 1, i + 1)
+            if i == 0:
+                plt.imshow(np.repeat(dat, 3, axis=0), vmin=0, vmax=10)
+            else:
+                plt.imshow(np.repeat(dat, 3, axis=0))
+            plt.title(title)
+            plt.colorbar()
+
+        plt.tight_layout()
+
+
     def process(self, *xs, meta=None):
-        if self.type=="data_type":
+        if self.type == "data_type":
             if meta["data_type"] == "lidar_formatted" or meta["data_type"] == "lidar_bgfiltered":
-                self.type="formatted"
+                self.type = "formatted"
             elif meta["data_type"] == "lidar_bgmask":
-                self.type="BG"
+                self.type = "BG"
+            elif meta["data_type"] == "lidar_clustered":
+                self.type = "cluster"
+        # animate = None
 
         if self.type == "2D":
             self.plot_2d(xs)
@@ -177,6 +216,8 @@ class Plotter(reip.Block):
             self.plot_formatted(xs)
         elif self.type == "BG":
             self.plot_BG(xs)
+        elif self.type == "cluster":
+            self.plot_cluster(xs)
         else:
             raise RuntimeError("Unknown format")
 
@@ -184,10 +225,13 @@ class Plotter(reip.Block):
             plt.show(block=False)
             self.shown = True
 
+        # if self.savegif:
+        #     anim = animation.FuncAnimation(plt.gcf(), animate,
+        #                                    frames=1000, interval=1, blit=True)
+        #     anim.save("plot/{}.gif".format(self.version), writer='imagemagick', fps=20)
+
         plt.gcf().canvas.draw()
-        plt.gcf().canvas.start_event_loop(0.01)
-        if self.save:
-            plt.savefig("plot/{}_{}".format(self.version, self.count))
+        plt.gcf().canvas.start_event_loop(0.001)
+        if self.savefig:
+            plt.savefig("plot/gif/{}_{}.png".format(self.version, self.count))
             self.count += 1
-
-
