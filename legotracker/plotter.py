@@ -163,6 +163,34 @@ class Plotter(reip.Block):
 
         plt.tight_layout()
 
+    def plot_morphological(self, xs):
+
+        data = xs[0]
+
+        r = data[:, :, 3].T
+        m = data[:, :, -5].T
+        e = data[:, :, -4].T
+        d = data[:, :, -3].T
+        o = data[:, :, -2].T
+        c = data[:, :, -1].T
+
+        plt.clf()
+        plt.title(str(self.processed))
+
+        for i, title, dat in zip(range(6), ["range", "mask", "erosion", "dilation", "opening", "closing"],
+                                 [r, m, e, d, o, c]):
+            plt.subplot(6, 1, i + 1)
+            if i == 0:
+                plt.imshow(np.repeat(dat, 3, axis=0), vmin=0, vmax=10)
+            else:
+                plt.imshow(np.repeat(dat, 3, axis=0))
+            plt.ylabel("Channel")
+            plt.xlabel("Resolution")
+            plt.title(title)
+            plt.colorbar()
+
+        plt.tight_layout()
+
     def plot_cluster(self, xs):
         data = xs[0]
 
@@ -181,7 +209,6 @@ class Plotter(reip.Block):
         #     plt.title(title)
         #     plt.colorbar()
 
-
         for i, title, dat in zip(range(1), ["Distance"], [distance]):
             plt.subplot(2, 1, i + 1)
             if i == 0:
@@ -193,7 +220,6 @@ class Plotter(reip.Block):
 
         plt.tight_layout()
 
-
     def process(self, *xs, meta=None):
         if self.type == "data_type":
             if meta["data_type"] == "lidar_formatted" or meta["data_type"] == "lidar_bgfiltered":
@@ -202,6 +228,9 @@ class Plotter(reip.Block):
                 self.type = "BG"
             elif meta["data_type"] == "lidar_clustered":
                 self.type = "cluster"
+            elif meta["data_type"] == "lidar_transformed":
+                self.type = "morphological"
+
         # animate = None
 
         if self.type == "2D":
@@ -218,6 +247,8 @@ class Plotter(reip.Block):
             self.plot_BG(xs)
         elif self.type == "cluster":
             self.plot_cluster(xs)
+        elif self.type == "morphological":
+            self.plot_morphological(xs)
         else:
             raise RuntimeError("Unknown format")
 

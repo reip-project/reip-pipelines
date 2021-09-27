@@ -51,20 +51,13 @@ def sensor_stream(live=True, plot=True):
     else:
         bg = BackgroundFilter(name="BG", sigma=5, fidx=3)
         clustering = ObjectClustering(name="Clustering")
-        writer = NumpyWriter(name="Writer", filename_template="cluster/%d")
+        # writer = NumpyWriter(name="Writer", filename_template="cluster/%d")
         stream = NumpyReader(name="Reader", filename_template="save01/%d", max_rate=20)\
             .to(bg) \
-            .to(clustering) \
-            .to(writer)
+            .to(clustering)
 
     if plot:
-        # stream.to(Plotter(name="Plotter", type="3D"), strategy="latest")
         stream.to(Plotter(name="Plotter", type="data_type", savefig=False, savegif=False), strategy="latest")
-
-    # bg.init()
-    # plt.imshow(np.repeat(bg.bg_mean.T, 3, axis=0), vmin=0, vmax=10)
-    # plt.colorbar()
-    # plt.show()
 
 
 if __name__ == '__main__':
