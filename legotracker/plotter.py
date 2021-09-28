@@ -4,8 +4,9 @@ import numpy as np
 
 logging.getLogger('matplotlib').setLevel(logging.WARNING)
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
-from matplotlib import animation, rc
+# from mpl_toolkits.mplot3d import Axes3D
+# from matplotlib import animation, rc
+from matplotlib.colors import ListedColormap, LinearSegmentedColormap
 
 
 class Plotter(reip.Block):
@@ -191,6 +192,37 @@ class Plotter(reip.Block):
 
         plt.tight_layout()
 
+    def plot_ccl(self, xs):
+        data = xs[0]
+
+        r = data[:, :, 0].T
+        m = data[:, :, 1].T
+        c = data[:, :, 2].T
+        l = data[:, :, 3].T
+
+        plt.clf()
+        plt.title(str(self.processed))
+
+        for i, title, dat in zip(range(4), ["range", "mask", "closing", "labels"],
+                                 [r, m, c, l]):
+            plt.subplot(4, 1, i + 1)
+            if i == 0:
+                plt.imshow(np.repeat(dat, 3, axis=0), vmin=0, vmax=10)
+            elif i == 3:
+                colors = plt.cm.get_cmap('Set3').colors
+                newColors = list(colors)
+                newColors.insert(0, (0, 0, 0))
+                newColorMap=ListedColormap(newColors)
+                plt.imshow(np.repeat(dat, 3, axis=0), vmin=-0.5, vmax=12.5, cmap=newColorMap)
+            else:
+                plt.imshow(np.repeat(dat, 3, axis=0))
+            plt.ylabel("Channel")
+            plt.xlabel("Resolution")
+            plt.title(title)
+            plt.colorbar()
+
+        plt.tight_layout()
+
     def plot_cluster(self, xs):
         data = xs[0]
 
@@ -230,6 +262,8 @@ class Plotter(reip.Block):
                 self.type = "cluster"
             elif meta["data_type"] == "lidar_transformed":
                 self.type = "morphological"
+            elif meta["data_type"] == "lidar_detected":
+                self.type = "detection"
 
         # animate = None
 
@@ -249,6 +283,8 @@ class Plotter(reip.Block):
             self.plot_cluster(xs)
         elif self.type == "morphological":
             self.plot_morphological(xs)
+        elif self.type == "detection":
+            self.plot_ccl(xs)
         else:
             raise RuntimeError("Unknown format")
 

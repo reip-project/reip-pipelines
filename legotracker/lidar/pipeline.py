@@ -7,15 +7,11 @@ from sensor import OS1
 from format import Formatter
 from parse import Parser
 from background import BackgroundDetector, BackgroundFilter
-from detection import ObjectClustering
-
-import matplotlib.pyplot as plt
-import numpy as np
+from detection import ObjectDetector
 
 SENSOR_IP = "172.24.113.151"
 DEST_IP = "216.165.113.240"
 MODE = "1024x20"
-
 
 def sensor_test():
     sensor = OS1(name="Sensor", sensor_ip=SENSOR_IP, dest_ip=DEST_IP, mode=MODE)
@@ -50,11 +46,11 @@ def sensor_stream(live=True, plot=True):
         stream.to(writer).to(BH(name="Writer_BH"))
     else:
         bg = BackgroundFilter(name="BG", sigma=5, fidx=3)
-        clustering = ObjectClustering(name="Clustering")
+        objDetector= ObjectDetector(name="Clustering")
         # writer = NumpyWriter(name="Writer", filename_template="cluster/%d")
         stream = NumpyReader(name="Reader", filename_template="save01/%d", max_rate=20)\
             .to(bg) \
-            .to(clustering)
+            .to(objDetector)
 
     if plot:
         stream.to(Plotter(name="Plotter", type="data_type", savefig=False, savegif=False), strategy="latest")
