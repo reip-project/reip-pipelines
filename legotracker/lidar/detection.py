@@ -9,9 +9,8 @@ from sklearn.cluster import DBSCAN, AgglomerativeClustering
 class ObjectDetector(reip.Block):
     """
     Solutions (clustering):
-    1. closing
-    2. connected component
-    3. KNN
+    1. closing (not use anymore)
+    2. connected component 3D
     """
     count = 0
     window_size = 40
@@ -53,14 +52,15 @@ class ObjectDetector(reip.Block):
         mask = (r > 1.e-6).astype(np.uint8)
 
         # Morphological transformation
-        morpho_mask = self.morphological_transformation(mask)
-        closed_mask = morpho_mask[:, :, -1].astype(np.uint8)
+        # morpho_mask = self.morphological_transformation(mask)
+        # closed_mask = morpho_mask[:, :, -1].astype(np.uint8)
 
         # Connected Component labelling
         # labels, labeled_mask = self.connected_component_labelling(closed_mask)
-        ret, labels = cv2.connectedComponents(closed_mask, connectivity=8)
-        res = np.stack([r, mask, closed_mask, labels], axis=2)
-
+        # ret, labels = cv2.connectedComponents(closed_mask, connectivity=8)
+        # res = np.stack([r, mask, closed_mask, labels], axis=2)
+        ret, labels = cv2.connectedComponents(mask, connectivity=8) # consider distance
+        res = np.stack([r, mask, mask, labels], axis=2)
         return res
 
     # def spatial_clustering(self, data):

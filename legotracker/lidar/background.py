@@ -67,16 +67,29 @@ class BackgroundDetector(reip.Block):
         return res, [st, ed]
 
     def background_detection(self, data):
-        coor_mean = np.mean(data, axis=-1)
-        coor_std = np.std(data, axis=-1)
-
         # Remove undetectable data
-        masks = (data < 1.e-6).astype(np.int8)
-        mask = np.zeros_like(coor_mean, dtype=np.int8)
-        for i in range(masks.shape[2]):
-            mask = np.bitwise_or(mask, masks[:, :, i])
+        # masks = (data < 1.e-6).astype(np.int8)
+        # mask = np.zeros_like(coor_mean, dtype=np.int8)
+        # for i in range(masks.shape[2]):
+        #     mask = np.bitwise_or(mask, masks[:, :, i])
 
-        res = np.stack([coor_mean, coor_std, mask.astype(np.float32)], axis=2)
+        # coor_mean = np.mean(data[masks_enough], axis=-1)
+        # coor_std = np.std(data, axis=-1)
+
+        # res = np.stack([coor_mean, coor_std, mask.astype(np.float32)], axis=2)
+
+        # Mask for valid background detection
+        masks = (data > 1.e-6).astype(np.int8)
+        n = np.sum(masks, axis=2)
+        enough = n > (masks.shape[2] // 2)
+
+        sums = np.sum(np.multiply(data, masks), axis=2)
+        mean = sums / n
+
+        squares = np.sum(np.multiply(np.power(data - mean, 2), masks), axis=2)
+        std = np.sqrt(squares / n)
+
+        res = np.stack([mean, std, enough.astype(np.float32)], axis=2)
 
         return res
 
@@ -116,10 +129,11 @@ class BackgroundFilter(reip.Block):
         self.sigma_std = self.bg_std * self.sigma
 
     def remove_bg(self, data):
-        idx_close = np.nonzero((self.bg_mean - data[:, :, 3]) < self.sigma_std)  # background mask
+        idx_close = np.nonzero(((self.bg_mean - data[:, :, 3]) < self.sigma_std) & self.mask)  # background mask
 
         data[idx_close[0], idx_close[1], :] = 0  # remove background
-        data[self.idx_mask[0], self.idx_mask[1], :] = 0  # remove noise
+        # data[self.idx_mask[0], self.idx_mask[1], :] = 0  # remove noise
+        # data[self.idx_mask[0], self.idx_mask[1], :] = 1 # remove noise
 
         return data
 
