@@ -64,7 +64,8 @@ class State:
         '''Set the state value.'''
         changed = self.value != value
 
-        notify = changed if notify is None else notify  # by default, only do callback if the value changed.
+        if notify is None:  # by default, only do callback if the value changed.
+            notify = changed
         if notify:  # trigger callbacks for before change
             for callback_before in self._callbacks['before']:
                 callback_before(self, value, **kw)
@@ -84,10 +85,15 @@ class State:
         changed = self.value != value
         self.potential = 0 if not changed else 1 if value else -1
  
-        notify = changed if notify is None else notify
+        if notify is None:
+            notify = changed
         if notify:  # trigger callbacks for request
             for callback_request in self._callbacks['request']:
                 callback_request(self, value, **kw)
+        return self
+
+    def cancel_request(self):
+        self.potential = 0
         return self
 
     def __enter__(self):
@@ -138,6 +144,40 @@ class State:
         return inner
 
 
+class ReadOnlyState(State):
+    '''This provides a wrapper around a State object 
+    that is read only, meaning that the wrapper prevents 
+    modifying the state through it's interface. The 
+    underlying state is still allowed to change.
+    '''
+    def __init__(self, state):
+        self.state = state
+
+    # prevent changing state
+
+    def __call__(self, *a, **kw):  # TODO callbacks
+        return self
+
+    def request(self, *a, **kw):
+        return self
+
+    # prevent writing attributes
+
+    @property
+    def value(self):
+        return self.state.value
+
+    @value.setter
+    def value(self, value):
+        pass
+
+    @property
+    def potential(self):
+        return self.state.potential
+
+    @potential.setter
+    def potential(self, potential):
+        pass
 
 
 
@@ -153,7 +193,8 @@ class States:
 
     def __str__(self):
         return '[{}]'.format('|'.join(
-            str(state) for name, state in self._states.items() if state.value) or 'null')
+            str(state) for name, state in self._states.items() 
+            if state.value and not state.name.startswith('_')) or 'null')
 
     def treeview(self):
         '''Dumps a nested yaml-like view of the state tree.'''
@@ -170,6 +211,8 @@ class States:
                 I added this because I wanted "error" to be able to be its own state. But I'm sure there 
                 are other independent states like that.
         '''
+        if isinstance(tree, (set, list, tuple)):
+            tree = {k: {} for k in tree}
         for key, children in tree.items():
             if key is not None:
                 if key not in self._states:
@@ -211,7 +254,7 @@ class States:
 
     def update(self, states):
         '''Update the values of multiple states.'''
-        for name, value in state.items():
+        for name, value in states.items():
             self._states[name](value)
         return self
 
@@ -222,7 +265,7 @@ class States:
             state(value)
             self.update_nested(value, *state._children)
 
-    def transition(self, state):
+    def transition(self, state, value=True, **kw):
         '''Transition from the current state to a target state.'''
         if state is None:
             state = self.null
@@ -260,9 +303,9 @@ class States:
         finally:
             self._requesting = False
 
-    def _on_state_update(self, state, value, tracked=True, auto_transition=False, **kw):
+    def _on_state_update(self, state, value, **kw):
         '''Track state updates. This makes sure that a state transition is valid.'''
-        if self._updating or not tracked:  # prevent recursion
+        if self._updating or not state._tracked:  # prevent recursion
             return
         try:
             self._updating = True
@@ -270,7 +313,7 @@ class States:
             if current is None:
                 current = self.null
 
-            state = self._check_state_transition(current, state, value, **kw)
+            # state = self._check_state_transition(current, state, value, **kw)
             self._current = state if state is not self.null else None
 
             if value and self._desired is not None and state.name == self._desired.name:
@@ -345,8 +388,13 @@ class States:
                 state.reset()
 
 
-def _treeview_yml(states, keys, indent=0):
-    tree = {str(states[k]): _treeview_yml(states, states[k]._children, indent=indent+1) for k in keys}
+def _treeview_yml(states, keys, indent=0, include_private=False):
+    tree = {
+        str(states[k]): _treeview_yml(
+            states, states[k]._children, 
+            indent=indent+1, include_private=include_private) 
+        for k in keys if include_private or not k.startswith('_')
+    }
     return '\n'.join(' '*2*indent + k + ('\n' + v if v else '') for k, v in tree.items())
 
 

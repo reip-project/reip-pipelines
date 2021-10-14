@@ -1,268 +1,23 @@
+'''This is where I'm experimenting with state machine mechanics in the context of a block.
+
+I'm starting with a striped down version that doesn't handle connections or anything atm.
+'''
 import time
-import threading
-import warnings
+import reip
 from contextlib import contextmanager
 import remoteobj
-
-import reip
-from reip.stores import Producer
-from reip.util import text, Meta
-
-'''
-
-'''
-
-__all__ = ['Block']
+from reip.util import text
+from reip.exceptions import ExceptionTracker, WorkerExit
 
 
-class _BlockSinkView:
-    '''This is so that we can select a subview of a block's sinks. This is similar
-    in principal to numpy views. The alternative is to store the state on the original
-    object, but that would have unintended consequences if someone tried to create two
-    different views from the same block.
+class _BlockConnectable:
+    '''This is a general base class that provides the operators for connecting blocks/sinks together.
+    
+    The only method that a subclass must implement is ``__call__``.
     '''
-    def __init__(self, block, idx):
-        self._block = block
-        self._index = idx
-
-    @property
-    def item(self):  # can be a single sink, or multiple i.e. block[0] or block[:2]
-        return self._block.sinks[self._index]
-
-    @property
-    def items(self):  # always a list
-        return reip.util.as_list(self.item)
-
-    def __iter__(self):  # iterate over sink
-        return iter(self.items)
-
-    def __getitem__(self, key):  # get sub index
-        return self.items[key]
-
-
-class Block:
-    '''This is the base instance of a block.
-
-    Arguments:
-        queue (int): the maximum queue length.
-        n_inputs (int, or None): the number of sources to expect. If None,
-            it will accept a variable number of sources.
-        n_outputs (int): the number of sinks to expect.
-             - If `n_outputs=0`, then there will be a single sink, that outputs no
-               buffer value, but does output metadata.
-               e.g.
-               ```python
-               # block 1
-               return {'just some metadata': True}
-               # or
-               return [], {'just some metadata': True}
-
-               # block 2
-               def process(self, meta):  # no buffer value
-                   assert meta['just some metadata'] == True
-               ```
-             - If `n_outputs=None`, then the block will have no sinks.
-
-        blocking (bool): should the block wait for sinks to have a free space
-            before processing more items?
-        max_rate (int): the maximum number of iterations per second. If the block
-            processes items any faster, it will throttle and sleep the required
-            amount of time to meet that requirement.
-            e.g. if max_rate=5, then an iteration will take at minimum 0.2s.
-        graph (reip.Graph, reip.Task, or False): the graph instance to be added to.
-        name ()
-    '''
-    # Enable/Disable use of the Meta Class.
-    # The Meta class is available to allow for organized and easily traceable metadata throughout a pipeline
-    USE_META_CLASS = True
-    # Enable/Disable storing extra keywords to any defined (non-callable) attribute of a Block subclass.
-    KW_TO_ATTRS = False
-    # Enable/Disable storing extra keywords in a dictionary at `self.extra_kw`.
-    EXTRA_KW = False
-    _thread = None
-    _delay = 1e-4
-    parent_id, task_id = None, None
-    started = ready = done = closed = terminated = False
-    __signal = None
-    processed = 0
-    generated = 0
-    controlling = False
-    max_rate = None
-    run_profiler = False
-    timeout = 10
-
-    # When max_rate is really low (e.g. fire once every 5 mins), if the block were to just sleep for 5 mins,
-    # it would take up to 5 mins to realize that everything else is trying to shutdown.
-    # So instead we sleep in shorter chunks so we can periodically check the state of the block.
-    __MAX_RATE_CHUNK = 0.6 # seconds - how long we should sleep for at a time. - TODO: what's the best value here?
-
-    def __init__(self, n_inputs=1, n_outputs=1, queue=100, blocking=False, print_summary=True,
-                 max_rate=None, min_interval=None, max_processed=None, max_generated=None, graph=None, name=None,
-                 source_strategy=all, extra_kw=None, kw_to_attrs=None, extra_meta=None, log_level=None,
-                 handlers=None, modifiers=None, input_modifiers=None, run_profiler=None, **kw):
-        self._except = remoteobj.LocalExcept(raises=True)
-        self.name = reip.auto_name(self, name=name)
-        self.parent_id, self.task_id = reip.Graph.register_instance(self, graph)
-        self._print_summary = print_summary
-
-        # sources and sinks
-        # by default, a block takes a variable number of sources.
-        # If a block has a fixed number of sources, you can specify that
-        # and it will throw an exception when spawning if the number of
-        # sources does not match.
-        self._block_sink_queue_length = queue  # needed for set sink count
-        self.n_expected_sources = n_inputs
-        self.sources, self.sinks = [], []
-        self.set_block_source_count(n_inputs)
-        self.set_block_sink_count(n_outputs)
-        # used in Stream class. Can be all(), any() e.g. source_strategy=all
-        self._source_strategy = source_strategy
-        # handlers are wrapper functions that can do things like catch errors and restart when a block is closing.
-        self.handlers = reip.util.as_list(handlers or [])
-        # modifiers are functions that can be used to alter the output of the block before they are
-        # sent to a sink
-        self.modifiers = reip.util.as_list(modifiers or [])
-        self.input_modifiers = reip.util.as_list(input_modifiers or [])
-        self.run_profiler = run_profiler if run_profiler is not None else self.run_profiler
-
-        if min_interval and max_rate:
-            warnings.warn((
-                'Both max_rate ({}) and min_interval ({}) are set, but are '
-                'mutually exclusive (max_rate=1. / min_interval). max_rate will'
-                'be used.').format(max_rate, min_interval))
-        if max_rate:
-            min_interval = 1 / max_rate
-        self.throttle = reip.util.iters.HitThrottle(min_interval, smudge=1e-3*min_interval if min_interval else None)
-        
-        self.max_processed = max_processed
-        self.max_generated = max_generated
-        self._put_blocking = blocking
-
-        self._extra_meta = reip.util.as_list(extra_meta or [])
-        if self._extra_meta:
-            # this will flatten a list of dicts into a single dict. Since call=False,
-            # if there is a list of dictionaries and a function, any dictionaries
-            # before the function will be collapsed, and any after will be left.
-            # Calling again (without call=False), will evaluate fully and return
-            # the a flattened dict.
-            self._extra_meta = reip.util.mergedict(self._extra_meta, call=False)
-
-        # write keyword arguments to the class if they are defined on the class
-        # but not on the base Block class. 
-        if kw_to_attrs is not None:
-            self.KW_TO_ATTRS = kw_to_attrs
-        if self.KW_TO_ATTRS:
-            avail_attrs = attrdiff(Block, self.__class__)
-            for k in avail_attrs:
-                if k in kw:
-                    setattr(self, k, kw.pop(k))
-
-        # optionally capture extra kwargs which can be transparently passed down to 
-        # another function (e.g. `self.do_something(buffer, **self.kw)`)
-        if extra_kw is not None:
-            self.EXTRA_KW = extra_kw
-        if self.EXTRA_KW:
-            self.extra_kw = kw
-        elif kw and not self.KW_TO_ATTRS:
-            raise TypeError('{} received {} unexpected keyword arguments: {}.'.format(
-                self, len(kw), set(kw)))
-
-        # block timer
-        self._sw = reip.util.Stopwatch(self.name)
-        self.log = reip.util.logging.getLogger(self, level=log_level)
-        # signals
-        self._reset_state()
-
-    @property
-    def max_rate(self):
-        interval = self.min_interval
-        return 1 / interval if interval else interval
-
-    @max_rate.setter
-    def max_rate(self, value):
-        self.min_interval = 1. / value if value else value
-
-    @property
-    def min_interval(self):
-        return self.throttle.interval
-
-    @min_interval.setter
-    def min_interval(self, value):
-        self.throttle.interval = value if value is not None else value
-
-    def set_block_source_count(self, n):
-        # NOTE: if n is -1, no resize will happen
-        self.sources = reip.util.resize_list(self.sources, n, None)
-
-    def set_block_sink_count(self, n):
-        # NOTE: if n is None, no resize will happen
-        new_sink = lambda: Producer(self._block_sink_queue_length, task_id=self.task_id)
-        self.sinks = reip.util.resize_list(self.sinks, n, new_sink)
-
-    def _reset_state(self):
-        # state
-        self.started = False
-        self.ready = False
-        self.done = False
-        self.closed = False
-        self.terminated = False
-        self.__signal = None
-        # stats
-        self.generated = 0
-        self.processed = 0
-        self.old_processed = 0
-        self.old_time = time.time()
-        self._sw.reset()
-        self._except.clear()
-
-    def __repr__(self):
-        return 'Block({}): ({}/{} in, {} out; {} processed) - {}'.format(
-            self.name, sum(s is not None for s in self.sources),
-            self.n_expected_sources,
-            len(self.sinks), self.processed,
-            self.block_state_name)
-
-    @property
-    def block_state_name(self):
-        return (
-            (type(self._exception).__name__
-             if self._exception is not None else 'error') if self.error else
-            ('terminated' if self.terminated else 'done') if self.done else
-            ('running' if self.running else 'paused') if self.ready else
-            'started' if self.started else '--'  # ??
-        )  # add "uptime 35.4s"
-
-    # Graph definition
-
-    def __call__(self, *others, index=0, **kw):
-        '''Connect other block sinks to this blocks sources.
-        If the blocks have multiple sinks, they will be passed as additional
-        inputs.
-        '''
-        if index == -1:
-            index = next(
-                (i for i, s in enumerate(self.sources) if s is None),
-                len(self.sources))
-        for i, other in enumerate(others):
-            # permit argument to be a block
-            # permit argument to be a sink or a list of sinks
-            if isinstance(other, Block):
-                sinks = other.sinks
-            elif isinstance(other, _BlockSinkView):
-                sinks = other.items
-            else:
-                sinks = reip.util.as_list(other)
-
-            if sinks:
-                # make sure the list is long enough
-                self.set_block_source_count(index + len(sinks))
-
-                # create and add the source
-                for index, sink in enumerate(sinks, index):
-                    self.sources[index] = sink.gen_source(
-                        task_id=self.task_id, **kw)
-                index += 1  # need to increment cursor so we don't repeat last index
-        return self
+    def __call__(self, *others, **kw):
+        '''Connect other block sinks to this blocks sources.'''
+        raise NotImplementedError
 
     def to(self, *others, squeeze=True, **kw):
         '''Connect this blocks sinks to other blocks' sources'''
@@ -277,347 +32,187 @@ class Block:
         '''Connect blocks using Unix pipe syntax.'''
         return self(*reip.util.as_list(other))
 
-    def output_stream(self, **kw):
-        '''Create a Stream iterator which will let you iterate over the
-        outputs of a block.'''
-        return reip.Stream.from_block(self, **kw)
-
     def __getitem__(self, key):
         return _BlockSinkView(self, key)
 
-    # User Interface
 
-    def init(self):
-        '''Initialize the block.'''
+class _BlockSinkView(_BlockConnectable):
+    '''This is so that we can select a subview of a block's sinks. This is similar
+    in principal to numpy views. The alternative is to store the state on the original
+    object, but that would have unintended consequences if someone tried to create two
+    different views from the same block.
+    '''
+    def __init__(self, block, idx):
+        self.block = block
+        # get the list of sources that this block points to.
+        self.index = slice(idx, idx+1) if isinstance(idx, int) else idx
+        self.sinks = sinks = self.block.sinks[idx]
+        self.sink = sinks[0] if len(sinks) else None
 
-    def sources_available(self):
-        '''Check the sources to determine if we should call process.'''
-        # NOTE: 
-        return not self.sources or self._source_strategy(
-            not s.empty() for s in self.sources)
+    def __call__(self, *a, **kw):
+        return self.block(*a, index=self.index, **kw)
 
-    def process(self, *xs, meta=None):
-        '''Process data.'''
-        return xs, meta
-
-    def finish(self):
-        '''Cleanup.'''
-
-    # main process loop
-
-    # TODO common worker class
-    def run(self, duration=None, **kw):
-        with self.run_scope(**kw):
-            self.wait(duration)
-
-    @contextmanager
-    def run_scope(self, raise_exc=True):
-        try:
-            self.spawn()
-            yield self
-        except KeyboardInterrupt:
-            self.terminate()
-        finally:
-            self.join(raise_exc=raise_exc)
-
-    def wait(self, duration=None):
-        for _ in reip.util.iters.timed(reip.util.iters.sleep_loop(self._delay), duration):
-            if self.done or self.error:
-                return True
-
-    def _main(self, _ready_flag=None, _spawn_flag=None, duration=None):
-        '''The main thread target function. Handles uncaught exceptions and
-        generic Block context management.'''
-        if _spawn_flag is not None:
-            _spawn_flag.wait()
-        try:
-            if self.run_profiler:
-                from pyinstrument import Profiler
-                profiler = Profiler()
-                profiler.start()
-
-            self.started = True
-            #self.closed = False
-            self.log.debug(text.blue('Starting...'))
-            time.sleep(self._delay)
-
-            with self._sw(), self._except(raises=False):
-                # self.__first_time = True
-                # this lets us wrap the block's run function with retry loops, error suppression and
-                # whatever else might be useful
-                run = reip.util.partial(self.__main_run, _ready_flag=_ready_flag, duration=duration)
-                for wrapper in self.handlers[::-1]:
-                    run = reip.util.partial(wrapper, self, run)
-                run()
-        finally:
-            try:
-                # propagate stream signals to sinks e.g. CLOSE
-                if self.__signal is not None:
-                    self._send_sink_signal(self.__signal)
-                if self.run_profiler:
-                    profiler.stop()
-                    self.log.info(profiler.output_text(unicode=True, color=True))
-            finally:
-                self.done = True
-                self.started = False
-                self.closed = True
-                self.log.debug(text.green('Done.'))
-
-    def _track_sleep(self, sleep):
-        self._sw.tick('sleep')
-        time.sleep(sleep)
-        self._sw.tock('sleep')
+    def __iter__(self):
+        yield from self.sinks
 
 
-    def __main_run(self, _ready_flag=None, duration=None):
-        # # This is to return from a retry loop that doesn't want to close
-        # if not self.__first_time and self.closed:
-        #     return
-        # self.__first_time = False
-        try:
-            self._sw.tick()  # offset time delay due to the reip initialization (e.g. plasma store warm-up)
-            # block initialization
-            with self._sw('init'): #, self._except('init')
-                self.init()
-            #self.terminated = False
-            #self.closed = False
-            self.ready = True
-            self.log.debug(text.green('Ready.'))
+# def get_indices(i, n):
+#     '''Given an index, list of indices, or a slice, return a list of indices.'''
+#     i = slice(i, None) if isinstance(i, int) else slice(n) if i is None else i
+#     if isinstance(i, slice):
+#         i = list(range(i.start or 0, min(i.stop or n, n), i.step or 1))
+#     return [n+ii if ii < 0 else ii for ii in i]
 
-            if _ready_flag is not None:
-                with self._sw('sleep'):
-                    _ready_flag.wait()
+def iter_idx(i, n):
+    '''This converts any index passed to a list into an iterable.
 
-            #  old_time offset self.init() time delay for proper immediate speed calculation
-            self.old_time = t_last = t0 = time.time()
-            sleep_amt = 0
-            while True:
-                self._track_sleep(self._delay)
-                #time.sleep(self._delay)
-                #self._sw.ticktock(self._delay, 'sleep')
-                if self.done or self.closed or self.terminated:
-                    break
-                # max duration
-                if duration and time.time() - t0 >= duration:
-                    self.close()
-                    break
-                # throttle
-                self._sw.tick('sleep')
-                if not self.throttle(self.__MAX_RATE_CHUNK):
-                    self._sw.tock('sleep')
-                    continue
-                self._sw.tock('sleep')
-
-                # play pause
-                if not self.running:
-                    continue
-
-                with self._sw('source'):
-                    # check source availability
-                    if not self.sources_available():
-                        continue
-
-                    inputs = [s.get_nowait() for s in self.sources]
-                    # check inputs
-                    recv_close = False
-                    for inp, source in zip(inputs, self.sources):
-                        for data in inputs:
-                            if data is None:
-                                continue
-                            x, meta = data
-                            if reip.CLOSE.check(x):  # XXX: how to handle - wait for all to close?
-                                source.next()
-                                self.close()
-                                recv_close = True
-                            if reip.TERMINATE.check(x):
-                                source.next()
-                                self.terminate()
-                                recv_close = True
-                    if recv_close:
-                        break
-
-                    buffers, meta = prepare_input(inputs, self._extra_meta, Block.USE_META_CLASS)  # TODO: put in proper config
-
-                # process each input batch
-                with self._sw('process'), self._except('process'): #
-                    # prepare inputs
-                    #for func in self.input_modifiers:
-                    #    buffers, meta = func(*buffers, meta=meta)
-
-                    # process and get outputs
-                    outputs = self.process(*buffers, meta=meta)
-                    #for func in self.modifiers:
-                    #    outputs = func(outputs)
-
-                # count the number of buffers received and processed
-                self.processed += 1
-                # limit the number of buffers
-                if self.max_processed and self.processed >= self.max_processed:
-                    self.close(propagate=True)
-
-                # send each output batch to the sinks
-                with self._sw('sink'):
-                    self.__send_to_sinks(outputs, meta)
-
-        except KeyboardInterrupt:
-            if self.controlling:
-                self.log.info(text.yellow('Interrupting'))
-        finally:
-            self.ready = False
-            # finish up and shut down
-            self.log.debug(text.yellow('Finishing...'))
-            with self._sw('finish'): # , self._except('finish', raises=False)
-                self.finish()
-
-    def __send_to_sinks(self, outputs, input_meta):
-        '''Send the outputs to the sink.'''
-        source_signals = [None]*len(self.sources)
-        # retry all sources
-        for outs in outputs if reip.util.is_iter(outputs) else (outputs,):
-            if outs == reip.RETRY:
-                source_signals = [reip.RETRY]*len(self.sources)
-            elif outs == reip.CLOSE:
-                self.close(propagate=True)
-            elif outs == reip.TERMINATE:
-                self.terminate(propagate=True)
-            # increment sources but don't have any outputs to send
-            elif outs is None:
-                pass
-            # increment sources and send outputs
-            else:
-                # detect signals meant for the source
-                if self.sources:
-                    if outs is not None and any(any(t.check(o) for t in reip.SOURCE_TOKENS) for o in outs):
-                        # check signal values
-                        if len(outputs) > len(self.sources):
-                            raise RuntimeError(
-                                'Too many signals for sources in {}. Got {}, expected a maximum of {}.'.format(
-                                    self, len(outputs), len(self.sources)))
-                        for i, o in enumerate(outs):
-                            if o is not None:
-                                source_signals[i] = o
-                        continue
-
-                # convert outputs to a consistent format
-                outs, meta = prepare_output(outs, input_meta, as_meta=Block.USE_META_CLASS)
-                # pass to sinks
-                for sink, out in zip(self.sinks, outs):
-                    if sink is not None:
-                        sink.put((out, meta), self._put_blocking)
-
-                # count the number of buffers generated
-                self.generated += 1
-                # limit the number of buffers
-                if self.max_generated and self.generated >= self.max_generated:
-                    self.close(propagate=True)
-
-        for src, sig in zip(self.sources, source_signals):
-            if sig is reip.RETRY:
-                pass
-            else:
-                src.next()
+    >>> assert list(iter_idx(5)) == [5]                              # alist[5]
+    >>> assert list(iter_idx(slice(5))) == [0, 1, 2, 3, 4]           # alist[:5]
+    >>> assert list(iter_idx(slice(None, None, 2), 6)) == [0, 2, 4]  # alist[::2]
+    '''
+    if i is None:
+        i = slice(n)
+    if isinstance(i, int):
+        # i = slice(i, 0) if i < 0 else slice(i, n)
+        yield i
+        return
+    if isinstance(i, slice):
+        start, stop, step = i.start or 0, i.stop, i.step or 1
+        stop = (-1 if n is None else n) if stop is None else stop
+        while stop == -1 or start < stop:
+            yield start
+            start += step
+        return
+    yield from i
+    
 
 
-    def _send_sink_signal(self, signal, block=True, meta=None):
-        '''Emit a signal to all sinks.'''
-        self.log.debug(text.yellow(text.l_('sending', signal)))
-        for sink in self.sinks:
-            if sink is not None:
-                sink.put((signal, meta or {}), block=block)
+class Block(_BlockConnectable):
+    USE_META_CLASS = True
+    EXTRA_KW = False
+    KW_TO_ATTRS = True
+    _delay = 1e-4
+    _wait_delay = 1e-2
+    _agent = None
+    processed = generated = 0
+    n_inputs = n_outputs = 1
 
-    # Thread management
+    def __init__(self, 
+                 n_inputs=None, n_outputs=None,
+                 max_rate=None, should_process=all, log_level='debug', queue_length=100,
+                #  extra_meta=None, 
+                 max_processed=None, max_generated=None, extra_kw=None,
+                 finish_processing_on_close=True, graph=None, name=None, **kw):
+        self.name = reip.auto_name(self, name=name)
+        self.parent_id, self.task_id = reip.Graph.register_instance(self, graph)
+        self.task_id = None
+        self.state = reip.util.states.States({
+            'spawned': {
+                'configured': {
+                    'initializing': {},
+                    'ready': {
+                        'waiting': {},
+                        'processing': {},
+                        'paused': {},
+                    },
+                    'finishing': {},
+                },
+                'needs_reconfigure': {},
+            },
+            'done': {None: {'terminated': {}}},
+            # unlinked states
+            None: {'_controlling': {}}
+        })
 
-    def spawn(self, wait=True, _controlling=True, _ready_flag=None, _spawn_flag=None):
-        '''Spawn the block thread'''
-        try:
-            self.controlling = _controlling
-            self.log.debug(text.blue('Spawning...'))
-            # print(self.summary())
+        self.__source_process_condition = should_process
+        # self._extra_meta = extra_meta
+        self.__max_processed = max_processed
+        self.__max_generated = max_generated
+        self.__finish_processing_on_close = finish_processing_on_close
 
-            self._check_source_connections()
-            # spawn any sinks that need it
-            for s in self.sinks:
-                if hasattr(s, 'spawn'):
-                    s.spawn()
-            self._reset_state()
-            self.resume()
-            self._thread = remoteobj.util.thread(self._main, _ready_flag=_ready_flag, _spawn_flag=_spawn_flag, daemon_=True, raises_=False)
-            # threading.Thread(target=self._main, kwargs={'_ready_flag': _ready_flag}, daemon=True)
-            self._thread.start()
+        self._except = ExceptionTracker()
+        self.__throttler = Throttler(max_rate)
+        self._sw = reip.util.Stopwatch(self.name)
+        self.log = reip.util.logging.getLogger(self, level=log_level)
 
-            if wait:
-                self.wait_until_ready()
-            if self.controlling:
-                self.raise_exception()
-        finally:
-            # thread didn't start ??
-            if self._thread is None or not self._thread.is_alive():
-                self.done = True
+        if n_inputs is not None:
+            self.n_inputs = n_inputs
+        if n_outputs is not None:
+            self.n_outputs = n_outputs
 
-    def _check_source_connections(self):
-        '''Check if there are too many sources for this block.'''
-        # check for any empty sources
-        disconnected = [i for i, s in enumerate(self.sources) if s is None]
-        if disconnected:
-            raise RuntimeError(f"Sources {disconnected} in {self} not connected.")
+        self.sources = [None]*self.n_inputs
+        self.sinks = [
+            reip.Producer(queue_length, task_id=self.task_id)
+            for _ in range(self.n_outputs)
+        ]
 
-        # check for exact source count
-        if (self.n_expected_sources is not None and self.n_expected_sources != -1
-                and len(self.sources) != self.n_expected_sources):
-            raise RuntimeError(
-                f'Expected {self.n_expected_sources} sources '
-                f'in {self}. Found {len(self.sources)}.')
+        if self.KW_TO_ATTRS:
+            for k in reip.util.clsattrdiff(Block, self.__class__):
+                if k in kw:
+                    setattr(self, k, kw.pop(k))
 
-    def remove_extra_sources(self, n=None):
-        n = n or self.n_expected_sources
-        if n is not None and n is not -1:
-            self.sources = self.sources[:n]
+        self.extra_kw = None
+        if extra_kw is None:
+            extra_kw = self.EXTRA_KW
+        if extra_kw:
+            self.extra_kw = kw
+        elif kw:
+            raise TypeError("{} got unexpected arguments: {}".format(self, ', '.join(kw)))
 
-    def wait_until_ready(self):
-        '''Wait until the block is initialized.'''
-        while not self.ready and not self.error and not self.done:
-            time.sleep(self._delay)
+    def __str__(self):
+        return '[B({})[{}/{}]{}]'.format(self.name, len(self.sources), len(self.sinks), self.state)
 
-    def join(self, close=True, terminate=False, raise_exc=None, timeout=None):
-        # close stream
-        if close:
-            self.close()
-        if terminate:
-            self.terminate()
+    # def status(self):
+    #     return str(self)
 
-        # join any sinks that need it
-        for s in self.sinks:
-            if hasattr(s, 'join'):
-                s.join()
-        
-        # close thread
-        if self._thread is not None and self._thread.is_alive():
-            self._thread.join(timeout=self.timeout if timeout is None else timeout)
-        if (self.controlling if raise_exc is None else raise_exc):
-            self.raise_exception()
-        if self._print_summary:  # print now or part of the stats will be lost if the block is used inside of Task
-            print(self.stats_summary())
+    # compat - these methods/properties are all needed by graphs/tasks
+
+    @property
+    def _thread(self):
+        return self._agent
+
+    @property
+    def max_rate(self):
+        return self.__throttler.max_rate
+
+    @max_rate.setter
+    def max_rate(self, max_rate):
+        self.__throttler.max_rate = max_rate
+
+    @property
+    def ready(self):
+        return bool(self.state.ready.value)
+
+    @property
+    def running(self):
+        return bool(not self.state.paused)
+
+    @property
+    def done(self):
+        return bool(self.state.done.value)
+
+    @property
+    def terminated(self):
+        return bool(self.state.terminated)
+
+    @property
+    def error(self):
+        # return self._except.caught
+        return self._except.exception is not None
 
     def raise_exception(self):
-        self._except.raise_any()
-
-    def log_exception(self):
-        for e in self._except.all():
-            self.log.exception(e)
+        self.check_agent_exception()
 
     @property
     def _exception(self):
-        return self._except.last
+        return self._except.exception
 
-    @property
-    def all_exceptions(self):
-        return self._except.all()
-
-    _BASE_EXPORT = ['_sw', 'started', 'ready', 'done', 'terminated', '_except', 'processed', 'generated']
-    EXPORT = []
+    __BASE_EXPORT_PROPS = ['_sw', 'state', '_except', 'processed', 'generated']
+    __BLOCK_EXPORT_PROPS__ = []
     def __export_state__(self, **kw):
-        state = dict(((k, getattr(self, k, None)) for k in self._BASE_EXPORT + self.EXPORT), **kw)
-        return state
+        return dict((
+            (k, getattr(self, k, None)) for k in 
+            self.__BASE_EXPORT_PROPS + self.__BLOCK_EXPORT_PROPS__), **kw)
 
     def __import_state__(self, state):
         for k, v in state.items():
@@ -629,34 +224,412 @@ class Block:
             except AttributeError:
                 raise AttributeError('Could not set attribute {} = {}'.format(k, v))
 
-    # State management
+    def output_stream(self, **kw):
+        '''Create a Stream iterator which will let you iterate over the
+        outputs of a block.'''
+        from reip.util.stream import Stream
+        return Stream.from_block(self, **kw)
+
+
+    # Data Interface
+
+    def init(self):
+        '''Initialize the block.'''
+
+    def sources_available(self):
+        '''Check the sources to determine if we should call process.'''
+        return not self.sources or self.__source_process_condition(not s.empty() for s in self.sources)
+
+    def process(self, *xs, meta=None):
+        '''Process data.'''
+        return xs, meta
+
+    def finish(self):
+        '''Cleanup.'''
+
+    # Connection Interface
+
+    def __call__(self, *others, index=slice(None), ignore_extra=False, **kw):
+        '''Connect other block sinks to this blocks sources.
+        If the blocks have multiple sinks, they will be passed as additional
+        inputs.
+        '''
+        # gather all sinks
+        sinks = []
+        for other in others:
+            # permit argument to be a block, a sink, or a list of sinks
+            if isinstance(other, _BlockConnectable):
+                sinks_i = other.sinks
+            else:
+                sinks_i = reip.util.as_list(other)
+            sinks.extend(sinks_i)
+
+        # handle special cases for the index value
+        if index == 'next':  # start at the first missing source
+            index = next(
+                (i for i, s in enumerate(self.sources) if s is None),
+                'append')
+        if index == 'append':  # append a source to the end
+            index = len(self.sources)
+        if isinstance(index, int):  # if someone enters 0, they probably mean start at the first source
+            index = slice(index, None)
+
+        # create and add the source
+        isinks = iter(sinks)
+        for sink, i_src in zip(isinks, iter_idx(index, self.n_inputs)):
+            # negative index
+            if i_src < 0:
+                i_src += len(self.sources)
+            if i_src > len(self.sources) or i_src < 0:
+                if self.n_inputs >= 0:
+                    raise ValueError("Could not set source index {} with {} sources.".format(i_src, len(self.sources)))
+                if i_src < 0:
+                    i_src = max(-len(self.sources), i_src)
+            # make sure the list is long enough
+            while len(self.sources) <= i_src:
+                self.sources.append(None)
+
+            self.sources[i_src] = sink.gen_source(task_id=self.task_id, **kw)
+
+        if not ignore_extra:
+            extra_sinks = list(isinks)
+            if extra_sinks:
+                raise RuntimeError("Too many sinks ({} extra) to connect.".format(len(extra_sinks)))
+        return self
+
+    # Control Interface
+
+    def run(self, duration=None, **kw):
+        '''Run a block synchronously.'''
+        with self.run_scope(**kw):
+            self.wait(duration)
+
+    @contextmanager
+    def run_scope(self, raise_exc=True):
+        '''Run a block while we are inside the context manager.'''
+        try:
+            self.spawn()
+            yield self
+        except KeyboardInterrupt:
+            self.terminate()
+        finally:
+            self.join(raise_exc=raise_exc)
+
+    def wait(self, duration=None):
+        '''Wait until the block is done.'''
+        for _ in reip.util.iters.timed(reip.util.iters.sleep_loop(self._delay), duration):
+            if self.state.done:
+                return True
+
+    def spawn(self, wait=True, *, _controlling=True, _ready_flag=None, _spawn_flag=None):
+        try:
+            self.state.controlling = _controlling
+            self.__check_source_connections()
+            # spawn any sinks that need it
+            for s in self.sinks:
+                if hasattr(s, 'spawn'):
+                    s.spawn()
+            self.__reset_state()
+            self.state.spawned.request()
+            self._agent = remoteobj.util.thread(self.__agent_main, _spawn_flag=_spawn_flag, daemon_=True, raises_=False)
+            self._agent.start()
+
+            if wait:
+                while self.state.spawned and not self.state.ready:
+                    time.sleep(self._wait_delay)
+            if self.state.controlling:
+                self.check_agent_exception()
+        finally:
+            # thread didn't start ??
+            if self._agent is None or not self._agent.is_alive():
+                self.state.spawned(False)
+                self.state.done()
+        return self
+
+    __timeout = 30
+    def join(self, close=True, terminate=False, raise_exc=None, timeout=None):
+        try:
+            # close stream
+            if close:
+                self.close()
+            if terminate:
+                self.terminate()
+            # join any sinks that need it
+            for s in self.sinks:
+                if hasattr(s, 'join'):
+                    s.join()
+            # close thread
+            if self._agent is not None and self._agent.is_alive():
+                self._agent.join(timeout=self.__timeout if timeout is None else timeout)
+                self._agent = None
+            if (self.state.controlling if raise_exc is None else raise_exc):
+                self.check_agent_exception()
+        finally:
+            self.state.done()
+        return self
+
+    def close(self, propagate=True):
+        self.state.done.request()
+        if propagate:
+            self.__send_sink_signal(reip.CLOSE)
+
+    def terminate(self, propagate=True):
+        self.state.done.request()
+        self.state.terminated()
+        if propagate:
+            self.__send_sink_signal(reip.TERMINATE)
 
     def pause(self):
-        self.running = False
+        self.state.paused(True)
 
     def resume(self):
-        self.running = True
+        self.state.paused(False)
 
-    def close(self, propagate=False):
-        self.closed = True
-        if propagate:
-            self._send_sink_signal(reip.CLOSE)
+    # internal
 
-    def terminate(self, propagate=False):
-        self.terminated = True
-        if propagate:
-            self._send_sink_signal(reip.TERMINATE)
+    def __check_source_connections(self):
+        '''Make sure that the connections to the block sources are valid.'''
+        disconnected = [i for i, s in enumerate(self.sources) if s is None]
+        if disconnected:
+            raise RuntimeError(f"Sources {disconnected} in {self} not connected.")
 
-    @property
-    def error(self):
-        return self._exception is not None
+        # check for exact source count
+        if (self.n_inputs >= 0 and len(self.sources) != self.n_inputs):
+            raise RuntimeError(
+                f'Expected {self.n_inputs} sources '
+                f'in {self}. Found {len(self.sources)}.')
 
-    # debug
+    def check_agent_exception(self):
+        '''Raise any exceptions caught during agent execution. Meant to be run after joining the block.'''
+        self._except.raise_any()
+
+    # internal state lifecycle
+
+    def __reset_state(self):
+        '''Reset the block state. This should be called to restore the block back to a blank state.'''
+        self.state.reset()
+        self.processed = 0
+        self.generated = 0
+        self.old_processed = 0
+        self.old_time = time.time()
+        self.__source_signals = [None] * len(self.sources)
+
+    def __agentless_spawn(self):
+        '''This is a way to spawn the block without spawning a thread. Just here for testing purposes.'''
+        try:
+            self.__reset_state()
+            self.__agent_main()
+        finally:
+            pass
+
+    def __agent_main(self, *, _spawn_flag=None, _ready_flag=None):
+        '''This is the main agent loop that is called by the thread runner.
+        This is where the high level operation happens (reconfiguration, restarting, etc.).'''
+        if _spawn_flag:
+            _spawn_flag.wait()
+        with self._except:
+            try:
+                with self._sw(), self.state.spawned:  # , self._except(raises=False)
+                    try:
+                        while self.state.spawned:
+                            self.log.info(self.state)
+                            if not self.state.configured:
+                                self.__reconfigure()
+                            assert self.state.configured
+                            self.__run_configured()
+                        
+                    except WorkerExit:
+                        pass
+                    finally:
+                        self.state.configured(False)
+            finally:
+                # NOTE: I don't know the best way to handle setting terminated.
+                #       because when we get here, done is enabled, but terminated 
+                #       is still disabled in a high potential state.
+                #       right now, I have 
+                self.state.done()
+
+    def __reconfigure(self):
+        '''This updates the configuration and possibly respawns / re-inits 
+        TODO: what to do here?'''
+        self.state.configured()
+
+    def __run_configured(self, duration=None, t0=None):
+        '''This is the main loop of the block. This is where all of the magic happens.'''
+        t0 = t0 or time.time()
+        try:
+            with self.state.initializing, self._sw('init'), self._except('init'):
+                self.init()
+
+            with self.state.ready, self.__throttler as throttle:
+                while True:
+                    # check if we are still in a configured state
+                    if not self.state.configured:
+                        # just exit quick, reconfigure, and come back
+                        if self.state.needs_reconfigure:
+                            break
+                        # if terminated, don't finish up
+                        if self.state.terminated:
+                            break
+                        # only finish up if there are sources that have items left to process
+                        if not self.sources or not self.sources_available():
+                            break
+                        # otherwise, just finish up processing what's left
+                        # XXX: what to do with circular block connections - it will never exit....
+                        
+                    # set a time limit
+                    if duration and time.time() - t0 > duration:
+                        break
+                    # add a small delay
+                    time.sleep(self._delay)
+                    # check if we're paused
+                    if self.state.paused:
+                        continue
+                    # check if we're throttling
+                    if throttle():
+                        continue
+                    # check source availability
+                    if not self.sources_available():
+                        self.state.waiting()
+                        continue
+                    self.state.waiting(False)
+
+                    # good to go!
+                    with self.state.processing:
+                        # get inputs
+                        with self._sw('source'):
+                            inputs = self.__read_sources()
+                            if inputs is None or not self.state.processing:  # check if we exited based on the inputs
+                                continue
+                            buffers, meta = inputs
+
+                        # process each input batch
+                        with self._sw('process'), self._except('process'): #
+                            outputs = self.__process_buffer(buffers, meta)
+
+                        # send each output batch to the sinks
+                        with self._sw('sink'):
+                            self.__send_to_sinks(outputs, meta)
+
+        except KeyboardInterrupt:
+            self.log.info(text.yellow('Interrupting'))
+            self.terminate()
+        finally:
+            with self.state.finishing, self._sw('finish'), self._except('finish'):
+                self.finish()
+
+
+    def __read_sources(self):
+        '''Get the next batch of data from each source.'''
+        inputs = [s.get_nowait() for s in self.sources]
+        # check inputs
+        recv_close = False
+        for data, source in zip(inputs, self.sources):
+            if data is None:
+                continue
+            x, meta = data
+
+            # handle signals
+            if reip.CLOSE == x:  # XXX: how to handle - wait for all to close?
+                source.next()
+                self.close()
+                recv_close = True
+            if reip.TERMINATE == x:
+                source.next()
+                self.terminate()
+                recv_close = True
+        if recv_close:
+            return
+
+        buffers, meta = prepare_input(inputs, Block.USE_META_CLASS)
+        return buffers, meta
+
+    def __process_buffer(self, buffers, meta):
+        '''Process the input buffers.'''
+        # process and get outputs
+        outputs = self.process(*buffers, meta=meta)
+
+        # count the number of buffers received and processed
+        self.processed += 1
+        # limit the number of buffers
+        if self.__max_processed and self.processed >= self.__max_processed:
+            self.close(propagate=True)
+        return outputs
+
+    def __send_to_sinks(self, outputs, input_meta):
+        '''Send the outputs to the sink.'''
+        for outs in (outputs if is_generator(outputs) else iter((outputs,))):
+            if outs is None:  # next
+                continue
+
+            # convert outputs to a consistent format
+            outs = prepare_output(outs, input_meta, as_meta=Block.USE_META_CLASS)
+            # pass to sinks
+            for sink, out in zip(self.sinks, outs):
+                if sink is not None and out is not None:
+                    sink.put(out)
+
+            # count the number of buffers generated
+            self.generated += 1
+            # limit the number of buffers
+            if self.__max_generated and self.generated >= self.__max_generated:
+                self.close(propagate=True)
+
+        # send signals to any sources
+        for i, src in enumerate(self.sources):
+            if reip.RETRY == self.__source_signals[i]:
+                pass
+            else:
+                src.next()
+            self.__source_signals[i] = None
+
+    def source_signal(self, signals):
+        '''Send signals to the sources.
+        
+        Arguments:
+            signals (list): Signals for each source (by position). If a single signal is passed (instead of a list of signals), 
+                it will be sent to all sources. Possible signals:
+                * ``reip.RETRY``: Retry the last input for this source.
+                * ``None``: Don't send a signal for this source.
+        '''
+        # global signal
+        if isinstance(signals, (reip.Token, str)):
+            signals = [signals] * len(self.sources)
+        # too many signals
+        elif len(signals) > len(self.sources):
+            raise RuntimeError('Too many signals for sources. Got {}, expected ≤{}.'.format(
+                len(signals), len(self.sources)))
+        # send signals
+        for i, (_, sig) in enumerate(zip(self.__source_signals, signals)):
+            self.__source_signals[i] = sig
+
+    def __send_sink_signal(self, signal, block=True, meta=None, timeout=1):
+        '''Emit a signal to all sinks. e.g. tell all sinks to ``reip.CLOSE`` / ``reip.TERMINATE``.'''
+        for sink in self.sinks:
+            if sink is not None:
+                try:
+                    sink.put((signal, meta or {}), block=block, timeout=timeout)
+                except TimeoutError:
+                    reip.util.print_stack()
+                    print('timeout sending', signal, 'to', sink)
+                    pass  # ???
+
+
+    # experimental source signal interface
+
+    def retry_sources(self, *indices):
+        '''Prettier way of doing ``self.source_signal([reip.RETRY, None, reip.RETRY])``.
+        Instead it's ``self.retry_sources(0, 2)``  or ``self.retry_sources()`` for all sources.
+        '''
+        self.source_signal(construct_signal_indices(
+            reip.RETRY, *indices, signals=list(self.__source_signals)))
+
+
+    # String representations (basically just copied from old version)
 
     def short_str(self):
         return '[B({})[{}/{}]({})]'.format(
-            self.name, len(self.sources), len(self.sinks),
-            self.block_state_name)
+            self.name, len(self.sources), len(self.sinks), self.state)
 
     def stats(self):
         total_time = self._sw.stats().sum if '' in self._sw else 0
@@ -673,8 +646,8 @@ class Block:
             'n_in_sources': [len(s) if s is not None else None for s in self.sources],
             'n_in_sinks': [len(s) if s is not None else None for s in self.sinks],
             'sw': self._sw,
-            'exception': self._exception,
-            'all_exceptions': self._except._groups,
+            # 'exception': self._exception,
+            # 'all_exceptions': self._except._groups,
         }
 
     def summary(self):
@@ -725,56 +698,213 @@ class Block:
                 summary_banner=text.red(self) if self.error else text.green(self),
                 **stats)
 
-    # def print_stats(self):
-    #     print(self.stats_summary())
 
-def prepare_input(inputs, extra_meta=None, as_meta=True):
+
+
+# Helpers
+#####################
+
+
+
+
+def prepare_input(inputs, as_meta=True, expected_inputs=-1):
     '''Take the inputs from multiple sources and prepare to be passed to block.process.'''
     bufs, metas = tuple(zip(*([buf if buf is not None else (None, {}) for buf in inputs]))) or ((), ())
 
     if as_meta:
         metas = reip.Meta(inputs=metas)
-        if extra_meta is not None:
-            metas.extend(reip.util.flatten(extra_meta, call=True, meta=metas))
     else:
-        metas = metas or {}
-        if len(metas) == 1:
+        if len(metas) == 1:  # expected_inputs and expected_inputs == 1 and 
             metas = metas[0]
-    return bufs, metas
+    return list(bufs), metas
 
 
-def prepare_output(outputs, input_meta=None, expected_length=None, as_meta=True):
-    '''Take the inputs from block.process and prepare to be passed to block.sinks.'''
+def prepare_output(outputs, input_meta=None, as_meta=True):
+    '''Take the inputs from block.process and prepare to be passed to block.sinks.
+    >>> x, meta
+    >>> [(x, meta), (x2, meta)]
+    '''
     if not outputs:
-        return (), {}
+        return []
 
-    bufs, meta = None, None
-    if isinstance(outputs, tuple):
-        if len(outputs) == 2:
-            bufs, meta = outputs
-    elif isinstance(outputs, (Meta, dict)):
-        meta = outputs
+    if isinstance(outputs, (list, tuple)):
+        # detect single output shorthand
+        if len(outputs) >= 2 and isinstance(outputs[1], (dict, reip.util.Meta)):
+            outputs = [outputs]
 
-    bufs = list(bufs) if bufs else []
+    # normalize metadata
+    outs = []
+    for out in outputs:
+        if out is None:
+            outs.append(None)
+            continue
 
-    if expected_length:  # pad outputs with blank values
-        bufs.extend((reip.BLANK,) * max(0, expected_length - len(bufs)))
-
-    if meta is None:
-        meta = Meta() if as_meta else {}
-    if as_meta and not isinstance(meta, Meta):
-        meta = Meta(meta, input_meta.inputs)
-    return bufs, meta
-
+        x, meta = out
+        if meta is None:
+            meta = reip.util.Meta() if as_meta else {}
+        if as_meta and not isinstance(meta, reip.util.Meta):
+            meta = reip.util.Meta(meta, input_meta.inputs)
+        outs.append((x, meta))
+    return outs
 
 
-def attrdiff(base_cls, cls, funcs=False):
-    attrs = dict()
-    i = cls.__mro__.index(base_cls)
-    for cls_i in cls.__mro__[:i][::-1]:
-        for k, v in cls_i.__dict__.items():
-            if (not k.startswith('_') and 
-                    k not in base_cls.__dict__ and 
-                    (funcs or not callable(v))):
-                attrs[k] = v
-    return attrs
+def construct_signal_indices(signal, *indices, signals=None):
+    '''Utility for setting signals for certain indices.'''
+    if not indices:  # single signal for everything
+        return signal
+    if signals is None:
+        signals = [None]*(max(indices)+1)
+    for i in indices:
+        signals[i] = signal
+    return signals
+
+
+def is_generator(iterable):
+    return not hasattr(iterable,'__len__') and hasattr(iterable,'__iter__')
+
+
+class RelativeThrottler:
+    '''This was my first draft, but it makes sure that the time between calls is at least
+    1 / max_rate, but this inevitably results in drift. (Meaning if one call is later, 
+    everything is pushed later accordingly.)
+
+    But realistically, we want it operating on a clock, meaning that if one call takes longer
+    the next call will still try to happen on a multiple of the max rate (from the start time)
+
+    Example Timings:
+        RelativeThrottler: 0  1  1.2  2.2  3.3  4.3
+        ClockThrottler:    0  1  1.2  2    3.1  4
+    '''
+    t_last = 0
+    def __init__(self, max_rate=None, rate_chunk=0.4):
+        self.max_rate = max_rate
+        self.rate_chunk = rate_chunk
+
+    def __enter__(self):
+        self.t_last = 0#time.time() - (self.max_rate or 0)
+        return self
+    
+    def __exit__(self, *a):
+        pass
+
+    def __call__(self):
+        # NOTE: sleep in chunks so that if we have a really high
+        #       interval (e.g. run once per hour), then we don't
+        #       have to wait an hour to shut down
+        if self.max_rate:
+            ti = time.time()
+            dt = max(0, 1 / self.max_rate - (ti - self.t_last))
+            if self.rate_chunk:
+                dt = min(dt, self.rate_chunk)
+            if dt:
+                time.sleep(dt)
+            if ti < self.t_last + 1 / self.max_rate:  # return True, will notify that we should keep waiting
+                return True
+            self.t_last = time.time()
+        return False
+
+class ClockThrottler:
+    t_last = 0
+    def __init__(self, max_rate=None, rate_chunk=0.4):
+        self.max_rate = max_rate
+        self.rate_chunk = rate_chunk
+
+    def __enter__(self):
+        self.t_start = time.time()
+        self.i_last = -1
+        return self
+    
+    def __exit__(self, *a):
+        pass
+
+    def __call__(self):
+        # NOTE: sleep in chunks so that if we have a really high
+        #       interval (e.g. run once per hour), then we don't
+        #       have to wait an hour to shut down
+        rate = self.max_rate
+        if rate:
+            interval = 1 / rate
+            ti = time.time()
+            i = (ti - self.t_start) // interval
+            if i == self.i_last:
+                dt = max(0, interval - (ti - i * interval))
+                if dt:
+                    time.sleep(min(dt, self.rate_chunk) if self.rate_chunk else dt)
+            
+                i = (time.time() - self.t_start) // interval
+                if i == self.i_last:
+                    return True
+            self.i_last = i
+        return False
+
+Throttler = ClockThrottler
+
+
+if __name__ == '__main__':
+    class MyBlock(Block):
+        raises=False
+        n=10
+        
+        def init(self):
+            self.i = 0
+
+        def process(self, meta):
+            self.i += 1
+            if self.i > self.n:
+                if self.raises:
+                    raise ValueError('Agh hi!')
+                self.terminate()
+            self.log.info(self.i)
+            return self.i, {'n': self.n}
+    
+    class MyBlock2(Block):
+        def process(self, *xs, meta):
+            return sum(xs)*2, meta
+
+    class Debug(Block):
+        def process(self, x, meta):
+            self.log.info((x, dict(meta)))
+            return x, meta
+            
+    def simple(raises=False, n=10, rate=3):
+        with reip.Graph() as g:
+            block = MyBlock(n_inputs=0, max_rate=rate, raises=raises, n=n, max_processed=15)
+            block2 = MyBlock2()([block])
+            block.to().to(Debug())
+        # @block.state.add_callback
+        # def log_changes(state, value):
+        #     block.log.info('{} -> {}'.format(state, value))
+        # block._Block__spawned()
+        g.run(stats_interval=10)
+        print(block.state.treeview(), flush=True)
+
+    def task(raises=False, n=10, rate=3):
+        with reip.Graph() as g:
+            with reip.Task():
+                block = MyBlock(n_inputs=0, max_rate=rate, raises=raises, n=n, max_processed=15)
+                block.to(MyBlock2()).to(Debug())
+
+        def log_state_changes(b, state):
+            @state.add_callback
+            def log(state, value):
+                b.log.info('{} -> {}'.format(state, value))
+            return log
+        for b in g.iter_blocks():
+            print(b)
+            print(b.state.terminated._callbacks)
+            log_state_changes(b, b.state.terminated)
+            print(b.state.terminated._callbacks)
+            log_state_changes(b, b.state.done)
+
+        try:
+            g.run(stats_interval=10)
+        finally:
+            print(g)
+            for b in g.iter_blocks():
+                print(b.name)
+                print(b._except)
+                print(b.state.treeview(), flush=True)
+                print()
+
+    import fire
+    fire.Fire()

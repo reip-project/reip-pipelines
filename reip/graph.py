@@ -37,7 +37,7 @@ def auto_name(block, *attrs, name=None, ns=None):
 
 def _auto_name_clear():
     _NAMESPACES_IDX.clear()
-
+auto_name.clear = _auto_name_clear
 
 class _ContextScope:
     top = None
@@ -156,10 +156,6 @@ class BaseContext:  # (metaclass=_MetaContext)
         return parent.name, task_id or parent.task_id
 
     @classmethod
-    def reset_names(self):
-        return _auto_name_clear()
-
-    @classmethod
     def detached(cls, *blocks, **kw):
         return cls(*blocks, graph=False, **kw)
 
@@ -235,8 +231,8 @@ class Graph(BaseContext):
             raise KeyError(name)
         return found
 
-    def all_blocks(self):
-        return list(self.iter_blocks())
+    def all_blocks(self, *a, **kw):
+        return list(self.iter_blocks(*a, **kw))
 
     def iter_blocks(self, include_graphs=False):
         for b in self.blocks:
@@ -244,7 +240,7 @@ class Graph(BaseContext):
             if get_nested is not None:
                 if include_graphs:
                     yield b
-                yield from get_nested()
+                yield from get_nested(include_graphs=include_graphs)
             else:
                 yield b
 
@@ -258,7 +254,7 @@ class Graph(BaseContext):
             self.wait(duration, stats_interval=stats_interval)
 
     @contextmanager
-    def run_scope(self, wait=True, raise_exc=True):
+    def run_scope(self, wait=True, timeout=None, raise_exc=True):
         self.log.debug(text.green('Starting'))
         # controlling = False
         try:
@@ -278,7 +274,7 @@ class Graph(BaseContext):
             self.terminate()
         finally:
             try:
-                self.join(raise_exc=raise_exc)
+                self.join(raise_exc=raise_exc, timeout=timeout)
             finally:
                 self.log.debug(text.green('Done'))
                 # if controlling:
@@ -288,7 +284,7 @@ class Graph(BaseContext):
     def wait(self, duration=None, stats_interval=None):
         t, t0 = time.time(), time.time()
         for _ in iters.timed(iters.sleep_loop(self._delay), duration):
-            if self.done:
+            if self.done or self.terminated:
                 return True
 
             if stats_interval and time.time() - t > stats_interval:
@@ -298,6 +294,7 @@ class Graph(BaseContext):
 
     def _reset_state(self):
         self._except.clear()
+        self._controlling = False
         self._ready_flag = None
         self._spawn_flag = None
 
@@ -313,11 +310,11 @@ class Graph(BaseContext):
 
     @property
     def terminated(self):
-        return all(b.terminated for b in self.blocks)
+        return any(b.terminated for b in self.blocks)
 
     @property
     def done(self):
-        return any(b.done for b in self.blocks)
+        return all(b.done for b in self.blocks)
 
     @property
     def error(self):
@@ -352,19 +349,16 @@ class Graph(BaseContext):
     def _gather_workers(self):
         workers = []
         for block in self.blocks:
-            if isinstance(block, reip.Task):
-                workers.append(block._process)
-            elif isinstance(block, reip.Block):
-                workers.append(block._thread)
+            if isinstance(block, (reip.Task, reip.Block)):
+                workers.append(block._agent)
             else:
-                try:
-                    workers.extend(block._gather_workers())
-                except AttributeError:
-                    pass
+                gather = getattr(block, '_gather_workers', None)
+                if gather:
+                    workers.extend(gather())
         return workers
 
-    def wait_until_ready(self):
-        print_th = reip.util.iters.HitThrottle(4)
+    def wait_until_ready(self, stats_interval=4):
+        print_th = reip.util.iters.HitThrottle(stats_interval) if stats_interval else False
         while not self.ready and not self.done:
             if print_th:
                 self.log.info('waiting on {}'.format(reip.util.text.b_(*(b for b in self.blocks if not b.ready))))
@@ -381,12 +375,13 @@ class Graph(BaseContext):
         if terminate:
             self.terminate()
         for block in self.blocks:
+            print('closing', block)
             block.join(terminate=False, raise_exc=False, **kw)
         if raise_exc is None and self.controlling:
             raise_exc = True
         if raise_exc:
             self.raise_exception()
-        self.controlling = self._ready_flag = None
+        self.controlling = self._ready_flag = self._spawn_flag = None
 
     def pause(self):
         for block in self.blocks:
