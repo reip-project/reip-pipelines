@@ -1,9 +1,11 @@
 import reip
 import multiprocessing as mp
-from reip.stores import Store, PlasmaStore, QueueStore, Pointer, Counter, HAS_PYARROW
+from reip.stores import (
+    Source, Sink,
+    Store, PlasmaStore, QueueStore, Pointer, Counter, HAS_PYARROW)
 
 
-class Producer(reip.Sink):
+class Producer(Sink):
     def __init__(self, size=100, delete_rate=10, task_id=reip.UNSET, **kw):
         self.size = size + 1  # need extra slot because head == tail means empty
         self.delete_rate = delete_rate

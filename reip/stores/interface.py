@@ -53,7 +53,8 @@ class Sink:
         while self.full():
             time.sleep(self._full_delay)
             if timeout and time.time() - t0 > timeout:
-                return None  # QUESTION: TimeoutError instead?
+                raise TimeoutError('Queue full.')
+                # return None  # QUESTION: TimeoutError instead?
 
     def put(self, buffer, block=True, timeout=None):
         if block:

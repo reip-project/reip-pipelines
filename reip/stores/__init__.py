@@ -24,6 +24,7 @@ class _Manager:
 _manager = _Manager()   
 get_manager = _manager.get
 
+from .interface import *
 from .core import *
 from .queue import *
 try:

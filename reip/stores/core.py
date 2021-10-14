@@ -1,5 +1,5 @@
 import multiprocessing as mp
-from ..interface import Source
+from .interface import Source
 from reip.util import text
 
 

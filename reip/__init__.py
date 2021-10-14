@@ -9,10 +9,9 @@ from . import exceptions
 from . import util
 from .util import Meta
 
-from .interface import *
+from .stores.interface import *
 from . import stores
 from .stores import Producer
-from .stream import *
 from .block import *
 from .graph import *
 from .task import *
