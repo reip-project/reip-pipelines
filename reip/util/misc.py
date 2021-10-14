@@ -102,6 +102,23 @@ def write(fname, *lines, mode='r'):
         f.write('\n'.join(map(str, lines)))
 
 
+def _as_type(cast, *coercable):
+    '''Factory for casting iterable types.'''
+    types = tuple(cast) if isinstance(cast, (list, tuple)) else (cast,)
+    cast = types[0]
+    def convert(x):
+        return (
+            x if isinstance(x, types) else
+            cast(x) if coercable and isinstance(x, coercable) else
+            cast([x]) if x is not None else cast())
+    convert.__name__ = 'as_{}'.format('_or_'.join(t.__name__ for t in types))
+    convert.__doc__ = '''Convert value to {}.'''.format(
+        ' or '.join(t.__name__ for t in types))
+    return convert
+
+as_tuple = _as_type(tuple, list, set)
+
+
 def as_list(x):
     '''Convert or wrap value as a list.
 
@@ -114,7 +131,7 @@ def as_list(x):
     return (
         x if isinstance(x, list)
         else list(x) if isinstance(x, tuple)
-        else [x])
+        else [x] if x is not None else [])
 
 def is_iter(iterable):
     return not hasattr(iterable,'__len__') and hasattr(iterable,'__iter__')
@@ -241,3 +258,15 @@ def human_time(secs):
 #
 #     def __set__(self, instance, value):
 #         getattr(instance, self.name).value = value
+
+
+def clsattrdiff(base_cls, cls, funcs=False):
+    attrs = dict()
+    i = cls.__mro__.index(base_cls)
+    for cls_i in cls.__mro__[:i][::-1]:
+        for k, v in cls_i.__dict__.items():
+            if (not k.startswith('_') and 
+                    k not in base_cls.__dict__ and 
+                    (funcs or not callable(v))):
+                attrs[k] = v
+    return attrs
