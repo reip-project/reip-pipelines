@@ -12,7 +12,7 @@ class Shell(reip.Block):
 
     def process(self, *xs, meta):
         result = reip.util.shell.run(self.cmd, *xs, **meta)
-        return [self.astype(result.out.strip())], {'stderr': result.err.strip()}
+        return self.astype(result.out.strip()), {'stderr': result.err.strip()}
 
 
 class ShellProcess(reip.Block):

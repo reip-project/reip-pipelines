@@ -23,13 +23,14 @@ import reip
 
 
 class DiskMonitor(reip.Block):
+    n_inputs = 0
     def __init__(self, root='/', deleter=None, threshold=0.95, padding=0.1, interval=60, **kw):
         self._deleter = deleter if callable(deleter) else self._default_deleter
         self.root = root
         self.threshold = threshold
         self.padding = padding
         self._files = []
-        super().__init__(n_inputs=0, max_rate=1./interval, extra_kw=True, **kw)
+        super().__init__(max_rate=1./interval, extra_kw=True, **kw)
 
     def process(self, *files, meta):
         # initial usage check
@@ -45,7 +46,7 @@ class DiskMonitor(reip.Block):
         # send deleted files with change in usage
         usage = self.get_usage()
         self.log.info('Removed {} files. Usage at {:.1%}.'.format(len(self._files), usage))
-        return [self._files], {
+        return self._files, {
             'start_usage': start_usage,
             'end_usage': usage,
             'usage_delta': start_usage - usage}
@@ -54,10 +55,7 @@ class DiskMonitor(reip.Block):
         return reip.util.status.storage(self.root, literal_keys=True)[self.root] / 100.
 
     def get_files(self, *fs):
-        return [
-            f #for root in self._root_dirs
-            for f in glob.glob(os.path.join(self.root, *fs), recursive=True)
-        ]
+        return glob.glob(os.path.join(self.root, *fs), recursive=True)
 
     def delete_while_full(self, fs, chunksize=1, method='random'):
         chunksize = chunksize or len(fs)

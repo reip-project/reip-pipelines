@@ -38,7 +38,7 @@ class TwoStageEncrypt(reip.Block):
             name=reip.util.fname(file), **meta))
         compressed = self.compress(self.encrypt(file), fname)
         self.maybe_remove_files(file)
-        return [compressed], {}
+        return compressed, {}
 
     def encrypt(self, file):
         # Encrypt the file using AES and AES using RSA
@@ -91,7 +91,7 @@ class TwoStageDecrypt(reip.Block):
         enc_file, enc_key = self.decompress(file)
         decrypted = self.decrypt(enc_file, enc_key, fname)
         self.maybe_remove_files(file, enc_file, enc_key)
-        return [decrypted], {}
+        return decrypted, {}
 
     def decrypt(self, enc_file, enc_key, fname):
         '''Decrypt file with AES 4096.'''

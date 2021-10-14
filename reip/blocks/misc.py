@@ -17,40 +17,29 @@ class Iterator(reip.Block):
 
     def process(self, meta=None):
         try:
-            x = next(self.iterator)
-            return [x], meta
+            return next(self.iterator), meta
         except StopIteration:
-            return reip.CLOSE
+            self.close()
 
 
 class Interval(reip.Block):
     '''Call this function every X seconds'''
-    def __init__(self, seconds=2, initial=None, **kw):
-        self.seconds = seconds
-        self.initial = initial
-        self._did_init = False
-        super().__init__(n_inputs=0, **kw)
+    n_inputs=0
+    def __init__(self, seconds=2, relative=False, **kw):
+        self.relative = relative
+        super().__init__(max_rate=1/seconds, **kw)
+
+    def init(self):
+        self.t0 = time.time() if self.relative else 0
 
     def process(self, meta=None):
-        if self.initial and not self._did_init:
-            time.sleep(self.initial)
-            self._did_init = True
-        else:
-            time.sleep(self.seconds)
-        return [None], reip.Meta({'time': time.time()})
-
-
-class ControlledDelay(reip.Block):
-    '''Add system time to metadata.'''
-    def process(self, x, meta=None):
-        time.sleep(x)
-        return [None], reip.Meta({'time': time.time()})
+        return time.time() - self.t0, meta
 
 
 class Time(reip.Block):
     '''Add system time to metadata.'''
     def process(self, x, meta=None):
-        return [x], reip.Meta({'time': time.time()})
+        return x, {'time': time.time()}
 
 
 class Meta(reip.Block):
@@ -59,10 +48,10 @@ class Meta(reip.Block):
         self.meta = meta or {}
         super().__init__(*a, **kw)
     def process(self, x, meta=None):
-        return [x], reip.Meta({
+        return x, {
             k: v(meta) if callable(v) else v
             for k, v in self.meta.items()
-        })
+        }
 
 
 
@@ -80,32 +69,11 @@ class Glob(reip.Block):
         fs = {f for p in self.paths for f in glob.glob(p, recursive=self.recursive)}
         self.last, fs = fs, fs - self.last
         if self.atonce:
-            yield [fs], meta
-        else:
-            for f in fs:
-                yield [f], meta
+            yield fs, meta
+            return
+        for f in fs:
+            yield f, meta
 
-# as an experiment:
-# @reip.helpers.asbasiccontext
-# def Glob(self, *paths, atonce=False):
-#     self.last = set()
-#     def process():
-#         fs = {f for p in paths for f in glob.glob(p)}
-#         self.last, fs = fs, fs - self.last
-#         if atonce:
-#             yield fs
-#         else:
-#             yield from fs
-#     yield process
-
-
-# class Dict(reip.Block):
-#     '''Merge block outputs into a dict.'''
-#     def __init__(self, meta, *a, **kw):
-#         super().__init__(*a, **kw)
-#
-#     def process(self, *xs, meta=None):
-#         return [xs], {}
 
 class AsDict(reip.Block):
     '''Merge block outputs into a dict.'''
@@ -133,23 +101,13 @@ class AsDict(reip.Block):
         return [data], meta
 
 
-class Sleep(reip.Block):
-    def __init__(self, sleep=2, **kw):
-        self.sleep = sleep
-        super().__init__(**kw)
-
-    def process(self, x, meta):
-        time.sleep(self.sleep)
-        return [x], meta
-
-
 class Constant(reip.Block):
     def __init__(self, value, *a, **kw):
         self.value = value
         super().__init__(*a, n_inputs=0, **kw)
 
     def process(self, meta):
-        return [self.value], meta
+        return self.value, meta
 
 
 class Increment(Iterator):
@@ -241,7 +199,7 @@ class Lambda(reip.Block):
 
 class Interleave(reip.Block):
     def __init__(self, sort_key=None, **kw):
-        super().__init__(n_inputs=None, **kw)
+        super().__init__(n_inputs=-1, should_process=any, **kw)
         self.sort_key = sort_key
 
     def process(self, *xs, meta=None):
@@ -249,7 +207,7 @@ class Interleave(reip.Block):
             xs = [x for i, x in sorted(enumerate(xs), key=lambda x: meta[x[0]][self.sort_key])]
         for x in xs:
             if x is not None:
-                yield [x], meta
+                yield x, meta
 
 
 class Separate(reip.Block):
@@ -261,9 +219,9 @@ class Separate(reip.Block):
         out = [None]*len(self.bins)
         for i, check in enumerate(self.bins):
             if check(x, meta):
-                out[i] = x
+                out[i] = x, meta
                 break
-        return out, meta
+        return out
 
 
 class Gather(reip.Block):
@@ -287,7 +245,7 @@ class Gather(reip.Block):
             items, self.items = self.items, []
             if self.reduce:
                 items = self.reduce(items)
-            return [items], meta
+            return items, meta
 
     def finish(self):
         self.items = None

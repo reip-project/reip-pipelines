@@ -26,7 +26,8 @@ class Synchronize(reip.Block):
         # if any queue slot is empty, retry
         is_none = [x is None for x in xs]
         if any(is_none):
-            return reip.RETRY
+            self.source_signals(reip.RETRY)
+            return 
 
         # check the time differences between samples
         # if any are too far back in the past, then skip them (???)

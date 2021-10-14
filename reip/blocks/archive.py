@@ -22,6 +22,10 @@ class Tar(reip.Block):
         if self.remove_files:
             for f in files:
                 os.remove(f)
-        return [fname], {}
+        return fname, {}
 
-TarGz = Tar
+
+class TarGz(Tar):
+    def __init__(self, filename='{time}.tar.gz', remove_files=False, **kw):
+        super().__init__(filename=filename, remove_files=remove_files, gz=True, **kw)
+
