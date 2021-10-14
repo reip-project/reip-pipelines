@@ -8,25 +8,28 @@ import reip
 
 class Pool(reip.Block):
     itemClass = collections.deque
-    def __init__(self, n_items=10, *a, n_inputs=None, n_outputs=None, **kw):
-        self.n_items = n_items
-        super().__init__(*a, n_inputs=n_inputs, n_outputs=n_outputs, **kw)
+    def __init__(self, n_items=10, n_inputs=-1, n_outputs=-1, **kw):
+        self.size = n_items
+        super().__init__(n_inputs=n_inputs, n_outputs=n_outputs, **kw)
 
     def init(self):
-        self.items = self.itemClass()
+        self.items = [self.itemClass() for _ in self.sources]
 
-    def pool(self, items):
-        if len(items) > self.n_items:
-            xs, meta = zip(*self.q)
-            return list(zip(*xs)), meta[0]
+    def finish(self):
+        self.items = None
 
     def process(self, *xs, meta=None):
-        self.items.append((xs, meta))
-        out = self.pool(self.items)
-        if out is not None:
-            self.items.clear()
-            return out
-
+        for items, x, m in zip(self.items, xs, meta):
+            if x is not None:
+                items.append(x, m)
+        
+        ret = [None]*len(self.items)
+        for i, items in enumerate(self.items()):
+            if len(self.items) > self.size:
+                xs, metas = zip(*items)
+                items.clear()
+                ret[i] = xs, metas[0]
+        return ret
 
 class Rebuffer(reip.Block):
     def __init__(self, size=None, duration=None, *a, sr_key='sr', **kw):
@@ -83,37 +86,21 @@ class Rebuffer(reip.Block):
 
 
 class FastRebuffer(reip.Block):
+    buffers = meta = None
     def __init__(self, size=None, **kw):
         assert size , 'You must specify a size.'
         self.size = size
         super().__init__(**kw)
 
-    def init(self):
-        self.buffers, self.meta = None, None
-        self.current_pos = 0
-
     def process(self, x, meta):
-        # calculate the size the first time using the sr in metadata
         if self.buffers is None:
-            shape = list(x.shape)
-            shape[0] = shape[0] * self.size
-            # self.buffers = np.concatenate([np.zeros_like(x)] * self.size)
-            self.buffers = np.zeros(tuple(shape), dtype=x.dtype)
-            self.meta = meta
-            self.current_pos = 0
+            self.xs, self.meta = [], meta
+        self.xs.append(x)
 
-        l, i = x.shape[0], self.current_pos
-        
-        self.buffers[i*l:(i+1)*l, ...] = x[...]
-        self.current_pos = (self.current_pos + 1) % self.size
-
-        if self.current_pos == 0:
-            ret = [self.buffers], self.meta
+        if len(self.buffers) >= self.size:
+            x, meta = np.concatenate(self.xs), self.meta
             self.buffers, self.meta = None, None
-        else:
-            ret = None
-
-        return ret
+            return x, meta
 
 
 
@@ -136,11 +123,11 @@ class GatedRebuffer(Rebuffer):
 
         # check if we are currently allowing buffers
         if self.allow_index is not None:
-            if self.processed - self.allow_index >= self.n_pass:  # we've exceeded
-                self.allow_index = None
-                self.pause_until = t0 + self.sampler()
-            else:
+            if self.processed - self.allow_index < self.n_pass:
                 return
+            # we've exceeded
+            self.allow_index = None
+            self.pause_until = t0 + self.sampler()
 
         # check if we should be pausing
         if t0 < self.pause_until:
@@ -156,6 +143,17 @@ class GatedRebuffer(Rebuffer):
         return super().process(x, meta)
 
 
+# class TemporalGate:
+#     def __init__(self, func, *a, **kw):
+#         self.func, self.a, self.kw = func, a, kw
+#         self.pause_until = 0
+    
+#     def __call__(self, meta):
+#         t0 = meta.get('time') or time.time()
+#         if t0 < self.pause_until:  # check if we should be pausing
+#             return False
+#         self.pause_until = t0 + self.func(*self.a, **self.kw)
+#         return True
 
 
 def temporal_coverage(clip_duration=10, coverage=0.5, min_silence=5.0, sampling='normal'):
