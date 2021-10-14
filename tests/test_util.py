@@ -4,7 +4,7 @@ import time
 import multiprocessing as mp
 
 from reip import util
-from reip.util import shell, remote, text
+from reip.util import shell, text
 
 
 ROOT = os.path.dirname(__file__)
@@ -33,22 +33,6 @@ def test_shell():
     assert o.cmd == 'ping -c 3 -q 8.8.8.8'
     assert 'PING 8.8.8.8' in o.out
     assert not o.err
-
-
-# def test_meta():
-#     maps = [{'a': 5}, {'b': 6}]
-#     meta = util.Meta({}, *maps)
-#     # check flat
-#     assert dict(meta) == {'a': 5, 'b': 6}
-#     # check update
-#     meta['c'] = 7
-#     assert dict(meta) == {'a': 5, 'b': 6, 'c': 7}
-#     assert meta.maps == [{'c': 7}, {'a': 5}, {'b': 6}]
-
-#     # check merging and removing duplicates
-#     meta2 = util.Meta({'d': 8}, meta, meta)
-#     assert len(meta2.maps) == len(meta.maps) + 1
-#     assert meta2.maps == [{'d': 8}, {'c': 7}, {'a': 5}, {'b': 6}]
 
 
 def test_iters():
@@ -90,117 +74,6 @@ def test_stopwatch():
     assert check(sw.avg('zxcv'), 0.1)
     assert check(sw.total('zxcv'), 0.1)
     assert 'qqqq' not in sw._ticks and sw.total('qqqq') == 0
-
-
-
-class ObjectA:
-    x = 10
-    term = False
-    def __init__(self):
-        self.remote = remote.RemoteProxy(self)
-
-    def __str__(self):
-        return f'<A x={self.x} terminated={self.term}>'
-
-    def asdf(self):
-        self.x *= 2
-        return self
-
-    @property
-    def zxcv(self):
-        return self.x / 5.
-
-    def terminate(self):
-        self.term = True
-        return self
-
-    def start(self):
-        self.term = False
-        return self
-
-class ObjectB(ObjectA):
-    @property
-    def zxcv(self):
-        return self.x / 10.
-
-def _run_remote(obj, event):  # some remote job
-    with obj.remote:
-        while not event.is_set():
-            obj.remote.poll()
-            time.sleep(0.0001)
-
-
-import functools
-from contextlib import contextmanager
-@contextmanager
-def _profile():
-    try:
-        import pyinstrument
-        prof = pyinstrument.Profiler()
-        prof.start()
-        yield
-    finally:
-        prof.stop()
-        print(prof.output_text(unicode=True, color=True, show_all=True))
-
-def _profile_func(func):
-    @functools.wraps(func)
-    def inner(*a, **kw):
-        with _profile():
-            print('profiling', func.__name__, a, kw)
-            return func(*a, **kw)
-    return inner
-
-@_profile_func
-def test_remote():
-    obj = ObjectB()
-    event = mp.Event()
-    p = mp.Process(target=_run_remote, args=(obj, event), daemon=True)
-    p.start()
-    while not obj.remote.listening and p.is_alive():
-        time.sleep(1e-2)
-
-    # attribute access
-    assert obj.x == 10
-    assert obj.remote.x.retrieve() == 10
-
-    # local update
-    obj.asdf()
-    assert obj.x == 20
-    assert obj.remote.x.retrieve() == 10
-
-    # remote update
-    obj.remote.asdf()
-    assert obj.x == 20
-    assert obj.remote.x.retrieve() == 20
-
-    # remote property
-    assert obj.zxcv == 2.
-    assert obj.remote.zxcv.retrieve() == 2.
-
-    assert super(type(obj), obj).zxcv == 4.
-    assert obj.remote.super.zxcv.retrieve() == 4.
-
-    # local terminate
-    obj.terminate()
-    assert obj.remote.term.retrieve() == False
-    assert obj.term == True
-    obj.start()
-    assert obj.remote.term.retrieve() == False
-    assert obj.term == False
-
-    # remote terminate
-    obj.remote.terminate()
-    assert obj.remote.term.retrieve() == True
-    assert obj.term == False
-    obj.remote.start()
-    assert obj.remote.term.retrieve() == False
-    assert obj.term == False
-
-    assert p.is_alive()
-    event.set()
-    p.join()
-    assert not obj.remote.listening
 
 
 def test_text():
@@ -341,28 +214,3 @@ def test_debug():
     assert all(x in txt for x in (
         'asdf', __file__, 'block', 'ddd',
         'test_debug', 'return ddd()'))
-
-
-# def test_background_process():
-#     cmd = 'watch ls'
-#     server = util.BackgroundServer(cmd, 'watch')
-#     assert not server.is_alive
-#     with server:
-#         assert server.is_alive
-#         assert len(server.clients) == 1
-#
-#         server2 = util.BackgroundServer(cmd, 'watch')
-#         assert server.is_alive
-#         with server2:
-#             assert server2.is_alive
-#             assert len(server.clients) == 2
-#
-#             assert server.clients == server2.clients
-#             assert server._pid_dir == server2._pid_dir
-#             assert server._pid_file != server2._pid_file
-#
-#         assert server2.is_alive
-#         assert server.is_alive
-#         assert len(server.clients) == 1
-#     assert not server.is_alive
-#     assert len(server.clients) == 0

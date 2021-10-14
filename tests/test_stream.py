@@ -1,11 +1,11 @@
 import reip
+from reip.util.stream import Stream
 
 
 def test_stream():
     sink = reip.Producer(100)
     source = sink.gen_source()
-    stream = reip.Stream([source])
-    stream.close()  # don't wait for sources
+    stream = Stream([source]).nowait()
 
     for i in range(10):
         sink.put((i, {'i': i}))
@@ -25,18 +25,17 @@ def test_stream():
 def test_stream_loop():
     sink = reip.Producer(100)
     source = sink.gen_source()
-    stream = reip.Stream([source], duration=0.5, max_rate=10)
-    stream.close()  # don't wait for sources
+    stream = Stream([source], duration=0.5, max_rate=10, wait=False)
 
     for i in range(10):
         sink.put((i, {}))
-    assert len(list(stream)) <= 5
+    assert len(list(stream)) <= 5+1
 
 
 def test_stream_slice():
     sink = reip.Producer(100)
     source = sink.gen_source()
-    stream = reip.Stream([source]).nowait()  # don't wait for sources
+    stream = Stream([source]).nowait()  # don't wait for sources
 
     for i in range(10):
         sink.put((i, {'i': i}))
@@ -54,7 +53,7 @@ def test_stream_slice():
 
     sink2 = reip.Producer(100)
     source2 = sink2.gen_source()
-    stream = reip.Stream([source, source2]).nowait()
+    stream = Stream([source, source2]).nowait()
 
     for i in range(10):
         sink.put((i, {'i': i}))

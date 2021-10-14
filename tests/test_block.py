@@ -1,7 +1,6 @@
 import time
 import pytest
 import reip
-import reip.util.test
 
 
 def test_connections():
@@ -18,20 +17,30 @@ def test_connections():
     inputs = [reip.Block(n_outputs=i) for i in range(4)]
     sink = reip.Producer(10)
     assert all(len(b_in.sinks) == i for i, b_in in enumerate(inputs))
-    all_sinks = sum((b.sinks for b in inputs), []) + [sink]
+    all_sinks = [s for b in inputs for s in b.sinks] + [sink]
+    all_inputs = [*inputs, sink]
 
     # test that the sources were added correctly
-    output = reip.Block(n_inputs=0)
+    output = reip.Block(n_inputs=-1)
     assert len(output.sources) == 0
-    output(*inputs, sink)
+    output(*all_inputs)
     assert [s.source for s in output.sources] == all_sinks
 
-    # test that the sources were added correctly
+    # test zero sources
     output = reip.Block(n_inputs=0)
     assert len(output.sources) == 0
+    with pytest.raises(RuntimeError):
+        output(*all_inputs)
+    assert len(output.sources) == 0
+    output(*all_inputs, ignore_extra=True)
+    assert len(output.sources) == 0
+
+    # test that the sources were added correctly
+    output = reip.Block(n_inputs=-1)
+    assert len(output.sources) == 0
     for inp in inputs:
-        inp.to(output, index=-1)
-    output(sink, index=-1)
+        inp.to(output, index='append')
+    output(sink, index='append')
     print([s.source for s in output.sources])
     assert [s.source for s in output.sources] == all_sinks
 
@@ -39,48 +48,42 @@ def test_connections():
     n = 3
     output = reip.Block(n_inputs=n)
     assert output.sources == [None]*n
-    output(*inputs, sink)
-    assert len(output.sources) == sum(len(i.sinks) for i in inputs) + 1
-    output.remove_extra_sources()
+    output(*all_inputs, ignore_extra=True)
     assert [s.source for s in output.sources] == all_sinks[:n]
 
     # test too many sources
-    output = reip.Block(n_inputs=n)(*inputs, sink)
+    output = reip.Block(n_inputs=n)(*all_inputs, ignore_extra=True)
     output.sources.append(sink.gen_source())
     with pytest.raises(RuntimeError):
-        output._check_source_connections()
+        output._Block__check_source_connections()
 
     # test missing sources
-    output = reip.Block()(*inputs, sink)
+    output = reip.Block(n_inputs=-1)(*all_inputs)
     output.sources[0] = None
     with pytest.raises(RuntimeError):
-        output._check_source_connections()
+        output._Block__check_source_connections()
 
     # test missing sources
     with reip.Graph() as g:
-        output = reip.Block(max_generated=1, log_level='debug')(*inputs, sink)
+        output = reip.Block(max_generated=1, n_inputs=-1, log_level='debug')(*all_inputs)
         output.sources[0] = None
     with pytest.raises(RuntimeError):
         g.run()
 
 
 class Constant(reip.Block):
+    n_inputs = 0
     def __init__(self, x, **kw):
-        super().__init__(n_inputs=0, **kw)
+        super().__init__(**kw)
         self.x = x
 
     def process(self, meta):
-        return [self.x], meta
+        return self.x, meta
 
 
-class Constants(reip.Block):
-    def __init__(self, x, **kw):
-        super().__init__(n_inputs=0, **kw)
-        self.x = x
-
+class Constants(Constant):
     def process(self, meta):
-        for x in self.x:
-            yield [x], meta
+        yield from ((x, meta) for x in self.x)
 
 def test_process_function_returns():
     with reip.Graph() as g:
@@ -97,7 +100,7 @@ def test_init_errors_from_block_in_task():
     with reip.Graph() as g:
         with reip.Task() as t:
             reip.Block(max_generated=10)(reip.Block(), reip.Block())
-    with pytest.raises(RuntimeError, match=r'Expected \d+ sources'):
+    with pytest.raises(RuntimeError, match=r'Sources \[0\] in .+ not connected\.'): # r'Expected \d+ sources'
         g.run()
 
 
@@ -108,30 +111,36 @@ class ErrorBlock(reip.Block):
         raise RuntimeError()
 
 
-class Count:
-    count = 0
-    def __call__(self, block, run):
-        self.count += 1
-        return run()
+def block_state_counter(b, state='spawned'):
+    b.count = 0
+    print(b, type(b))
+    print(b.state)
+    state = b.state[state]
+    @state.add_callback
+    def _inc(state, value):
+        if value:
+            reip.util.print_stack()
+            b.count += 1
+    return b
 
 def test_handlers():
     with reip.Graph.detached() as g:
-        count = Count()
-        b = reip.Block(handlers=count, max_generated=3, n_inputs=0)
+        b = reip.Block(max_generated=3, n_inputs=0)
+        block_state_counter(b)
     g.run()
-    assert count.count == 1
+    assert b.count == 1
     g.run()
-    assert count.count == 2
+    assert b.count == 2
 
-    with reip.Graph.detached() as g:
-        count = Count()
-        b = ErrorBlock(handlers=[reip.util.handlers.retry(3), count], n_inputs=0, log_level='debug')
-    with pytest.raises(RuntimeError):
-        try:
-            g.run()
-        finally:
-            print(g._except)
-    assert count.count == 3
+    # with reip.Graph.detached() as g:
+    #     b = ErrorBlock(handlers=reip.util.handlers.retry(3), n_inputs=0, log_level='debug')
+    #     block_state_counter(b)
+    # with pytest.raises(RuntimeError):
+    #     try:
+    #         g.run()
+    #     finally:
+    #         print(g._except)
+    # assert b.count == 3
 
 
 # class BlockPresence(reip.Block):
@@ -162,11 +171,10 @@ def test_handlers():
 
 
 class StateTester(reip.Block):
-    def __init__(self, *a, **kw):
-        super().__init__(*a, n_inputs=None, **kw)
+    n_inputs = -1
 
     def _check_state(self, ready=True, running=True, done=False, terminated=False, started=True, error=None):
-        assert started is None or self.started == started
+        assert started is None or self.state.spawned.value == started
         assert ready is None or self.ready == ready
         assert running is None or self.running == running
         assert done is None or self.done == done
@@ -332,35 +340,35 @@ def test_extra_kw():
 
 
 
-def test_extra_meta():
-    class A:
-        i = 0
-        def __call__(self, meta=None):
-            self.i += 1
-            return {'z': self.i}
+# def test_extra_meta():
+#     class A:
+#         i = 0
+#         def __call__(self, meta=None):
+#             self.i += 1
+#             return {'z': self.i}
 
-    with reip.Graph.detached() as g:
-        a = A()
-        block = reip.blocks.Increment(
-            max_generated=10,
-            extra_meta=[{'a': 1}, {'b': 2}, a, {'c': 12}]
-            )
-        out = block.output_stream()
-        assert block._extra_meta == [{'a': 1, 'b': 2}, a, {'c': 12}]
-    print(out)
-    g.run()
-    print(out)
+#     with reip.Graph.detached() as g:
+#         a = A()
+#         block = reip.blocks.Increment(
+#             max_generated=10,
+#             extra_meta=[{'a': 1}, {'b': 2}, a, {'c': 12}]
+#             )
+#         out = block.output_stream()
+#         assert block._extra_meta == [{'a': 1, 'b': 2}, a, {'c': 12}]
+#     print(out)
+#     g.run()
+#     print(out)
 
-    metas = [dict(m) for m in list(out.nowait().meta)]
-    assert [dict(m) for m in metas] == [
-        {'a': 1, 'b': 2, 'c': 12, 'z': i+1} for i in range(block.max_generated)
-    ]
+#     metas = [dict(m) for m in list(out.nowait().meta)]
+#     assert [dict(m) for m in metas] == [
+#         {'a': 1, 'b': 2, 'c': 12, 'z': i+1} for i in range(block.max_generated)
+#     ]
 
 
 def test_prints():
     # test too many sources
     with reip.Graph.detached() as g:
-        block = reip.Block(n_inputs=None)
+        block = reip.Block(n_inputs=-1)
     with g.run_scope():
         pass
     block.status()

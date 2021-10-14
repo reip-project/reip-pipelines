@@ -2,7 +2,6 @@ import time
 import numpy as np
 import reip
 import pytest
-from remote_func import remote_func
 import remoteobj
 
 

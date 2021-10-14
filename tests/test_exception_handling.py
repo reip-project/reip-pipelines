@@ -12,27 +12,21 @@ class CustomError(Exception):
     pass
 
 class BadInit(reip.Block):
-    def __init__(self, **kw):
-        super().__init__(n_inputs=None, **kw)
-
+    n_inputs = -1
     def init(self):
         time.sleep(0.01)
         raise CustomError('youre not my dad !! :p')
 
 
 class BadBlock(reip.Block):
-    def __init__(self, **kw):
-        super().__init__(n_inputs=None, **kw)
-
+    n_inputs = -1
     def process(self, meta):
         time.sleep(0.01)
         raise CustomError('youre not my dad !! :p')
 
 
 class BadFinish(reip.Block):
-    def __init__(self, **kw):
-        super().__init__(n_inputs=None, **kw)
-
+    n_inputs = -1
     def process(self, meta):
         return reip.CLOSE
 
