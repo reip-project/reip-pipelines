@@ -197,22 +197,22 @@ class Plotter(reip.Block):
 
         r = data[:, :, 0].T
         m = data[:, :, 1].T
-        c = data[:, :, 2].T
-        l = data[:, :, 3].T
+        l = data[:, :, 2].T
+
+        # c = data[:, :, -1].T # "closing"
 
         plt.clf()
         plt.title(str(self.processed))
 
-        for i, title, dat in zip(range(4), ["range", "mask", "closing", "labels"],
-                                 [r, m, c, l]):
-            plt.subplot(4, 1, i + 1)
+        for i, title, dat in zip(range(3), ["range", "mask", "labels"], [r, m, l]):
+            plt.subplot(3, 1, i + 1)
             if i == 0:
                 plt.imshow(np.repeat(dat, 3, axis=0), vmin=0, vmax=10)
-            elif i == 3:
+            elif i == 2:
                 colors = plt.cm.get_cmap('Set3').colors
                 newColors = list(colors)
                 newColors.insert(0, (0, 0, 0))
-                newColorMap=ListedColormap(newColors)
+                newColorMap = ListedColormap(newColors)
                 plt.imshow(np.repeat(dat, 3, axis=0), vmin=-0.5, vmax=12.5, cmap=newColorMap)
             else:
                 plt.imshow(np.repeat(dat, 3, axis=0))
