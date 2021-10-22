@@ -7,6 +7,10 @@ __pycache__/
 legotracker/lidar/plot
 legotracker/lidar/data
 legotracker/lidar/fast.py
+legotracker/lidar/labeler/labeler_module.py
+legotracker/lidar/labeler/labeler_wrap.c
+legotracker/lidar/labeler/_labeler*.so
+
 
 # mac
 .DS_Store
