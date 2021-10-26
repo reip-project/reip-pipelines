@@ -23,7 +23,7 @@ import reip
 
 
 class DiskMonitor(reip.Block):
-    def __init__(self, root='/', deleter=None, threshold=0.95, padding=0.1, interval=15, **kw):
+    def __init__(self, root='/', deleter=None, threshold=0.95, padding=0.03, interval=15, **kw):
         self._deleter = deleter if callable(deleter) else self._default_deleter
         self.root = root
         self.threshold = threshold
@@ -62,7 +62,7 @@ class DiskMonitor(reip.Block):
             for f in glob.glob(os.path.join(self.root, *fs), recursive=True)
         ]
 
-    def delete_while_full(self, fs, chunksize=1, method='random'):
+    def delete_while_full(self, fs, chunksize=1, method='random', throttle=1e-1):
         chunksize = chunksize or len(fs)
         if method == 'random':
             random.shuffle(fs)
@@ -76,6 +76,7 @@ class DiskMonitor(reip.Block):
             fsi = fs[i:i+chunksize]
             self.log.debug('Usage: %f > %f. Deleting %s', usage, self.threshold, fsi)
             self.delete(fsi)
+            time.sleep(throttle)
         return i + chunksize < len(fs)
 
     def while_full(self, threshold=None):
