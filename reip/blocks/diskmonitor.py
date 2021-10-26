@@ -74,7 +74,7 @@ class DiskMonitor(reip.Block):
         self.log.debug('Removing files (candidates: %d) using method=%s with a chunksize of %d until below usage threshold', len(fs), method, chunksize)
         for usage, i in zip(self.while_full(), range(0, len(fs), chunksize)):
             fsi = fs[i:i+chunksize]
-            self.log.debug('Usage: %f > %d. Deleting %s', usage, self.threshold, fsi)
+            self.log.debug('Usage: %f > %f. Deleting %s', usage, self.threshold, fsi)
             self.delete(fsi)
         return i + chunksize < len(fs)
 
