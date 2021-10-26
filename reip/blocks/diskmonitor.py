@@ -34,6 +34,7 @@ class DiskMonitor(reip.Block):
     def process(self, *files, meta):
         # initial usage check
         start_usage = self.get_usage()
+        self.log.debug('%s: Target disk usage %f < %f', self.root, start_usage, self.threshold)
         if start_usage < self.threshold:
             return
 
@@ -51,7 +52,7 @@ class DiskMonitor(reip.Block):
             'usage_delta': start_usage - usage}
 
     def get_usage(self):
-        if not os.path.isfile(self.root):
+        if not os.path.exists(self.root):
             return 0
         return reip.util.status.storage(self.root, literal_keys=True)[self.root] / 100.
 
@@ -70,8 +71,11 @@ class DiskMonitor(reip.Block):
         elif method == 'oldest':
             pass
         i = -chunksize
+        self.log.debug('Removing files (candidates: %d) using method=%s with a chunksize of %d until below usage threshold', len(fs), method, chunksize)
         for usage, i in zip(self.while_full(), range(0, len(fs), chunksize)):
-            self.delete(fs[i:i+chunksize])
+            fsi = fs[i:i+chunksize]
+            self.log.debug('Usage: %f > %d. Deleting %s', usage, self.threshold, fsi)
+            self.delete(fsi)
         return i + chunksize < len(fs)
 
     def while_full(self, threshold=None):
@@ -85,6 +89,7 @@ class DiskMonitor(reip.Block):
     def delete(self, fs):
         fs = reip.util.as_list(fs)
         for f in fs:
+            self.log.warning('Removing %s', f)
             os.remove(f)
         self._files.extend(fs)
 
