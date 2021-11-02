@@ -39,7 +39,9 @@ class Meta(dict):
         return merged
 
     def _compile(self):
-        return self.clear().update(self._compile_dict())
+        super().clear()
+        self.update(self._compile_dict())
+        return self
 
     def __str__(self):
         return 'Meta({}, [{}])'.format(self.data, ', '.join(map(str, self.inputs)))
