@@ -240,7 +240,7 @@ class Block(_BlockConnectable):
         '''Check the sources to determine if we should call process.'''
         return not self.sources or self.__source_process_condition(not s.empty() for s in self.sources)
 
-    def process(self, *xs, meta=None):
+    def process(self, *xs, meta):
         '''Process data.'''
         return xs, meta
 
@@ -451,12 +451,19 @@ class Block(_BlockConnectable):
 
     def __reconfigure(self):
         '''This updates the configuration and possibly respawns / re-inits 
-        TODO: what to do here?'''
+        TODO: what to do here?
+        
+        To get a block to go to this state, call self.state.needs_reconfigure.request()
+        '''
         self.state.configured()
 
     def __run_configured(self, duration=None, t0=None):
         '''This is the main loop of the block. This is where all of the magic happens.'''
         t0 = t0 or time.time()
+        # pull states out to avoid unnecessary attribute lookups
+        configured, paused, waiting, processing = (
+            self.state.configured, self.state.paused, 
+            self.state.waiting, self.state.processing)
         try:
             with self.state.initializing, self._sw('init'), self._except('init'):
                 self.init()
@@ -464,7 +471,7 @@ class Block(_BlockConnectable):
             with self.state.ready, self.__throttler as throttle:
                 while True:
                     # check if we are still in a configured state
-                    if not self.state.configured:
+                    if not configured:
                         # just exit quick, reconfigure, and come back
                         if self.state.needs_reconfigure:
                             break
@@ -483,23 +490,23 @@ class Block(_BlockConnectable):
                     # add a small delay
                     time.sleep(self._delay)
                     # check if we're paused
-                    if self.state.paused:
+                    if paused:
                         continue
                     # check if we're throttling
                     if throttle():
                         continue
                     # check source availability
                     if not self.sources_available():
-                        self.state.waiting()
+                        waiting or waiting()
                         continue
-                    self.state.waiting(False)
+                    waiting(False)
 
                     # good to go!
-                    with self.state.processing:
+                    with processing:
                         # get inputs
                         with self._sw('source'):
                             inputs = self.__read_sources()
-                            if inputs is None or not self.state.processing:  # check if we exited based on the inputs
+                            if inputs is None or not processing:  # check if we exited based on the inputs
                                 continue
                             buffers, meta = inputs
 
@@ -541,7 +548,7 @@ class Block(_BlockConnectable):
         if recv_close:
             return
 
-        buffers, meta = prepare_input(inputs, Block.USE_META_CLASS)
+        buffers, meta = prepare_input(inputs, self.USE_META_CLASS, self.n_inputs)
         return buffers, meta
 
     def __process_buffer(self, buffers, meta):
@@ -712,9 +719,9 @@ def prepare_input(inputs, as_meta=True, expected_inputs=-1):
     bufs, metas = tuple(zip(*([buf if buf is not None else (None, {}) for buf in inputs]))) or ((), ())
 
     if as_meta:
-        metas = reip.Meta(inputs=metas)
+        metas = reip.Meta(None, *metas)
     else:
-        if len(metas) == 1:  # expected_inputs and expected_inputs == 1 and 
+        if expected_inputs == 1 and len(metas) == 1:  # expected_inputs and 
             metas = metas[0]
     return list(bufs), metas
 
@@ -742,8 +749,8 @@ def prepare_output(outputs, input_meta=None, as_meta=True):
         x, meta = out
         if meta is None:
             meta = reip.util.Meta() if as_meta else {}
-        if as_meta and not isinstance(meta, reip.util.Meta):
-            meta = reip.util.Meta(meta, input_meta.inputs)
+        elif as_meta and not isinstance(meta, reip.util.Meta):
+            meta = reip.util.Meta(meta, *input_meta.inputs)
         outs.append((x, meta))
     return outs
 
