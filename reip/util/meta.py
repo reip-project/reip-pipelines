@@ -1,3 +1,5 @@
+import copy
+
 class Meta(dict):
     '''A metadata object. It combines a dictionary with metadata from earlier inputs.
 
@@ -9,6 +11,13 @@ class Meta(dict):
     The Meta object itself subclasses a dictionary which contains a flatten version
     of meta.data and meta.inputs. Modifications to the meta object are applied to both
     the flattened version and the data object. 
+
+    Arguments:
+        data (dict, None): The current data dictionary.
+        *inputs (dict): The input dictionaries to inherit.
+        deep_access (bool): Should the meta object access values from the input dictionaries?
+        masked_keys (set): Any keys to ignore from the input dictionaries. Unused currently,
+            but might be necessary to track deleted keys and pass them to 
     '''
     def __init__(self, data=None, *inputs, deep_access=True, masked_keys=None):
         # the current layer of data - a dict
@@ -82,7 +91,9 @@ class Meta(dict):
         return super().pop(k, *default)
 
     def copy(self):
-        return self.__class__({**self.data}, *self.inputs)
+        m = copy.copy(self)
+        m.data = m.data.copy()
+        return m
 
     @classmethod
     def as_meta(cls, d):
