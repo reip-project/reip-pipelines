@@ -63,6 +63,10 @@ def keyboard_interrupts(func):
 ])
 @keyboard_interrupts
 def test_producer(task_id, throughput, CustomerCls, PointerCls, StoreCls, data_func, **kw):
+    if StoreCls is reip.stores.PlasmaStore and reip.stores.HAS_PYARROW:
+        import warnings
+        warnings.warn("Plasma store not active. Skipping Plasma tests.")
+        return
     print(task_id, throughput, CustomerCls, PointerCls, StoreCls, data_func, **kw)
     # get sink
     sink = reip.stores.Producer(100, task_id=DEFAULT)
