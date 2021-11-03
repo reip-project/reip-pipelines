@@ -10,7 +10,13 @@ class Meta(dict):
     
     The Meta object itself subclasses a dictionary which contains a flatten version
     of meta.data and meta.inputs. Modifications to the meta object are applied to both
-    the flattened version and the data object. 
+    the flattened version and the data object. The input objects remain unmodified so if 
+    you delete a key that comes from the inputs and then re-compile, currently it will
+    add the key back into the flattened dictionary. I added the _masked_keys attribute
+    as a way of tracking keys that we want to stay deleted from the input dicts, but 
+    handling that can be really complicated to get right so basically just be careful 
+    about doing anything that requires re-compiling (currently just modifying or appending
+    the input dicts.)
 
     Arguments:
         data (dict, None): The current data dictionary.
