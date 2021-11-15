@@ -11,6 +11,8 @@ from mpl_toolkits.mplot3d import Axes3D
 # from sklearn.neighbors import NearestNeighbors
 from sklearn.cluster import DBSCAN, AgglomerativeClustering
 
+from labeler import labeler_module
+
 
 class ObjectDetector(reip.Block):
     """
@@ -23,6 +25,9 @@ class ObjectDetector(reip.Block):
     clustering_type = "DBSCAN"
     morph_trans = False
     cc_type = "2D"
+    distance = 5
+    subcluster = False
+    count_threshold = 30
 
     def morphological_transformation(self, mask):
         kernel = np.ones((3, 3), np.uint8)
@@ -36,17 +41,6 @@ class ObjectDetector(reip.Block):
         # res = np.concatenate([data, morpho], axis=2)
 
         return morpho
-
-    # def connected_component_labelling(self, mask):
-    #     ret, labels = cv2.connectedComponents(mask, connectivity=8)
-    #     label_hue = np.uint8(179 * labels / np.max(labels))
-    #     blank_ch = 255 * np.ones_like(label_hue)
-    #     labeled_mask = cv2.merge([label_hue, blank_ch, blank_ch])
-    #     labeled_mask = cv2.cvtColor(labeled_mask, cv2.COLOR_HSV2BGR)
-    #     labeled_mask[label_hue == 0] = 0
-    #     labeled_mask = cv2.cvtColor(labeled_mask, cv2.COLOR_BGR2RGB)
-    #
-    #     return labels, labeled_mask
 
     def connected_component_3d(self, xyz, mask, dist=1):
         # print('mask', sum(mask))
@@ -78,9 +72,9 @@ class ObjectDetector(reip.Block):
             # print('cluster_list', cluster_list.shape)
             # print('labels_obj', labels_obj.shape)
             labels_obj[cluster_list[:, 0], 0] = cluster_list[:, 1] + 1
-            labels[mask.reshape(-1,) > 0] = labels_obj
+            labels[mask.reshape(-1, ) > 0] = labels_obj
         # else:
-            # print('cluster_list',cluster_list)
+        # print('cluster_list',cluster_list)
 
         # visualize
         # df = pd.DataFrame(cs, columns=['x', 'y', 'z'])
@@ -96,6 +90,10 @@ class ObjectDetector(reip.Block):
 
         return labels.reshape(mask.shape)
 
+    def cc_labels(self, mask_r, data_r):
+        labeler_module.label(mask_r, data_r, self.distance)
+        return mask_r
+
     def spatial_detection(self, data):
         """
         1. Morphological operation: closing
@@ -105,8 +103,8 @@ class ObjectDetector(reip.Block):
         :return:
         """
         r = data[:, :, 3]
-        mask = (r > 1.e-6).astype(np.uint8)
-        # print('mask', sum(mask))
+        # mask = (r > 1.e-6).astype(np.uint8)
+        mask = (r > 1.e-6).astype(np.uint32)
 
         # Morphological transformation
         if self.morph_trans:
@@ -117,29 +115,43 @@ class ObjectDetector(reip.Block):
         if self.cc_type == "2D":
             ret, labels = cv2.connectedComponents(mask, connectivity=8)  # consider distance
         else:
-            xyz = data[:, :, :3]
-            labels = self.connected_component_3d(xyz, mask)
+            # xyz = data[:, :, :3]
+            # labels = self.connected_component_3d(xyz, mask)
+            labels = self.cc_labels(mask, r.astype(np.double))
+
+        xy = data[:, :, :2]
+        labels = self.reassign_labels(labels, xy)
 
         res = np.stack([r, mask, labels], axis=2)
         return res
 
-    # def spatial_clustering(self, data):
-    #     resolution, channel, _ = data.shape
-    #     xyz = data[:, :, :3]
-    #     bg_mask = np.nonzero(data[:, :, 3] == 0)
-    #
-    #     if self.clustering_type == "DBSCAN":
-    #         clustering = DBSCAN(eps=0.3, min_samples=10).fit(xyz.reshape(-1,3))  # eps: meter
-    #     elif self.clustering_type == "Hierarchical":
-    #         clustering = AgglomerativeClustering(distance_threshold=0.3)
-    #
-    #     labels = clustering.labels_
-    #     labels[bg_mask[0],bg_mask[1]]
-    #
-    #     res = np.concatenate([data, labels.reshape(resolution, channel, 1)], axis=2)
-    #     print(res.shape)
-    #
-    #     return data
+    def reassign_labels(self, labels, xy):
+        max_label = np.amax(labels)
+        label_count = []
+
+        new_labels = np.zeros(labels.shape).astype(np.uint8)
+        for l in range(1, max_label + 1):
+            count_ = np.count_nonzero(labels == l)
+            label_count.append((l, count_))
+
+        if self.subcluster:
+            clustering = DBSCAN(eps=0.3, min_samples=3)
+            for idx, value in enumerate(label_count):
+                if value[1] > self.count_threshold:
+                    xy_ = xy[labels == value[0], :].reshape(-1, 2)
+                    clustering.fit(xy_)  # eps: meter
+                    sub_clusters = clustering.labels_
+                    labels[labels == value[0]] = sub_clusters + max_label + 1
+                    for c in range(np.amax(sub_clusters) + 1):
+                        count_ = np.count_nonzero(sub_clusters == c)
+                        label_count.append((c + max_label + 1, count_))
+                    label_count.remove(value)
+
+        label_count.sort(key=lambda x: -x[1])
+        for idx, value in enumerate(label_count):
+            new_labels[labels == value[0]] = idx + 1
+
+        return new_labels
 
     def process(self, data, meta):
         assert (meta["data_type"] == "lidar_bgfiltered"), "Invalid packet"

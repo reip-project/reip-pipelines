@@ -209,7 +209,7 @@ class Plotter(reip.Block):
             if i == 0:
                 plt.imshow(np.repeat(dat, 3, axis=0), vmin=0, vmax=10)
             elif i == 2:
-                colors = plt.cm.get_cmap('Set3').colors
+                colors = plt.cm.get_cmap('Set3').colors  # 'Set2, 'Set3':12
                 newColors = list(colors)
                 newColors.insert(0, (0, 0, 0))
                 newColorMap = ListedColormap(newColors)
