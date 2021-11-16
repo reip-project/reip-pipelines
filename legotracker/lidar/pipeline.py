@@ -47,7 +47,7 @@ def sensor_stream(live=True, filter=None, plot=True):
 
     if filter is not None:
         bg = BackgroundFilter(name="BG", filename=filter, sigma=5)
-        objDetector = ObjectDetector(name="Clustering", cc_type="3D", distance=3,subcluster=True)
+        objDetector = ObjectDetector(name="Clustering", cc_type="3D", distance=1,subcluster=True)
         filtered = stream.to(bg) \
             .to(objDetector)
     else:

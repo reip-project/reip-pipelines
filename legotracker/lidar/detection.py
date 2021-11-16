@@ -1,6 +1,7 @@
 import reip
 import numpy as np
 import cv2
+import copy
 
 import pandas as pd
 import networkx as nx
@@ -25,7 +26,7 @@ class ObjectDetector(reip.Block):
     clustering_type = "DBSCAN"
     morph_trans = False
     cc_type = "2D"
-    distance = 5
+    distance = 1
     subcluster = False
     count_threshold = 30
 
@@ -136,7 +137,7 @@ class ObjectDetector(reip.Block):
 
         if self.subcluster:
             clustering = DBSCAN(eps=0.3, min_samples=3)
-            for idx, value in enumerate(label_count):
+            for idx, value in enumerate(copy.deepcopy(label_count)):
                 if value[1] > self.count_threshold:
                     xy_ = xy[labels == value[0], :].reshape(-1, 2)
                     clustering.fit(xy_)  # eps: meter
