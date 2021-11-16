@@ -29,6 +29,7 @@ class ObjectDetector(reip.Block):
     distance = 1
     subcluster = False
     count_threshold = 30
+    min_cluster_size = 3
 
     def morphological_transformation(self, mask):
         kernel = np.ones((3, 3), np.uint8)
@@ -114,11 +115,11 @@ class ObjectDetector(reip.Block):
 
         # Connected Component labelling
         if self.cc_type == "2D":
-            ret, labels = cv2.connectedComponents(mask, connectivity=8)  # consider distance
+            ret, labels = cv2.connectedComponents(copy.deepcopy(mask), connectivity=8)  # consider distance
         else:
             # xyz = data[:, :, :3]
             # labels = self.connected_component_3d(xyz, mask)
-            labels = self.cc_labels(mask, r.astype(np.double))
+            labels = self.cc_labels(copy.deepcopy(mask), r.astype(np.double))
 
         xy = data[:, :, :2]
         labels = self.reassign_labels(labels, xy)
@@ -133,7 +134,10 @@ class ObjectDetector(reip.Block):
         new_labels = np.zeros(labels.shape).astype(np.uint8)
         for l in range(1, max_label + 1):
             count_ = np.count_nonzero(labels == l)
-            label_count.append((l, count_))
+            if count_ < self.min_cluster_size:
+                labels[labels == l] = 0
+            else:
+                label_count.append((l, count_))
 
         if self.subcluster:
             clustering = DBSCAN(eps=0.3, min_samples=3)

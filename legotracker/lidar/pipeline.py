@@ -36,18 +36,20 @@ def sensor_plot():
 
 def sensor_stream(live=True, filter=None, plot=True):
     if live:
-        writer = NumpyWriter(name="Writer", filename_template="data/moving3/%d")
+        # writer = NumpyWriter(name="Writer", filename_template="data/moving3/%d")
+        writer = NumpyWriter(name="Writer", filename_template="data/lab_obj/%d")
         with reip.Task("Stream_Task"):
             sensor = OS1(name="Sensor", sensor_ip=SENSOR_IP, dest_ip=DEST_IP, mode=MODE)
         stream = Parser(name="Parser", roll=True)(sensor) \
             .to(Formatter(name="Formatter", background=True))
         stream.to(writer).to(BH(name="Writer_BH"))
     else:
-        stream = NumpyReader(name="Reader", filename_template="data/moving3/%d", max_rate=20)
+        # stream = NumpyReader(name="Reader", filename_template="data/moving3/%d", max_rate=20)
+        stream = NumpyReader(name="Reader", filename_template="data/lab_obj/%d", max_rate=20)
 
     if filter is not None:
         bg = BackgroundFilter(name="BG", filename=filter, sigma=5)
-        objDetector = ObjectDetector(name="Clustering", cc_type="3D", distance=1,subcluster=True)
+        objDetector = ObjectDetector(name="Clustering", cc_type="3D", distance=1, min_cluster_size=5)
         filtered = stream.to(bg) \
             .to(objDetector)
     else:
@@ -69,7 +71,7 @@ if __name__ == '__main__':
     # filename = analyze_background(plot=True)
 
     # Record filtered data
-    # sensor_stream(live=True, filter=None, plot=False)  # bgmatrix: "bg/bgmask/bgmask4"
-    sensor_stream(live=False, filter="data/bgmask/bgmask4", plot=True)  # bgmatrix: "bg/bgmask/bgmask4"
+    # sensor_stream(live=True, filter=None, plot=False)
+    sensor_stream(live=False, filter="data/lab_bg/bgmask4", plot=True)  # bgmatrix: "bg/bgmask/bgmask4"
 
     reip.default_graph().run(duration=None, stats_interval=1)

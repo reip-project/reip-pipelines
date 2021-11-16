@@ -199,6 +199,8 @@ class Plotter(reip.Block):
         m = data[:, :, 1].T
         l = data[:, :, 2].T
 
+
+
         # c = data[:, :, -1].T # "closing"
 
         plt.clf()

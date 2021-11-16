@@ -6,9 +6,12 @@ import logging
 logging.getLogger('matplotlib').setLevel(logging.WARNING)
 import matplotlib.pyplot as plt
 
-src_dir = "data/bgsrc"
-save_dir = "data/bgmask"
+# src_dir = "data/bgsrc"
+# save_dir = "data/bgmask"
 
+
+src_dir = "data/lab"
+save_dir = "data/lab_bg"
 
 def plot_BG(data, filename):
     ave = data[:, :, 0].T
@@ -38,15 +41,19 @@ def background_detection(data):
     masks = (data > 1.e-6).astype(np.int8)
     n = np.sum(masks, axis=2)
     enough = n > (masks.shape[2] // 2)  # valid points
+    idx = np.nonzero(enough)
 
     sums = np.sum(np.multiply(data, masks), axis=2)
-    mean = sums / n
+    mean = np.zeros_like(sums)
+    mean[idx] = sums[idx] / n[idx]
 
     squares = np.sum(np.multiply(np.power(data - mean[:, :, np.newaxis], 2), masks), axis=2)
-    std = np.sqrt(squares / n)
+    std = np.zeros_like(mean)
+    std[idx] = np.sqrt(squares[idx] / n[idx])
+    std = np.minimum(std, 1.0)
     res = np.stack([mean, std, enough.astype(np.float32)], axis=2)
 
-    res = np.nan_to_num(res)
+    # res = np.nan_to_num(res)
 
     return res
 
