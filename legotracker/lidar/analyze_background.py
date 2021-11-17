@@ -6,12 +6,8 @@ import logging
 logging.getLogger('matplotlib').setLevel(logging.WARNING)
 import matplotlib.pyplot as plt
 
-# src_dir = "data/bgsrc"
-# save_dir = "data/bgmask"
+import reip
 
-
-src_dir = "data/lab"
-save_dir = "data/lab_bg"
 
 def plot_BG(data, filename):
     ave = data[:, :, 0].T
@@ -53,12 +49,14 @@ def background_detection(data):
     std = np.minimum(std, 1.0)
     res = np.stack([mean, std, enough.astype(np.float32)], axis=2)
 
-    # res = np.nan_to_num(res)
-
     return res
 
 
-def analyze_background(plot=True, fidx=4, frame_range=(40, 60)):
+def analyze_background(src_dir="data/lab", save_dir="data/lab_bg", override=False,
+                       plot=True, fidx=2, frame_range=(40, 60)):
+    if not os.path.exists(save_dir):
+        os.mkdir(save_dir)
+
     st, ed = frame_range
     data = np.stack([np.load(os.path.join(src_dir, "{}.npy".format(i)))[:, :, 3] for i in range(st, ed)], axis=2)
 

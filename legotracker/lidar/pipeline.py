@@ -1,5 +1,13 @@
-import reip
+import os
+import fire
+import sys
+import inspect
 
+currentdir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
+parentdir = os.path.dirname(currentdir)
+sys.path.insert(0, parentdir)
+
+import reip
 from dummies import BlackHole as BH
 from numpy_io import NumpyWriter, NumpyReader
 from plotter import Plotter
@@ -34,18 +42,24 @@ def sensor_plot():
     reader.to(plotter, strategy="latest").to(BH(name="Plotter_BH"))
 
 
-def sensor_stream(live=True, filter=None, plot=True):
+def sensor_stream(dir="/home/shuya/research/reip-pipelines/legotracker/lidar/data/lab_obj", override=False,
+                  filter="/home/shuya/research/reip-pipelines/legotracker/lidar/data/lab_bg/bgmask4",
+                  live=True, plot=True):
+    filename = os.path.join(dir, "%d")
+
     if live:
-        # writer = NumpyWriter(name="Writer", filename_template="data/moving3/%d")
-        writer = NumpyWriter(name="Writer", filename_template="data/lab_obj/%d")
+        if os.path.exists(dir) and not override:
+            raise RuntimeError(dir + " already exists! Set override=True to reuse?")
+        reip.util.ensure_dir(filename)
+
+        writer = NumpyWriter(name="Writer", filename_template=filename)
         with reip.Task("Stream_Task"):
             sensor = OS1(name="Sensor", sensor_ip=SENSOR_IP, dest_ip=DEST_IP, mode=MODE)
         stream = Parser(name="Parser", roll=True)(sensor) \
             .to(Formatter(name="Formatter", background=True))
         stream.to(writer).to(BH(name="Writer_BH"))
     else:
-        # stream = NumpyReader(name="Reader", filename_template="data/moving3/%d", max_rate=20)
-        stream = NumpyReader(name="Reader", filename_template="data/lab_obj/%d", max_rate=20)
+        stream = NumpyReader(name="Reader", filename_template=filename, max_rate=20)
 
     if filter is not None:
         bg = BackgroundFilter(name="BG", filename=filter, sigma=5)
@@ -57,6 +71,8 @@ def sensor_stream(live=True, filter=None, plot=True):
 
     if plot:
         filtered.to(Plotter(name="Plotter", type="data_type", savefig=False, savegif=False), strategy="latest")
+
+    reip.default_graph().run(duration=None, stats_interval=1)
 
 
 if __name__ == '__main__':
@@ -72,6 +88,7 @@ if __name__ == '__main__':
 
     # Record filtered data
     # sensor_stream(live=True, filter=None, plot=False)
-    sensor_stream(live=False, filter="data/lab_bg/bgmask4", plot=True)  # bgmatrix: "bg/bgmask/bgmask4"
+    # sensor_stream(live=False, filter="data/lab_bg/bgmask1", plot=True)
 
-    reip.default_graph().run(duration=None, stats_interval=1)
+    # Command line interface
+    fire.Fire()
