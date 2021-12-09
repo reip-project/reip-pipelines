@@ -18,6 +18,13 @@ I wanted states to feel as organic as possible while not adding too much weight 
     assert states.mode1
     assert not states.mode2
 
+    if states.mode1:
+        ...
+    else states.mode2:
+        ...
+    else:
+        ...
+
     # turning off a state
     states.mode1(False)
     states.mode1 = False

@@ -102,6 +102,11 @@ class Source:
 
     @strategy.setter
     def strategy(self, strategy):
+        if callable(strategy):
+            self._strategy_get = strategy
+            self._strategy = strategy.__name__
+            return
+
         if strategy not in self.strategies:
             raise ValueError("Unknown strategy '{}'".format(strategy))
 

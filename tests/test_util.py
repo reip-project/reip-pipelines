@@ -154,6 +154,22 @@ asdf  6     7  asdf
     assert text.underline('a b c') == '\033[4ma b c\033[0m'
 
 
+def test_text_case_convert():
+    compare_2way_convert(text.pascal2snake, text.snake2pascal, 'HelloWorld', 'hello_world')
+    compare_2way_convert(text.kebab2snake, text.snake2kebab, 'hello-world', 'hello_world')
+    compare_2way_convert(text.pascal2camel, text.camel2pascal, 'HelloWorld', 'helloWorld')
+    compare_2way_convert(text.pascal2kebab, text.kebab2pascal, 'HelloWorld', 'hello-world')
+
+    compare_2way_convert(text.tab2space, text.space2tab, '\t', '    ')
+
+
+def compare_2way_convert(a2b, b2a, a, b):
+    assert b == a2b(a)
+    assert a == b2a(b)
+    assert a == b2a(a2b(a))
+    assert b == a2b(b2a(b))
+
+
 def test_separate():
     assert [list(range(10)), list(range(10, 15)), list(range(15, 20))] == (
         util.separate(range(20), (lambda x: x<10), (lambda x: x<15))

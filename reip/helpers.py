@@ -222,7 +222,7 @@ def make_block(__func_name__=None, __func__=None, name=None, cls=None, **clsdict
             name = name or __func__.__name__
             if __func_name__ is None:  # context function
                 cls = (_ContextBlockMixin,) + cls
-                clsdict['_context_func'] = __func__
+                clsdict['context'] = __func__
             else:  # one of init, process, finish
                 clsdict[__func_name__] = __func__
         
@@ -237,22 +237,19 @@ def make_block(__func_name__=None, __func__=None, name=None, cls=None, **clsdict
 
 
 class _ContextBlockMixin:
-    _context_func = None
-    _process_function = None
-    def __init__(self, *a, _context_func=None, **kw):
-        _context_func = self.__class__._context_func if _context_func is None else _context_func
-        self._context_func = contextmanager(_context_func)
+    def __init__(self, *a, **kw):
+        self._get_context = contextmanager(self.context)
         self.extra_posargs = a
         super().__init__(extra_kw=True, **kw)
 
-    _ctx = None
+    _ctx = _process_function = None
     def init(self):
-        # ctx represents a context manager that does init and cleanup
-        try:
-            self._ctx = self._context_func(self, *self.extra_posargs, **self.extra_kw)
+        try:  # ctx represents a context manager that does init and cleanup
+            self._ctx = self._get_context(*self.extra_posargs, **self.extra_kw)
             self._process_function = self._ctx.__enter__()
         except StopIteration as e:
             raise RuntimeError('Block context function did not yield.') from e
+        super().init()
 
     def process(self, *xs, meta):
         return self._process_function(*xs, meta=meta)
@@ -261,7 +258,17 @@ class _ContextBlockMixin:
         if self._ctx is not None:
             self._ctx.__exit__(*sys.exc_info())
             self._ctx = None
+        super().finish()
 
+    def context(self):
+        try:
+            yield lambda *xs, meta: zip(xs, meta[:])
+        finally:
+            pass
+
+
+class ContextBlock(_ContextBlockMixin, reip.Block):
+    pass
 
 class _ExtendBlockMethodsMixin:
     pass
