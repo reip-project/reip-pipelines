@@ -42,6 +42,10 @@ class State:
         '''Are we (or should we be) in this state?'''
         return self.value + self.potential > 0  # 0+0(False), 0+1(True), 1+0(True), 1-1(False)
 
+    # context manager
+    def __enter__(self): self(True)
+    def __exit__(self, *a): self(False)
+
 ```
 
 and the state machine (a dictionary of states):
