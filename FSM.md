@@ -194,7 +194,7 @@ Results:
 ```bash
 python experiments/states_speed.py compare
 ```
-```
+```python
 --------------------
 -- Timing (1,000,000x):
 
