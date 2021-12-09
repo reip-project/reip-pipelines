@@ -2,6 +2,8 @@
 
 ## At it's core, this is how the finite state machines work:
 
+(NOTE: this is for illustration purposes and is not complete code)
+
 The individual state (a value ( `bool` ) and a potential ( ∈ `[-1, 0, 1]` - think potential energy of the state value )):
 
 ```python
@@ -11,7 +13,7 @@ class State:
     potential = 0
     def __init__(self, name):
         self.name = name
-        self._callbacks = {'before': [], 'after': []}
+        self._callbacks = {'before': [], 'after': [], 'request': []}
 
     def __call__(self, value=True):
         '''Set the state value.'''
@@ -23,6 +25,7 @@ class State:
 
         # change the state
         self.value = value
+        # check if the potential has been satisfied
         if self.potential and bool(value) * 2 - 1 == self.potential:
             self.potential = 0
 
@@ -36,7 +39,7 @@ class State:
             callback(self, value)
 
     def __bool__(self):
-        '''Should we be (or are we) in this state?'''
+        '''Are we (or should we be) in this state?'''
         return self.value + self.potential > 0  # 0+0(False), 0+1(True), 1+0(True), 1-1(False)
 
 ```
@@ -47,6 +50,9 @@ and the state machine (a dictionary of states):
 
 class States:
     def __init__(self, tree):
+        self.null = State(None)
+        self._current = self.null
+
         self._states = {}  
         self.define(tree)
         # tree is nested dict of state names and their children
@@ -164,6 +170,7 @@ class Block:
 
 ## Performance
 
+Setup:
 ```python
 states = reip.util.States({'on'}, validate=True)
 on = states.on
@@ -179,8 +186,11 @@ class Baseline:
 baseline = Baseline()
 ```
 
-```
+Results:
+```bash
 python experiments/states_speed.py compare
+```
+```
 --------------------
 -- Timing (1,000,000x):
 
