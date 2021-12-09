@@ -1,8 +1,8 @@
-# State Machine Mechanics in REIP
+# Proposed State Machine Mechanics in REIP
 
-## At it's core, this is how the finite state machines work:
+## At it's core, this is how the (draft) finite state machines work:
 
-(NOTE: this is for illustration purposes and is not complete code)
+(NOTE: this is for illustration purposes and is not 100% complete code)
 
 The individual state (a value ( `bool` ) and a potential ( ∈ `[-1, 0, 1]` - think potential energy of the state value )):
 
