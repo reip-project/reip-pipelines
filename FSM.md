@@ -125,11 +125,15 @@ class Block:
 
     def __main(self):
         # the top level loop:
-        with self.state.spawned:
-            while self.state.spawned:
-                if not self.state.configured:
-                    self.__reconfigure()
-                self.__run_configured()
+        try:
+            with self.state.spawned:
+                while self.state.spawned:
+                    if not self.state.configured:
+                        self.__reconfigure()
+                    self.__run_configured()
+        finally:
+            self.state.done()
+        
 
     def __run_configured(self):
         sw, exc = self._sw, self._except
@@ -170,6 +174,9 @@ class Block:
         finally:
             with self.state.finishing, sw('finish'), exc('finish'):
                 self.finish()
+
+    def close(self):
+        self.state.done.request()
 ```
 
 ## Performance
