@@ -49,6 +49,12 @@ on(False)
 bool(on)
 '''
 
+ENABLE_DISABLE_WITH_NO_ATTR = '''
+with on:
+    bool(on)
+bool(on)
+'''
+
 ENABLE_DISABLE_NO_NOTIFY = '''
 states.on(notify=False)
 bool(states.on)
@@ -80,6 +86,7 @@ def compare(**kw):
     timt(ENABLE_DISABLE_REQUEST, compare=base, **kw)
     timt(ENABLE_DISABLE_NO_NOTIFY, compare=base, **kw)
     timt(ENABLE_DISABLE_NO_ATTR, compare=base, **kw)
+    timt(ENABLE_DISABLE_WITH_NO_ATTR, compare=base, **kw)
 
 
 

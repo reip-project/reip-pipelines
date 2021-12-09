@@ -210,7 +210,7 @@ bool(baseline.on)
 baseline.setvalue(False)
 bool(baseline.on)
 
--- 4.34084e-07s/it. 0.4341s total.
+-- 4.96916e-07s/it. 0.4969s total.
 
 --------------------
 -- Timing (1,000,000x):
@@ -220,8 +220,8 @@ bool(baseline.on)
 baseline.on = False
 bool(baseline.on)
 
--- 2.79461e-07s/it. 0.2795s total.
--- 0.643794x slower
+-- 3.59699e-07s/it. 0.3597s total.
+-- 0.723863x slower
 
 --------------------
 -- Timing (1,000,000x):
@@ -230,8 +230,8 @@ with baseline:
     bool(baseline.on)
 bool(baseline.on)
 
--- 4.74217e-07s/it. 0.4742s total.
--- 1.092454x slower
+-- 5.22215e-07s/it. 0.5222s total.
+-- 1.050913x slower
 
 --------------------
 -- Timing (1,000,000x):
@@ -241,8 +241,8 @@ bool(states.on)
 states.on(False)
 bool(states.on)
 
--- 4.18522e-06s/it. 4.1852s total.
--- 9.641506x slower
+-- 4.7474e-06s/it. 4.7474s total.
+-- 9.553729x slower
 
 --------------------
 -- Timing (1,000,000x):
@@ -251,8 +251,8 @@ with states.on:
     bool(states.on)
 bool(states.on)
 
--- 4.03224e-06s/it. 4.0322s total.
--- 9.289079x slower
+-- 3.98908e-06s/it. 3.9891s total.
+-- 8.027679x slower
 
 --------------------
 -- Timing (1,000,000x):
@@ -262,8 +262,8 @@ bool(states.on)
 states.on.request(False)
 bool(states.on)
 
--- 3.65265e-06s/it. 3.6526s total.
--- 8.414608x slower
+-- 3.70376e-06s/it. 3.7038s total.
+-- 7.453497x slower
 
 --------------------
 -- Timing (1,000,000x):
@@ -273,8 +273,8 @@ bool(states.on)
 states.on(False, notify=False)
 bool(states.on)
 
--- 2.76043e-06s/it. 2.7604s total.
--- 6.359211x slower
+-- 2.9194e-06s/it. 2.9194s total.
+-- 5.875034x slower
 
 --------------------
 -- Timing (1,000,000x):
@@ -284,7 +284,17 @@ bool(on)
 on(False)
 bool(on)
 
--- 2.35671e-06s/it. 2.3567s total.
--- 5.429166x slower
+-- 2.40287e-06s/it. 2.4029s total.
+-- 4.835569x slower
+
+--------------------
+-- Timing (1,000,000x):
+
+with on:
+    bool(on)
+bool(on)
+
+-- 2.72084e-06s/it. 2.7208s total.
+-- 5.475457x slower
 
 ```
