@@ -1,4 +1,4 @@
-# State Machine Mechanics
+# State Machine Mechanics in REIP
 
 ## At it's core, this is how the finite state machines work:
 
