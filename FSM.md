@@ -176,7 +176,7 @@ class Block:
 
 Setup:
 ```python
-states = reip.util.States({'on'}, validate=True)
+states = reip.util.States({'on'})
 on = states.on
 
 class Baseline:
