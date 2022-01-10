@@ -56,7 +56,7 @@ def getLogger(block, level=DEFAULT_LEVEL, strrep=None, compact=True, propagate=F
 
     if is_block:
         log.addFilter(InjectData(dict(
-            block=StrRep(block, strrep if strrep else 'short_str' if compact else None)
+            block=StrRep(block, __str__=strrep if strrep else 'short_str' if compact else None)
         )))
     log.propagate = propagate
     log.setLevel(aslevel(DEFAULT_LEVEL if level is None else level))
@@ -99,8 +99,8 @@ def minlevel(debug=False):
 
 class StrRep:
     '''Wrapping an object to provide an alternative string representation.'''
-    def __init__(self, obj, method=None, *a, **kw):
-        self._str = getattr(obj, method or '__str__', None) or getattr(obj, '__str__')
+    def __init__(self, obj, *a, __str__=None, **kw):
+        self._str = __str__ if callable(__str__) else getattr(obj, __str__ or '__str__')
         self.a, self.kw = a, kw
 
     def __str__(self):
