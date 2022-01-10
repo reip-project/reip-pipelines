@@ -1,5 +1,10 @@
 import re
 
+#           pascal    camel    snake   kebab
+# pascal    -
+# camel     x         -        
+# snake     x         3        -       
+# kebab     2         2        x       -
 
 def pascal2snake(text):
     return re.sub(r'((?<=[a-z0-9])[A-Z]|(?!^)(?<!_)[A-Z](?=[a-z]))', r'_\1', text).lower()
@@ -21,6 +26,16 @@ def pascal2kebab(text):
     return snake2kebab(pascal2snake(text))
 def kebab2pascal(text):
     return snake2pascal(kebab2snake(text))
+
+def camel2snake(text):
+    return pascal2snake(camel2pascal(text))
+def snake2camel(text):
+    return pascal2camel(snake2pascal(text))
+
+def camel2kebab(text):
+    return snake2kebab(pascal2snake(camel2pascal(text)))
+def kebab2camel(text):
+    return pascal2camel(snake2pascal(kebab2snake(text)))
 
 
 # Text formatting
