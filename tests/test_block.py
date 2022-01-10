@@ -65,9 +65,13 @@ def test_connections():
 
     # test missing sources
     with reip.Graph() as g:
-        output = reip.Block(max_generated=1, n_inputs=-1, log_level='debug')(*all_inputs)
+        output = reip.Block(max_generated=1, n_inputs=-1, log_level='debug', name='hasjdkfhajfdkh')(*all_inputs)
         output.sources[0] = None
     with pytest.raises(RuntimeError):
+        try:
+            g.run()
+        except Exception as e:
+            raise e['hasjdkfhajfdkh'].exc
         g.run()
 
 
@@ -99,9 +103,15 @@ def test_process_function_returns():
 def test_init_errors_from_block_in_task():
     with reip.Graph() as g:
         with reip.Task() as t:
-            reip.Block(max_generated=10)(reip.Block(), reip.Block())
+            reip.Block(max_generated=10)(reip.Block(name='1234512345'), reip.Block())
     with pytest.raises(RuntimeError, match=r'Sources \[0\] in .+ not connected\.'): # r'Expected \d+ sources'
-        g.run()
+        try:
+            g.run()
+            for b in g.iter_blocks(True):
+                print(4444, b.name, b._exception)
+        except Exception as e:
+            print(5555, e.excs)
+            raise e['1234512345'].exc
 
 
 
@@ -179,7 +189,7 @@ class StateTester(reip.Block):
         assert running is None or self.running == running
         assert done is None or self.done == done
         assert terminated is None or self.terminated == terminated
-        assert self.error == (error is not None)
+        assert bool(self.error) == (error is not None)
         assert (
             self._exception is None if error is None else
             isinstance(self._exception, error))

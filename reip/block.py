@@ -3,11 +3,15 @@
 I'm starting with a striped down version that doesn't handle connections or anything atm.
 '''
 import time
+from time import time as gettime, sleep
+import inspect
 import reip
-from contextlib import contextmanager
+from contextlib import contextmanager, closing
 import remoteobj
 from reip.util import text
+from . import exceptions
 from reip.exceptions import ExceptionTracker, WorkerExit
+from . import base
 
 
 class _BlockConnectable:
@@ -87,15 +91,23 @@ def iter_idx(i, n):
     
 
 
-class Block(_BlockConnectable):
+class Block(_BlockConnectable, base.Worker):
     USE_META_CLASS = True
     EXTRA_KW = False
     KW_TO_ATTRS = True
+    META_OVERLAY = True
     _delay = 1e-4
     _wait_delay = 1e-2
+    _exception_annotator = exceptions.ExceptionAnnotate()
     _agent = None
+    parent_id = task_id = None
+    _exception = None
     processed = generated = 0
     n_inputs = n_outputs = 1
+
+    def _logstate(self, s, v, pot=None, **kw):
+        if self.name == 'block-10':
+            self.log.warning(f'{s} {v} {pot}')
 
     def __init__(self, 
                  n_inputs=None, n_outputs=None,
@@ -103,9 +115,8 @@ class Block(_BlockConnectable):
                 #  extra_meta=None, 
                  max_processed=None, max_generated=None, extra_kw=None,
                  finish_processing_on_close=True, graph=None, name=None, **kw):
-        self.name = reip.auto_name(self, name=name)
-        self.parent_id, self.task_id = reip.Graph.register_instance(self, graph)
-        self.task_id = None
+        base.Worker.__init__(self, name, graph)
+
         self.state = reip.util.states.States({
             'spawned': {
                 'configured': {
@@ -113,7 +124,7 @@ class Block(_BlockConnectable):
                     'ready': {
                         'waiting': {},
                         'processing': {},
-                        'paused': {},
+                        # 'paused': {},
                     },
                     'finishing': {},
                 },
@@ -121,8 +132,10 @@ class Block(_BlockConnectable):
             },
             'done': {None: {'terminated': {}}},
             # unlinked states
-            None: {'_controlling': {}}
+            None: {'_controlling': {}, 'paused': {}}
         })
+        # self.state.add_callback(self._logstate)
+        # self.state.add_callback('request', self._logstate)
 
         self.__source_process_condition = should_process
         # self._extra_meta = extra_meta
@@ -130,7 +143,6 @@ class Block(_BlockConnectable):
         self.__max_generated = max_generated
         self.__finish_processing_on_close = finish_processing_on_close
 
-        self._except = ExceptionTracker()
         self.__throttler = Throttler(max_rate)
         self._sw = reip.util.Stopwatch(self.name)
         self.log = reip.util.logging.getLogger(self, level=log_level)
@@ -159,17 +171,14 @@ class Block(_BlockConnectable):
         elif kw:
             raise TypeError("{} got unexpected arguments: {}".format(self, ', '.join(kw)))
 
-    def __str__(self):
-        return '[B({})[{}/{}]{}]'.format(self.name, len(self.sources), len(self.sinks), self.state)
-
-    # def status(self):
-    #     return str(self)
+    def __repr__(self):
+        return '[B({})[{}/{}]{}] [agent: {}]'.format(self.name, len(self.sources), len(self.sinks), self.state, ("alive" if self._agent.is_alive() else "off") if self._agent is not None else 'none')
 
     # compat - these methods/properties are all needed by graphs/tasks
 
-    @property
-    def _thread(self):
-        return self._agent
+    # @property
+    # def _thread(self):
+    #     return self._agent
 
     @property
     def max_rate(self):
@@ -198,31 +207,34 @@ class Block(_BlockConnectable):
     @property
     def error(self):
         # return self._except.caught
-        return self._except.exception is not None
+        return self._exception is not None #self._except.exception is not None
 
     def raise_exception(self):
-        self.check_agent_exception()
+        e = exceptions.get_exception(self)
+        if e is not None:
+            raise e
 
-    @property
-    def _exception(self):
-        return self._except.exception
-
-    __BASE_EXPORT_PROPS = ['_sw', 'state', '_except', 'processed', 'generated']
-    __BLOCK_EXPORT_PROPS__ = []
     def __export_state__(self, **kw):
-        return dict((
-            (k, getattr(self, k, None)) for k in 
-            self.__BASE_EXPORT_PROPS + self.__BLOCK_EXPORT_PROPS__), **kw)
+        return {
+            '_sw': self._sw, 
+            'state': self.state, 
+            '_exception': self._exception,
+            'processed': self.processed,
+            'generated': self.generated,
+            **kw
+        }
 
     def __import_state__(self, state):
-        for k, v in state.items():
-            try:
-                x, ks = self, k.lstrip('!').split('.')
-                for ki in ks[:-1]:
-                    x = getattr(x, ki)
-                setattr(x, ks[-1], v)
-            except AttributeError:
-                raise AttributeError('Could not set attribute {} = {}'.format(k, v))
+        # self.log.info(state['state'])
+        s = state.pop('state', None)
+        if s:
+            for si in s:
+                # self.log.info(f'{si.name} - {si.value} {si.potential}')
+                self.state[si.name].value = si.value
+                self.state[si.name].potential = si.potential
+        self.__dict__.update(state)
+        # self.log.info(f"Updating state: {self.state}")
+        # self.log.info((self.__dict__, state))
 
     def output_stream(self, **kw):
         '''Create a Stream iterator which will let you iterate over the
@@ -323,49 +335,57 @@ class Block(_BlockConnectable):
 
     def spawn(self, wait=True, *, _controlling=True, _ready_flag=None, _spawn_flag=None):
         try:
-            self.state.controlling = _controlling
+            self.__reset_state()
+            self.state['_controlling'](_controlling)
             self.__check_source_connections()
             # spawn any sinks that need it
             for s in self.sinks:
                 if hasattr(s, 'spawn'):
                     s.spawn()
-            self.__reset_state()
             self.state.spawned.request()
             self._agent = reip.util.agent.Thread(self.__agent_main, daemon=True)(_spawn_flag=_spawn_flag)
             self._agent.start()
 
             if wait:
-                while self.state.spawned and not self.state.ready:
+                spawned, ready = self.state.spawned, self.state.ready
+                while spawned and not ready:
                     time.sleep(self._wait_delay)
-            if self.state.controlling:
-                self.check_agent_exception()
+            if self.state['_controlling']:
+                self.raise_exception()
+        except Exception as e:
+            self._exception = e #exceptions.safe_exception(e)
+            raise WorkerExit() from e
         finally:
-            # thread didn't start ??
-            if self._agent is None or not self._agent.is_alive():
-                self.state.spawned(False)
-                self.state.done()
+            try:
+                # thread didn't start ??
+                # self.log.error(f'{self._agent}{self._agent and self._agent.is_alive()}')
+                if self._agent is None or not self._agent.is_alive():
+                    self.state.spawned(False)
+                    self.state.done()
+                    # self.log.error(self.state)
+            except:
+                import traceback
+                traceback.print_exc()
+                raise
         return self
 
     __timeout = 30
-    def join(self, close=True, terminate=False, raise_exc=None, timeout=None):
-        try:
-            # close stream
-            if close:
-                self.close()
-            if terminate:
-                self.terminate()
-            # join any sinks that need it
-            for s in self.sinks:
-                if hasattr(s, 'join'):
-                    s.join()
-            # close thread
-            if self._agent is not None and self._agent.is_alive():
-                self._agent.join(timeout=self.__timeout if timeout is None else timeout)
-                self._agent = None
-            if (self.state.controlling if raise_exc is None else raise_exc):
-                self.check_agent_exception()
-        finally:
-            self.state.done()
+    def join(self, terminate=False, raise_exc=None, timeout=None):
+        self.close()
+        if terminate:
+            self.terminate()
+        # join any sinks that need it
+        for s in self.sinks:
+            if hasattr(s, 'join'):
+                s.join()
+        # close thread
+        if self._agent is not None and self._agent.is_alive():
+            self._agent.join(timeout=self.__timeout if timeout is None else timeout, raises=False)
+        self.state.done()
+        self._agent = None
+        # self.state.done()
+        if (self.state['_controlling'] if raise_exc is None else raise_exc):
+            self.raise_exception()
         return self
 
     def close(self, propagate=True):
@@ -399,9 +419,9 @@ class Block(_BlockConnectable):
                 f'Expected {self.n_inputs} sources '
                 f'in {self}. Found {len(self.sources)}.')
 
-    def check_agent_exception(self):
-        '''Raise any exceptions caught during agent execution. Meant to be run after joining the block.'''
-        self._except.raise_any()
+    # def check_agent_exception(self):
+    #     '''Raise any exceptions caught during agent execution. Meant to be run after joining the block.'''
+    #     self._except.raise_any()
 
     # internal state lifecycle
 
@@ -413,6 +433,7 @@ class Block(_BlockConnectable):
         self.old_processed = 0
         self.old_time = time.time()
         self.__source_signals = [None] * len(self.sources)
+        self._exception = None
 
     def __agentless_spawn(self):
         '''This is a way to spawn the block without spawning a thread. Just here for testing purposes.'''
@@ -425,29 +446,30 @@ class Block(_BlockConnectable):
     def __agent_main(self, *, _spawn_flag=None, _ready_flag=None):
         '''This is the main agent loop that is called by the thread runner.
         This is where the high level operation happens (reconfiguration, restarting, etc.).'''
-        if _spawn_flag:
-            _spawn_flag.wait()
-        with self._except:
-            try:
-                with self._sw(), self.state.spawned:  # , self._except(raises=False)
-                    try:
-                        while self.state.spawned:
-                            self.log.info(self.state)
-                            if not self.state.configured:
-                                self.__reconfigure()
-                            assert self.state.configured
-                            self.__run_configured()
-                        
-                    except WorkerExit:
-                        pass
-                    finally:
-                        self.state.configured(False)
-            finally:
-                # NOTE: I don't know the best way to handle setting terminated.
-                #       because when we get here, done is enabled, but terminated 
-                #       is still disabled in a high potential state.
-                #       right now, I have 
-                self.state.done()
+        try:
+            if _spawn_flag:
+                _spawn_flag.wait()
+            with self._sw(), self.state.spawned:  # , self._except(raises=False)
+                try:
+                    while self.state.spawned:
+                        # self.log.info(self.state)
+                        if not self.state.configured:
+                            self.__reconfigure()
+                        assert self.state.configured
+                        self.__run_configured()
+                    
+                except WorkerExit:
+                    pass
+                finally:
+                    self.state.configured(False)
+        except Exception as e:
+            self._exception = e #exceptions.safe_exception(e)
+        finally:
+            # NOTE: I don't know the best way to handle setting terminated.
+            #       because when we get here, done is enabled, but terminated 
+            #       is still disabled in a high potential state.
+            #       right now, I have 
+            self.state.done()
 
     def __reconfigure(self):
         '''This updates the configuration and possibly respawns / re-inits 
@@ -464,10 +486,14 @@ class Block(_BlockConnectable):
         configured, paused, waiting, processing = (
             self.state.configured, self.state.paused, 
             self.state.waiting, self.state.processing)
+        # pull out method lookup
+        sw, exc, src_avail = self._sw, self._exception_annotator, self.sources_available
+        read, process, write = self.__read_sources, self.__process_buffer, self.__send_to_sinks
+        self.__process_is_generator = inspect.isgeneratorfunction(self.process)
         try:
-            with self.state.initializing, self._sw('init'), self._except('init'):
+            if not configured: return 
+            with self.state.initializing, sw('init'), exc('init'):
                 self.init()
-
             with self.state.ready, self.__throttler as throttle:
                 while True:
                     # check if we are still in a configured state
@@ -479,16 +505,16 @@ class Block(_BlockConnectable):
                         if self.state.terminated:
                             break
                         # only finish up if there are sources that have items left to process
-                        if not self.sources or not self.sources_available():
+                        if not self.sources or not src_avail():
                             break
                         # otherwise, just finish up processing what's left
                         # XXX: what to do with circular block connections - it will never exit....
                         
                     # set a time limit
-                    if duration and time.time() - t0 > duration:
+                    if duration and gettime() - t0 > duration:
                         break
                     # add a small delay
-                    time.sleep(self._delay)
+                    sleep(self._delay)
                     # check if we're paused
                     if paused:
                         continue
@@ -496,33 +522,33 @@ class Block(_BlockConnectable):
                     if throttle():
                         continue
                     # check source availability
-                    if not self.sources_available():
-                        waiting or waiting()
+                    if not src_avail():
+                        waiting()
                         continue
                     waiting(False)
 
                     # good to go!
                     with processing:
                         # get inputs
-                        with self._sw('source'):
-                            inputs = self.__read_sources()
+                        with sw('source'):
+                            inputs = read()
                             if inputs is None or not processing:  # check if we exited based on the inputs
                                 continue
                             buffers, meta = inputs
 
                         # process each input batch
-                        with self._sw('process'), self._except('process'): #
-                            outputs = self.__process_buffer(buffers, meta)
+                        with sw('process'), exc('process'): #
+                            outputs = process(buffers, meta)
 
                         # send each output batch to the sinks
-                        with self._sw('sink'):
-                            self.__send_to_sinks(outputs, meta)
+                        with sw('sink'):
+                            write(outputs, meta)
 
         except KeyboardInterrupt:
             self.log.info(text.yellow('Interrupting'))
             self.terminate()
         finally:
-            with self.state.finishing, self._sw('finish'), self._except('finish'):
+            with self.state.finishing, sw('finish'), exc('finish'):
                 self.finish()
 
 
@@ -565,22 +591,14 @@ class Block(_BlockConnectable):
 
     def __send_to_sinks(self, outputs, input_meta):
         '''Send the outputs to the sink.'''
-        for outs in (outputs if is_generator(outputs) else iter((outputs,))):
-            if outs is None:  # next
-                continue
-
-            # convert outputs to a consistent format
-            outs = prepare_output(outs, input_meta, as_meta=Block.USE_META_CLASS)
-            # pass to sinks
-            for sink, out in zip(self.sinks, outs):
-                if sink is not None and out is not None:
-                    sink.put(out)
-
-            # count the number of buffers generated
-            self.generated += 1
-            # limit the number of buffers
-            if self.__max_generated and self.generated >= self.__max_generated:
-                self.close(propagate=True)
+        if self.__process_is_generator:
+            with closing(outputs):  # will automatically close generator on exit
+                for outs in outputs:
+                    if outs is None:  # skip
+                        continue
+                    self.__send_item_to_sinks(outs, input_meta)
+        elif outputs is not None:
+            self.__send_item_to_sinks(outputs, input_meta)
 
         # send signals to any sources
         for i, src in enumerate(self.sources):
@@ -589,6 +607,20 @@ class Block(_BlockConnectable):
             else:
                 src.next()
             self.__source_signals[i] = None
+
+    def __send_item_to_sinks(self, outputs, input_meta):
+        # convert outputs to a consistent format
+        outs = prepare_output(outputs, input_meta, as_meta=Block.USE_META_CLASS)
+        # pass to sinks
+        for sink, out in zip(self.sinks, outs):
+            if sink is not None and out is not None:
+                sink.put(out)
+
+        # count the number of buffers generated
+        self.generated += 1
+        # limit the number of buffers
+        if self.__max_generated and self.generated >= self.__max_generated:
+            self.close(propagate=True)
 
     def source_signal(self, signals):
         '''Send signals to the sources.
@@ -736,7 +768,7 @@ def prepare_output(outputs, input_meta=None, as_meta=True):
 
     if isinstance(outputs, (list, tuple)):
         # detect single output shorthand
-        if len(outputs) >= 2 and isinstance(outputs[1], (dict, reip.util.Meta)):
+        if len(outputs) >= 2 and isinstance(outputs[1], dict):
             outputs = [outputs]
 
     # normalize metadata
@@ -766,8 +798,10 @@ def construct_signal_indices(signal, *indices, signals=None):
     return signals
 
 
-def is_generator(iterable):
-    return not hasattr(iterable,'__len__') and hasattr(iterable,'__iter__')
+# def is_generator(iterable):
+#     return not hasattr(iterable,'__len__') and hasattr(iterable,'__iter__')
+
+
 
 
 class RelativeThrottler:
@@ -832,14 +866,16 @@ class ClockThrottler:
         if rate:
             interval = 1 / rate
             ti = time.time()
-            i = (ti - self.t_start) // interval
-            if i == self.i_last:
+            t0 = self.t_start
+            i = (ti - t0) // interval
+            i_last = self.i_last
+            if i == i_last:
                 dt = max(0, interval - (ti - i * interval))
                 if dt:
-                    time.sleep(min(dt, self.rate_chunk) if self.rate_chunk else dt)
-            
-                i = (time.time() - self.t_start) // interval
-                if i == self.i_last:
+                    rate_chunk = self.rate_chunk
+                    time.sleep(min(dt, rate_chunk) if rate_chunk else dt)
+                    i = (time.time() - t0) // interval
+                if i == i_last:
                     return True
             self.i_last = i
         return False

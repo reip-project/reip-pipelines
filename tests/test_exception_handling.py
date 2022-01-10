@@ -28,7 +28,7 @@ class BadBlock(reip.Block):
 class BadFinish(reip.Block):
     n_inputs = -1
     def process(self, meta):
-        return reip.CLOSE
+        self.close()
 
     def finish(self):
         time.sleep(0.01)
@@ -43,16 +43,29 @@ def agg_generated_count(g):
     return g.generated if isinstance(g, reip.Block) else sum(agg_generated_count(b) for b in g.blocks)
 
 def _test_run_error(g, init=False):
-    with pytest.raises(CustomError):
+    # with pytest.raises(CustomError):
+    try:
         g.run()
         print(g._except)
         for b in g.blocks:
             print(b._except)
+    except reip.exceptions.GraphException as e:
+        # XXX AHHHHHH WTF How to handle this ??????????????????
+        print(1,[type(ei).__name__ for ei in e])
+        print(1,[ei.__dict__ for ei in e])
+        print(2,[type(ei.exc if isinstance(ei, reip.exceptions.SafeException) else ei).__name__ for ei in e])
+        # assert any(ei for ei in e if (isinstance(ei.exc, CustomError) if isinstance(ei, reip.exceptions.SafeException) else isinstance(ei, CustomError)))
+        assert any(ei for ei in e if isinstance(ei, CustomError))
     assert agg_generated_count(g) == 0
 
-    with pytest.raises(CustomError):
+    # with pytest.raises(CustomError):
+    try:
         with g.run_scope():
             time.sleep(0.02)
+    except reip.exceptions.GraphException as e:
+        print(1,[type(ei).__name__ for ei in e])
+        print(2,[type(ei.exc if isinstance(ei, reip.exceptions.SafeException) else ei).__name__ for ei in e])
+        assert any(ei for ei in e if isinstance(ei, CustomError))
     assert agg_generated_count(g) == 0
 
     # if init:
@@ -65,12 +78,18 @@ def _test_run_error(g, init=False):
     #     g.join()
     # assert agg_generated_count(g) == 0
 
-    with pytest.raises(CustomError):
+    # with pytest.raises(CustomError):
+    try:
         try:
             g.spawn()
         finally:
             time.sleep(0.02)
             g.join()
+    except reip.exceptions.GraphException as e:
+        print(1,[type(ei).__name__ for ei in e])
+        print(2,[type(ei.exc if isinstance(ei, reip.exceptions.SafeException) else ei).__name__ for ei in e])
+        assert any(ei for ei in e if isinstance(ei, CustomError))
+                
     assert agg_generated_count(g) == 0
 
 

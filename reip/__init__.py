@@ -8,16 +8,20 @@ from .constants import *
 from . import exceptions
 from . import util
 from .util import Meta
+from . import base
 
 from .stores.interface import *
 from . import stores
 from .stores import Producer
 from .block import *
 from .graph import *
+from . import task
 from .task import *
-Graph._initialize_default_graph()
+Graph._context_scope.init(Graph(name='_default_'))
 from .helpers import *
 from . import blocks
+
+mp.set_start_method('fork')
 
 def yurii_mode():
     '''Any configurations that can be made to put things the way Yurii likes them.'''
