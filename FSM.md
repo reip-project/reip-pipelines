@@ -179,6 +179,10 @@ class Block:
         self.state.done.request()
 ```
 
+The main idea is that you have the state executor which actually governs the 
+current state (`Block.__main`) and methods like `Block.close` which requests
+the executor be in a state.
+
 ## Performance
 
 Setup:

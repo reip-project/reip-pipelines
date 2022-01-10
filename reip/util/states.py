@@ -167,7 +167,97 @@ import reip
 class InvalidTransition(RuntimeError):
     pass
 
-class State:
+
+class BaseState:
+    '''This is the base state class that has all of the state checking interfaces without 
+    the state change interfaces. This is so we can reuse things for read-only states.'''
+    value = False
+    potential = 0
+    def __init__(self, name=None, parents=None, children=None):
+        self._callbacks = {'before': [], 'after': [], 'request': []}
+        self.name = name
+        # used in states model object - given default values for convenience/robustness
+        self._parents = () if parents is None else parents
+        self._children = set() if children is None else children
+
+    def __repr__(self):
+        return '<{} {}>'.format(self.__class__.__name__, self)
+
+    def __str__(self):
+        return '({}{}{})'.format(
+            '✔' if self.value else '✘',
+            '+' if self.potential > 0 else '-' if self.potential < 0 else '',
+            self.name)
+
+    def __hash__(self):
+        '''Can be used in place of a name for dict lookups.'''
+        return hash(self.name)
+
+    def __bool__(self):
+        '''Are we and should we be in a positive state? If false, either we're 
+        not in the state or we're trying to exit the state.'''
+        return self.value + self.potential > 0  # 0+0(False), 0+1(True), 1+0(True), 1-1(False)
+
+    def __eq__(self, other):
+        '''Comparisons are done based on value, unless you're comparing with a 
+        string (which compares with the name).'''
+        me = self.name if isinstance(other, str) else self.value
+        other = other.value if isinstance(other, State) else other
+        return me == other
+
+    def __contains__(self, child):
+        return child in self._children
+
+    # callbacks
+
+    def add_callback(self, name=None, func=None):
+        '''Add callback functions to be called during the state's lifecycle.
+        
+        Examples:
+        >>> @state.add_callback
+        >>> def log(state, value): 
+        ...     print(state, value)
+        >>> state.add_callback('before', lambda state, value: print(state, value))
+        >>> state.add_callback('request', print)
+        >>> state.add_callback(print)  # defaults to 'after'
+        '''
+        def add_cb(func, name=None):
+            self._callbacks[name or 'after'].append(func)
+            return func
+        return (
+            add_cb(func, name) if callable(func) else
+            add_cb(name) if callable(name) else
+            lambda func: add_cb(func, name))
+    on = add_callback
+
+    def do_callbacks(self, name, *a, **kw):
+        for f in self._callbacks[name]:
+            f(self, *a, **kw)
+
+    # proxies
+
+    def readonly(self):
+        '''This creates a read-only view of a state. Meaning that this object won't be able to change it.'''
+        return ReadOnlyState(self)
+
+    def process_safe(self):
+        '''This creates a read-only state that is able to be read across another process.'''
+        return ReadOnlyProcessSafeState(self)
+
+    def process_safe_mutator(self, *a, **kw):
+        '''This creates a mutable state that is able to be read or changed across another process.
+        This is significantly slower than ``ReadOnlyProcessSafeState`` because it requires a lock
+        so that both processes can mutate.
+
+        .. code-block:: python
+
+            state = States({'paused'})
+            # replacc the paused state with a state that you can change across processes.
+            state.replace(state.paused.process_safe_mutator())
+        '''
+        return ProcessSafeState.from_state(self, *a, **kw)
+
+class State(BaseState):
     '''A single state that can be used as a boolean and context manager.
     
     You can request a state which will set the "potential" of the current state 
@@ -188,75 +278,38 @@ class State:
     But the actual state changes are still handled by the context manager (seen by doing `states.running.value`).
     This lets you distinguish between "is the state actually finished?" or "is it still finishing? why does it say it is done, but it's hanging??"
     '''
-    def __init__(self, name, default=False, parents=None, children=None):
-        self._callbacks = {'before': [], 'after': [], 'request': []}
-        self.name = name
-        self.default = default
-        self.value = default
-        self.potential = 0
-        # used in states model object - given default values for convenience/robustness
-        self._parents = () if parents is None else parents
-        self._children = set() if children is None else children
+    def __init__(self, name=None, default=False, parents=None, children=None):
+        super().__init__(name, parents, children)
+        self.value = self.default = default
 
-    def __repr__(self):
-        return '<State {}>'.format(self)
+        # these will not add if the callback is not defined
+        self.add_callback('before', getattr(self, 'before_change', None))
+        self.add_callback('after', getattr(self, 'on_change', None))
+        self.add_callback('request', getattr(self, 'on_request', None))
 
-    def __str__(self):
-        return '({}{}{})'.format(
-            '✔' if self.value else '✘',
-            '+' if self.potential > 0 else '-' if self.potential < 0 else '',
-            self.name)
-
-    def __hash__(self):
-        '''Can be used in place of a name for dict lookups.'''
-        return hash(self.name)
-
-    def __bool__(self):
-        '''Are we and should we be in a positive state? If false, either we're not in the state or we're trying to exit the state.'''
-        # return bool(self.potential > 0 or (self.value and self.potential == 0))
-        return self.value + self.potential > 0  # 0+0(False), 0+1(True), 1+0(True), 1-1(False)
-
-    def __eq__(self, other):
-        '''Comparisons are done based on value, unless you're comparing with a string (which compares with the name).'''
-        me = self.name if isinstance(other, str) else self.value
-        other = other.value if isinstance(other, State) else other
-        return me == other
-
-    def __contains__(self, child):
-        return child in self._children
-
-    def __call__(self, value=True, notify=None, **kw):
+    def __call__(self, value=True, **kw):
         '''Set the state value.'''
-        changed = self.value != value
+        if value == self.value:
+            return
 
-        if notify is None:  # by default, only do callback if the value changed.
-            notify = changed
-        if notify:  # trigger callbacks for before change
-            for callback_before in self._callbacks['before']:
-                callback_before(self, value, **kw)
+        for callback_before in self._callbacks['before']:
+            callback_before(self, value, **kw)
 
-        if changed:
-            if self.potential and bool(value) * 2 - 1 == self.potential:  # check if we met potential
-                self.potential = 0
-            self.value = value
+        self.value = value
+        if self.potential and bool(value) * 2 - 1 == self.potential:  # check if we met potential
+            self.potential = 0
 
-        if notify:  # trigger callbacks for after change
-            for callback_after in self._callbacks['after']:
-                callback_after(self, value, **kw)
+        for callback_after in self._callbacks['after']:
+            callback_after(self, value, **kw)
         return self
 
-    def request(self, value=True, notify=None, **kw):
+    def request(self, value=True, **kw):
         '''Request a state change. This does not change the value of a state,
         only the potential of this state and all states in between this state 
         and the current state.'''
-        changed = self.value != value
-        self.potential = 0 if not changed else 1 if value else -1
- 
-        if notify is None:
-            notify = changed
-        if notify:  # trigger callbacks for request
-            for callback_request in self._callbacks['request']:
-                callback_request(self, value, **kw)
+        self.potential = pot = 0 if self.value == value else 1 if value else -1
+        for callback_request in self._callbacks['request']:
+            callback_request(self, value, pot, **kw)
         return self
 
     def cancel_request(self):
@@ -270,7 +323,12 @@ class State:
         return self(True)
 
     def __exit__(self, *a):
-        self(False)
+        try:
+            self(False)
+        except:
+            import traceback
+            traceback.print_exc()
+            raise
 
     def on(self):
         return self(True)
@@ -287,81 +345,80 @@ class State:
         return self(self.default)
 
 
-    # callbacks
 
-    def add_callback(self, name=None, func=None):
-        '''Add callback functions to be called during the state's lifecycle.
-        
-        Examples:
-        >>> @state.add_callback
-        >>> def log(state, value): 
-        ...     print(state, value)
-        >>> state.add_callback('before', lambda state, value: print(state, value))
-        >>> state.add_callback('request', print)
-        >>> state.add_callback(print)  # defaults to 'after'
-        '''
-        def add_cb(func, name=None):
-            self._callbacks[name or 'after'].append(func)
-            return func
-        return (
-            add_cb(func, name) if callable(func) else 
-            add_cb(name) if callable(name) else 
-            lambda func: add_cb(func, name))
+class CompositeState(BaseState):
+    '''A state that depends '''
+    def __init__(self, *states, cond=all, name=None, **kw):
+        self.states = states
+        self.cond = cond
+        super().__init__(name=name or (states[0].name if states else None), **kw)
 
-    def wrap(self, func):
-        '''Enable a state for the lifetime of a function.'''
-        @functools.wraps(func)
-        def inner(*a, **kw):
-            with self:
-                return func(*a, **kw)
-        return inner
+    # def __call__(self, value):
+    #     for s in self.states: 
+    #         s(value)
+
+    def request(self, value):
+        for s in self.states: 
+            s.request(value)
+
+    def cancel_request(self):
+        for s in self.states: 
+            s.cancel_request()
+
+    def __iter__(self):
+        yield from self.states
+
+    def __getitem__(self, i):
+        return self.states[i]
+
+    def __bool__(self):
+        return self.cond(self.states)
+
+    def any(self):
+        return any(self.states)
+
+    def all(self):
+        return all(self.states)
 
 
-class ReadOnlyState(State):
+# class LazyRef:
+#     '''Let's you ref a state and keep track if the object were to replace the state ??? idk if we'd ever use this'''
+#     def __init__(self, obj, attr=None):
+#         self.ref = (lambda: getattr(obj, attr)) if attr else obj
+
+#     def __bool__(self):
+#         return self.ref()
+    
+
+
+class ReadOnlyState(BaseState):
     '''This provides a wrapper around a State object 
     that is read only, meaning that the wrapper prevents 
     modifying the state through it's interface. The 
     underlying state is still allowed to change.
-
-    XXX: UNFINISHED and UNTESTED !!
     '''
     def __init__(self, state):
         self.state = state
-
-    # prevent changing state
-
-    def __call__(self, *a, **kw):  # TODO callbacks
-        return self
-
-    def request(self, *a, **kw):
-        return self
-
-    # prevent writing attributes
+        super().__init__(state.name, state._parents, state._children)
+        state.add_callback('before', lambda s, value: self.do_callbacks('before', value))
+        state.add_callback('after', lambda s, value: self.do_callbacks('after', value))
+        state.add_callback('request', lambda s, value: self.do_callbacks('request', value))
 
     @property
     def value(self):
         return self.state.value
 
-    @value.setter
-    def value(self, value):
-        pass
-
     @property
     def potential(self):
         return self.state.potential
 
-    @potential.setter
-    def potential(self, potential):
-        pass
-
-
 
 class ProcessSafeState(State):
-    def __init__(self, *a, **kw):
+    def __init__(self, name=None, default=False, *a, lock=True, **kw):
         import multiprocessing as mp
-        self._value = mp.Value('i', 0)
-        self._potential = mp.Value('i', 0)
-        super().__init__()
+        self._value = mp.Value('i', default, lock=lock)
+        self._potential = mp.Value('i', 0, lock=lock)
+        super().__init__(name, default, *a, **kw)
 
     @property
     def value(self):
@@ -379,15 +436,47 @@ class ProcessSafeState(State):
     def potential(self, value):
         self._potential.value = value
 
+    @classmethod
+    def from_state(cls, state, name=None):
+        return cls(
+            name or state.name, state.default, 
+            parents=state._parents, children=state._children)
+
+
+class ReadOnlyProcessSafeState(ReadOnlyState):
+    '''Realistically, only one process should be controlling the state.
+    '''
+    def __init__(self, state):
+        import multiprocessing as mp
+        self._value = v = mp.Value('i', state.value, lock=False)
+        self._potential = p = mp.Value('i', state.potential, lock=False)
+        super().__init__(state)
+        @state.add_callback
+        def _track(state, value):
+            v.value = value
+        @state.add_callback('request')
+        def _track_req(state, value):
+            p.value = value
+
+    @property
+    def value(self):
+        return self._value.value
+
+    @property
+    def potential(self):
+        return self._potential.value
+
 
 def sync_states(source, *states):  # lol thought it'd be more complicated
+    cb = lambda dst: (lambda src, value: dst(value))
     for state in states:
-        source.add_callback(state)
+        source.add_callback(cb(state))
     # TODO: support bidirectional syncing without blowing up?
+
 
 def sync_states_bidirectional(stateA, stateB):
     def sync(a, b):
-        def _sync(value, sync_response=False):
+        def _sync(s, value, sync_response=False):
             if sync_response:
                 return
             b(value, sync_response=True)
@@ -399,22 +488,56 @@ def sync_states_bidirectional(stateA, stateB):
 
 def sync_states_bidirectional_chained(stateA, stateB):  # idk I'm sure this will break in some ways
     def sync(a, b):
-        def _sync(value, sync_response=False):
+        def _sync(s, value, sync_response=False):
             b_id = id(b)
             if sync_response == b_id:
                 return
-            b(value, sync_response=b_id)
+            b(value, sync_response=sync_response or b_id)
         a.add_callback(_sync)
     sync(stateA, stateB)
     sync(stateB, stateA)
     # TODO: support multiple chained states (a->b, b->c)
 
 
+def sync_states_base(stateA, stateB, both=False, on='after', request=None):
+    def sync(a, b):
+        change = b.request if (on == 'request' if request is None else request) else b
+        def _sync(s, value, sync_response=False):
+            b_id = id(b)
+            if sync_response == b_id:
+                return
+            change(value, sync_response=sync_response or b_id)
+        a.add_callback(_sync, on)
+    sync(stateA, stateB)
+    if both:
+        sync(stateB, stateA)
+
+
+def wrap_with_state(state, func):
+    '''Enable a state for the lifetime of a function.'''
+    @functools.wraps(func)
+    def inner(*a, **kw):
+        with state:
+            return func(*a, **kw)
+    return inner
+
+
+import sys
+def state_context(cm):
+    _contexts = {}
+    def _cb(state, value):
+        k = state.name
+        if value:
+            _contexts[k] = c = cm(state, value)
+            c.__enter__()
+        else:
+            _contexts.pop(k).__exit__(*sys.exc_info())
+    return _cb
+
 class States:
     '''A hierarchical state model.'''
     def __init__(self, tree=None, **kw):
         self._states = {}
-        # having a root null state simplifies things
         self.null = State(None)
         self._current = self.null
         self.define(tree or {}, **kw)
@@ -450,8 +573,7 @@ class States:
                     if request_tracing:
                         state.add_callback('request', self._on_state_update_request)
                 # add as child in parent state
-                child_set = (self._states[root[-1]] if root else self.null)._children
-                child_set.add(key)
+                (self._states[root[-1]] if root else self.null)._children.add(key)
 
             if children:
                 disconnected = key is None
@@ -488,27 +610,39 @@ class States:
     def __contains__(self, state):
         return state in self._states
 
+    def __iter__(self):
+        yield from self._states.values()
+
+    def parent(self, state):
+        ps = state._parents
+        return self._states[ps[-1]] if ps else self.null
+
+    def replace(self, state, name=None):
+        self._states[name or state.name] = state
+
     def update(self, states):
         '''Update the values of multiple states.'''
+        if isinstance(states, States):
+            states = {s.name: bool(s) for s in states}
         for name, value in states.items():
             self._states[name](value)
         return self
 
-    def update_nested(self, value, *names):
-        '''Recursively update all child states - can be used to turn off all child states.'''
-        for name in names:
-            state = self._states[name]
-            state(value)
-            self.update_nested(value, *state._children)
+    # def update_nested(self, value, *names):
+    #     '''Recursively update all child states - can be used to turn off all child states.'''
+    #     for name in names:
+    #         state = self._states[name]
+    #         state(value)
+    #         self.update_nested(value, *state._children)
 
-    def transition(self, state, value=True, **kw):
-        '''Transition from the current state to a target state.'''
-        state = self._states[state] if state is not None else self.null
-        state, remove, add = self._get_transition(self._current, state, value, **kw)
-        for k in remove:
-            self._states[k](False, validate=False)
-        for k in add:
-            self._states[k](True, validate=False)
+    # def transition(self, state, value=True, **kw):
+    #     '''Transition from the current state to a target state.'''
+    #     state = self._states[state]
+    #     remove, add = self._get_transition(self._current, state, value, **kw)
+    #     for k in remove:
+    #         self._states[k](False, validate=False)
+    #     for k in add:
+    #         self._states[k](True, validate=False)
 
     def _on_state_update(self, state, value, validate=True, **kw):
         '''Track state updates. This makes sure that a state transition is valid.'''
@@ -516,11 +650,11 @@ class States:
             return
         self._current = self._check_state_transition(self._current, state, value, **kw)
 
-    def _on_state_update_request(self, state, value, transition=True, **kw):
+    def _on_state_update_request(self, state, value, potential, transition=True, **kw):
         '''Track state update requests. Requests updates for all of the other states between the current state and the desired state.'''
         if not transition:  # prevent recursion
             return
-        state, remove, add = self._get_transition(self._current, state, value, **kw)
+        remove, add = self._get_transition(self._current, state, value, **kw)
         for k in remove:
             self._states[k].request(False, transition=False)
         for k in add:
@@ -529,48 +663,26 @@ class States:
     def _check_state_transition(self, start, state, value, **kw):
         '''Check that a transition between two states is valid.'''
         if not value:
-            assert start.name == state.name
-            return self._states[state._parents[-1]] if state._parents else self.null
+            # assert start.name == state.name  # XXX this can break things when timing gets weird with threads
+            return self.parent(state)
 
-        if state.name not in start._children and start.name not in state._children:
-            raise InvalidTransition('state {} not in current state children {} and current state {} not in state children {}'.format(
-                state, start._children, start, state._children))
+        # if state.name not in start._children and start.name not in state._children:
+        #     raise InvalidTransition('state {} not in current state children {} and current state {} not in state children {}'.format(
+        #         state, start._children, start, state._children))
         return state
 
-    def _get_transition(self, start, state, value, auto_transition=True, **__):
-        '''Get the states to remove+add to get from one state to another.'''
-        start = self.null if start is None else start
-        state = self.null if state is None else state
-        # noop - no change of state needed
-        if value and start.name == state.name:
-            return state, (), ()
-        # get the state parents
-        current, target = start._parents, state._parents
-        current_ = current + (start.name,) if start.name is not None else current
-        target_ = target + (state.name,) if state.name is not None else target
-
-        # turn off state
+    def _get_transition(self, start, state, value):
+        # prepare state and get parent stacks
         if not value:
-            # we're turning off this state, find the next highest state that is turned on.
-            state = (
-                next((s for s in (self._states[k] for k in target[::-1]) if s.value), None) 
-                if auto_transition else self._states[target[-1]] if target else self.null)
-            if state is None:  # go to null state
-                return None, current_[::-1], ()
-            target = state._parents
+            state = self.parent(state)
+        current = start._parents + ((start.name,) if start.name is not None else ())
+        target = state._parents + ((state.name,) if state.name is not None else ())
+        i = 0
+        for i, (k1, k2) in enumerate(zip(current, target)):
+            if k1 != k2:
+                break
+        return current[i:-1][::-1], target[i:-1]
 
-        if not auto_transition:  # check that we're going to an adjacent state.
-            if state not in start._children and start not in state._children:
-                raise InvalidTransition(
-                    'Could not transition directly from {} to {}. '
-                    'Please activate the intermediate states first.'.format(start, state))
-
-        # find minimum path between current and target states
-        i = next((
-            i for i, (k1, k2) in enumerate(zip(current_, target_)) if k1 != k2), 
-            min(len(current_), len(target_))) if current and target else 0
-        remove, add = current[i:][::-1], target[i:]
-        return state, remove, add
 
     def add_callback(self, name=None, func=None):
         '''Add a callback to all states. Useful for logging and debugging.'''
