@@ -9,7 +9,7 @@ class OnlineStats:
         self.samples = collections.deque(maxlen=history) if history else None
 
     def __getstate__(self):  # don't copy samples when pickling
-        return dict(self.__dict__, samples=None)
+        return dict(self.__dict__, samples=collections.deque(maxlen=self.samples.maxlen) if self.samples is not None else None)
 
     def __str__(self):
         return '(total = {total:.4f} avg = {mean:.6f} ± {std:.6f}, n = {count:8,})\n'.format(
