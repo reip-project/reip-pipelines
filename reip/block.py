@@ -331,7 +331,7 @@ class Block(_BlockConnectable):
                     s.spawn()
             self.__reset_state()
             self.state.spawned.request()
-            self._agent = remoteobj.util.thread(self.__agent_main, _spawn_flag=_spawn_flag, daemon_=True, raises_=False)
+            self._agent = reip.util.agent.Thread(self.__agent_main, daemon=True)(_spawn_flag=_spawn_flag)
             self._agent.start()
 
             if wait:

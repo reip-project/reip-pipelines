@@ -88,8 +88,8 @@ class Task(reip.Graph):
 
         self.log.info(text.blue('Spawning'))
         self._reset_state()
-        self._agent = remoteobj.util.process(self._run, _ready_flag=_ready_flag, _spawn_flag=_spawn_flag, _controlling=_controlling, daemon_=True)
-        self._except = self._agent.exc
+        self._agent = reip.util.agent.Process(PickleMethod(self, '_run'), daemon=True)(
+            _ready_flag=_ready_flag, _spawn_flag=_spawn_flag, _controlling=_controlling)
         self._agent.start()
 
         if wait:

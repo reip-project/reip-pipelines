@@ -10,3 +10,4 @@ from . import shell
 from . import func
 from . import iters
 from . import handlers
+from . import agent
