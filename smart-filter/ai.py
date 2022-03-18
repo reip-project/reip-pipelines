@@ -39,7 +39,6 @@ class ObjectDetector(reip.Block):
     current_sel = mp.Value(c_uint, 0, lock=False)  # Current input source selection
     switch_interval = None  # Switch input with fixed interval if not None (overrides target_sel)
     inner_sw = None
-    n_in = 1
 
     def __init__(self, n_inputs=None, **kw):
         # enable variable number of sources
@@ -47,7 +46,7 @@ class ObjectDetector(reip.Block):
 
     def init(self):
         assert(self.model in ["ssd-mobilenet-v1", "ssd-mobilenet-v2", "ssd-inception-v2"])
-        # self.n_in = len(self.sources) or 1
+        self.n_in = len(self.sources) or 1
         if self.debug:
             print("ObjectDetector: %d inputs avaiable" % self.n_in)
 
