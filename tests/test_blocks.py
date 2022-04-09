@@ -22,22 +22,24 @@ def test_iterator():
 
 def test_interval():
     ALLOWED_INIT_TIME = 0.3
-    duration = 1
+    duration = 2
     interval = 0.1
 
     with reip.Graph() as g:
         # get the first sink
         block = B.Interval(interval, relative=True)
+        fps = block.to(B.FPSGauge())
 
     t0 = time.time()
-    with block.output_stream(duration=duration).data[0] as out:
+    with fps.output_stream(duration=duration).data[0] as out:
         with g.run_scope():
             results = list(out)
             print(results)
     # check that the overall time is right
     assert time.time() - t0 < duration + ALLOWED_INIT_TIME
-    # check that it returned about the right number of items
-    assert duration / interval - 1 <= len(results) <= duration / interval + 1
+    # # check that it returned about the right number of items
+    # assert duration / interval - 1 <= len(results) <= duration / interval + 1
+    assert all([r - 1/interval < 1 for r in results])
 
 
 def iter_time_test(it, expected, allow):
@@ -68,22 +70,6 @@ def test_increment():
         data = [d for (d,), meta in out]
     assert data == list(range(10, 100, 10))
 
-
-# def test_sync(delays=(0.05, 0.05, 0.08, 0.09, 0.01), interval=0.2):
-#     with reip.Graph() as g:
-#         sink = reip.Producer()
-#         delay_sink = reip.Producer()
-#         B.ControlledDelay()(delay_sink)
-#         b1 = .to(reip.Block())
-#         b2 = B.Interval(interval, initial=interval/2)(sink).to(reip.Block())
-#
-#     for i in range(10):
-#         for x in delays:
-#             sink.put(((x, i), {}))
-#             delay_sink.put((x, meta))
-#
-#     with g.run_scope():
-#         while len(sink):
 
 
 #########################
@@ -248,35 +234,35 @@ def test_archive():
 #     pass
 
 
-# def test_encrypt(tmp_path):
-#     # create file
-#     # encrypt file
-#     # decrypt file
-#     # check if file is the same
-#     f_out = tmp_path / 'testfile{}.txt'
-#     content = 'some content {} !!!'
-#     rsa_key = tmp_path / 'rsa.pem'
+def test_encrypt(tmp_path):
+    # create file
+    # encrypt file
+    # decrypt file
+    # check if file is the same
+    f_out = tmp_path / 'testfile{}.txt'
+    content = 'some content {} !!!'
+    rsa_key = tmp_path / 'rsa.pem'
 
-#     with reip.Graph() as g:
-#         inc = B.Increment(10, max_rate=10)
-#         txtfile = B.dummy.TextFile(content, f_out)(inc)
-#         encrypted = B.encrypt.TwoStageEncrypt(
-#             tmp_path / 'encrypted/{name}.enc.tar.gz', rsa_key)(txtfile)
-#         decrypted = B.encrypt.TwoStageDecrypt(
-#             tmp_path / 'decrypted/{name}.txt',
-#             B.encrypt.public2private(rsa_key))(encrypted)
+    with reip.Graph() as g:
+        inc = B.Increment(10, max_rate=10)
+        txtfile = B.dummy.TextFile(content, f_out)(inc)
+        encrypted = B.encrypt.TwoStageEncrypt(
+            tmp_path / 'encrypted/{name}.enc.tar.gz', rsa_key)(txtfile)
+        decrypted = B.encrypt.TwoStageDecrypt(
+            tmp_path / 'decrypted/{name}.txt',
+            B.encrypt.public2private(rsa_key))(encrypted)
 
-#     with g.run_scope():
-#         inp = txtfile.output_stream()
-#         out = decrypted.output_stream()
-#         with inp, out:
-#             for ((fin,), m_in), ((fout,), m_out) in zip(inp, out):
-#                 with open(fin, 'r') as f:
-#                     in_content = f.read()
-#                 with open(fout, 'r') as f:
-#                     out_content = f.read()
-#                 assert in_content == out_content
-#                 print(fin, fout, in_content, out_content)
+    with g.run_scope():
+        inp = txtfile.output_stream()
+        out = decrypted.output_stream()
+        with inp, out:
+            for ((fin,), m_in), ((fout,), m_out) in zip(inp, out):
+                with open(fin, 'r') as f:
+                    in_content = f.read()
+                with open(fout, 'r') as f:
+                    out_content = f.read()
+                assert in_content == out_content
+                print(fin, fout, in_content, out_content)
 
 
 # def test_buffer():

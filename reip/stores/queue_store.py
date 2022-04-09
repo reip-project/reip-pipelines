@@ -9,7 +9,6 @@ import time
 import threading
 import multiprocessing as mp
 from ctypes import c_bool
-import remoteobj
 from . import SharedPointer, Store, Customer, Queue
 
 

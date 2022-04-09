@@ -71,7 +71,7 @@ def test_connections():
         try:
             g.run()
         except Exception as e:
-            raise e['hasjdkfhajfdkh'].exc
+            raise e[output.name].exc
         g.run()
 
 
@@ -103,7 +103,8 @@ def test_process_function_returns():
 def test_init_errors_from_block_in_task():
     with reip.Graph() as g:
         with reip.Task() as t:
-            reip.Block(max_generated=10)(reip.Block(name='1234512345'), reip.Block())
+            bb=reip.Block(name='1234512345')
+            reip.Block(max_generated=10)(bb, reip.Block())
     with pytest.raises(RuntimeError, match=r'Sources \[0\] in .+ not connected\.'): # r'Expected \d+ sources'
         try:
             g.run()
@@ -111,7 +112,7 @@ def test_init_errors_from_block_in_task():
                 print(4444, b.name, b._exception)
         except Exception as e:
             print(5555, e.excs)
-            raise e['1234512345'].exc
+            raise e[bb.name].exc
 
 
 

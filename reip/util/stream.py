@@ -22,8 +22,8 @@ class Stream:
     '''
     _delay = 1e-4
     def __init__(self, sources, 
-                 auto_next=True, wait=True,
-                 squeeze=False, slice_key=None, 
+                 auto_next=True, wait=True, 
+                 squeeze=False, slice_key=None, source_states=None,
                  timeout=None, duration=None,  max_rate=None, limit=None,
                  when=None, 
                  _sw=None, 
@@ -32,7 +32,9 @@ class Stream:
             'active': {'waiting', 'reading', 'paused'},
             None: {'terminated', 'should_wait'},
         })
-        self.state.should_wait(wait)
+        self.should_wait_state = reip.util.states.State('should_wait', wait)
+        self.source_state = reip.util.states.CompositeState(self.should_wait_state, *reip.util.as_list(source_states), cond=all)
+        # self.state.should_wait(wait)
         self.name = name or ''
         self.sources = sources
         self.__source_signals = [None]*len(sources)
@@ -67,10 +69,13 @@ class Stream:
         count = 0
         with self.state.active, self.__throttler as throttle:
             while True:
+                # print(self.state, self.sources_available())
                 # check if we are still in a configured state
                 if not self.state.active:
                     # if terminated, don't finish up
                     if self.state.terminated:
+                        break
+                    if not self.source_state:
                         break
                     # only finish up if there are sources that have items left to process
                     if not self.sources or not self.sources_available():
@@ -86,15 +91,20 @@ class Stream:
                 time.sleep(self._delay)
                 # check if we're paused
                 if self.state.paused:
+                    if not self.source_state:
+                        return
                     continue
                 # check if we're throttling
-                if throttle():
+                still_throttling, throttle_dt = throttle()
+                if throttle_dt:
+                    self._sw.ticktock(throttle_dt, 'waiting')
+                if still_throttling:
                     continue
                 # check source availability
                 if not self.sources_available():
+                    if not self.source_state:
+                        return
                     if not self.state.waiting:
-                        if not self.state.should_wait:
-                            return
                         self.state.waiting()
                         wait_t0 = time.time()
                     else:
@@ -103,7 +113,6 @@ class Stream:
                     continue
                 wait_t0 = 0
                 self.state.waiting(False)
-
                 # good to go!
                 with self.state.reading:
                     # get inputs
@@ -176,7 +185,9 @@ class Stream:
         self.state.terminated()
 
     def nowait(self, flag=True):
-        self.state.should_wait(not flag)
+        # self.state.should_wait(not flag)
+        self.should_wait_state(not flag)
+        print('nowait', self.source_state)
         # self.timeout = 0 if flag is True else None if flag is False else flag
         return self
 
@@ -240,11 +251,12 @@ class Stream:
             name=name or block.name, **kw)
 
     @classmethod
-    def from_block(cls, block, max_rate=None, duration=None, when=None,
+    def from_block(cls, block, max_rate=None, duration=None, when=None, source_states=None,
                    timeout=None, name=None, **kw):
         '''Generate a stream using sources generated from a block's sinks.'''
         return cls(
             [sink.gen_source(**kw) for sink in block.sinks],
+            source_states=[block.state.spawned] + reip.util.as_list(source_states),
             max_rate=max_rate or block.max_rate, when=None,
             duration=duration, timeout=timeout,
             name=name or block.name)

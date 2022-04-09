@@ -21,25 +21,26 @@ class Worker:
     def __init__(self, name=None, parent=None):
         self.name = Context._context_scope.auto_name(self, name=name)
         reip.Graph.register_instance(self, parent)
+        self.full_id = f'{self.parent_id}.{self.name}' if self.parent_id else self.name
 
-    @property
-    def id(self): return self.name  # XXX change to __id so it's harder to change?
+    # @property
+    # def id(self): return self.name  # XXX change to __id so it's harder to change?
 
     # @property
     # def parent_id(self): return self.parent.name
 
-    @property
-    def parents(self):
-        stack = []
-        parent = Context.get_object(self.parent_id, require=False)
-        while parent:
-            stack.append(parent)
-            parent = Context.get_object(parent.parent_id, require=False)
-        return stack
+    # @property
+    # def parents(self):
+    #     stack = []
+    #     parent = Context.get_object(self.parent_id, require=False)
+    #     while parent:
+    #         stack.append(parent)
+    #         parent = Context.get_object(parent.parent_id, require=False)
+    #     return stack
 
-    @property
-    def full_id(self):
-        return '/'.join(n.id for n in self.parents + [self])
+    # @property
+    # def full_id(self):
+    #     return '/'.join(n.id for n in self.parents + [self])
 
     @classmethod
     def detached(cls, *a, **kw):
@@ -57,8 +58,8 @@ class _ContextScope:
         '''Initialize the scope with a default/top instance.'''
         self.top = self.default = instance
 
-    def register(self, instance, weak=True):
-        self.refs[instance.name] = weakref.ref(instance) if weak else instance
+    # def register(self, instance, weak=True):
+    #     self.refs[instance.name] = weakref.ref(instance) if weak else instance
 
     def get(self, instance):
         '''Get an instance.'''
@@ -66,8 +67,8 @@ class _ContextScope:
             return None
         if instance is None:
             return self.default
-        if isinstance(instance, str):
-            return self.refs[instance]()
+        # if isinstance(instance, str):
+        #     return self.refs[instance]()
         return instance
 
     _NAMESPACES_IDX = {}
@@ -87,13 +88,13 @@ class _ContextScope:
     def clear_ns_index(self):
         self.ns_index.clear()
 
-    def get_object(self, id, require=True):  # XXX remove
-        '''Get an instance using its name. If the instance '''
-        obj = self.refs.get(id)
-        obj = obj() if obj is not None else None
-        if obj is None and require:
-            raise ValueError(f'Object {id} does not exist.')
-        return obj
+    # def get_object(self, id, require=True):  # XXX remove
+    #     '''Get an instance using its name. If the instance '''
+    #     obj = self.refs.get(id)
+    #     obj = obj() if obj is not None else None
+    #     if obj is None and require:
+    #         raise ValueError(f'Object {id} does not exist.')
+    #     return obj
 
 
 def auto_name(block, *attrs, name=None, ns=None):
@@ -135,14 +136,14 @@ class Context(Worker):
 
     # context management
 
-    @classmethod
-    def get_context(cls, instance=None):  # XXX
-        return cls._context_scope.get(instance)
+    # @classmethod
+    # def get_context(cls, instance=None):  # XXX
+    #     return cls._context_scope.get(instance)
 
     def __enter__(self):
         return self.as_default()
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, *e):
         self.restore_previous()
 
     def as_default(self):
@@ -157,17 +158,17 @@ class Context(Worker):
         self._previous = False
         return self
 
-    # 
 
-    def add(self, child):
-        '''Add block to graph.'''
-        self.children.append(child)
+    # def add(self, child):
+    #     '''Add block to graph.'''
+    #     self.children.append(child)
 
-    def remove(self, child):
-        self.children.remove(child)
+    # def remove(self, child):
+    #     self.children.remove(child)
 
-    def clear(self):
-        self.children.clear()
+    # def clear(self):
+    #     self.children.clear()
+
 
     @classmethod
     def register_instance(cls, child=None, parent=None):
@@ -212,7 +213,7 @@ class Context(Worker):
          - do nothing if parent is False / None+unset default.
         '''
         parent = cls._context_scope.get(parent)
-        cls._context_scope.register(child)
+        # cls._context_scope.register(child)
         if parent is None:  # no parent
             return
         if parent is child:  # trying to add to self ??
@@ -223,6 +224,6 @@ class Context(Worker):
         child.parent_id = parent.name
         return True
 
-    @classmethod
-    def get_object(cls, id, require=True):
-        return cls._context_scope.get_object(id, require)
+    # @classmethod
+    # def get_object(cls, id, require=True):
+    #     return cls._context_scope.get_object(id, require)

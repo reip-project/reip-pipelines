@@ -49,9 +49,14 @@ class Stopwatch:
         dt = np.min(dts[dts > np.mean(dts) / 2])
         return dt, dts
 
+    def _getstat(self, name):
+        try:
+            return self._stats[name]
+        except KeyError:
+            s = self._stats[name] = OnlineStats(self._max_samples)
+            return s
+
     def tick(self, name=_BLANK):
-        if name not in self._stats:
-            self._stats[name] = OnlineStats(self._max_samples)
         self._ticks[name] = time.time()
 
     def tock(self, name=_BLANK, samples=True):  # fixing behavior for 
@@ -62,13 +67,22 @@ class Stopwatch:
             return
         # Correct for time.time() execution time (dt) and Lap class overhead (approx 1 us)
         now = time.time() - self._dt - 1e-6
-        self._stats[name].append(max(0, now - t0))
+        self._getstat(name).append(max(0, now - t0), samples=samples)
+
+    def maybe_tick(self, name):
+        if name not in self._ticks:
+            self.tick(name)
+
+    def maybe_tock(self, name):
+        if name in self._ticks:
+            self.tock(name)
 
     def notock(self, name=_BLANK):
         self._ticks.pop(name, None)
 
-    def ticktock(self, delta, name=_BLANK):
-        self._stats[name].append(delta)
+    def ticktock(self, delta, name=_BLANK, samples=False):
+        if delta:
+            self._getstat(name).append(delta, samples=samples)
         # self._sums[name] += max(0, delta)
         # self._counts[name] += 1
 
@@ -97,7 +111,7 @@ class Stopwatch:
     def total(self, name=_BLANK):
         untocked = time.time() - self._ticks[name] if name in self._ticks else 0
         total = self._stats[name].sum if name in self._stats else 0
-        return self._stats[name].sum + untocked
+        return total + untocked
 
     def sleep(self, delay=1e-6, name="sleep"):
         self.tick(name)

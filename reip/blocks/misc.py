@@ -119,6 +119,16 @@ class Increment(Iterator):
             itertools.count(start or 0, step or 1), **kw)
 
 
+class FPSGauge(reip.Block):
+    def init(self):
+        self.t = 0
+    def process(self, x, meta):
+        t_last = self.t
+        self.t = t = time.time()
+        if t_last == 0:
+            return
+        return 1 / (t - t_last), meta
+
 class Debug(reip.Block):
     def __init__(self, message=None, level='debug', convert=None, value=False, compact=False,
                  summary=False, period=None, name=None, border=False, **kw):
@@ -158,12 +168,12 @@ class Debug(reip.Block):
             )
         )
 
-    def process(self, *xs, meta=None):
+    def process(self, x, meta=None):
         if not self.period or time.time() - self._last_time > self.period:
             self._last_time = time.time()
-            self.log.log(self.level, self._block_format(*xs, meta=meta))
+            self.log.log(self.level, self._block_format(x, meta=meta))
             # print(, flush=True)
-        return xs, meta
+        return x, meta
 
 
 class Results(reip.Block):

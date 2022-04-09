@@ -18,17 +18,19 @@ class OnlineStats:
     def __len__(self):
         return self.count
 
-    def append(self, x):
+    def append(self, x, n=1, samples=True):
         '''Append a value to the rolling mean.'''
         # online mean
         # online std deviation
-        last_mean, self.mean = self.mean, (self.mean * self.count + x) / (self.count + 1)
-        if self.count:
-            self._var = self._var + (x - last_mean) * (x - self.mean)
+        c = self.count
+        last_mean = self.mean
+        self.mean = m = (last_mean * c + x) / (c + n)
+        if c:
+            self._var += (x - last_mean) * (x - m)
 
         self.last = x
-        self.count += 1
-        if self.samples is not None:
+        self.count = c + n
+        if samples and self.samples is not None:
             self.samples.append(x)
 
     def extend(self, xs):

@@ -48,7 +48,7 @@ class _FileWrapper:
 
 def getLogger(block, level=DEFAULT_LEVEL, strrep=None, compact=True, propagate=False):
     is_block = block is not None and not isinstance(block, str)
-    log = logging.getLogger(block.name if is_block else block or 'reip')
+    log = logging.getLogger(os.path.join(__name__.split('.')[0], 'block' if is_block else '', block.name if is_block else block or ''))
 
     if getattr(log, '_is_configured_by_reip_', False):
         return log

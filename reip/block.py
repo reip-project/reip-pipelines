@@ -7,7 +7,6 @@ from time import time as gettime, sleep
 import inspect
 import reip
 from contextlib import contextmanager, closing
-import remoteobj
 from reip.util import text
 from . import exceptions
 from reip.exceptions import ExceptionTracker, WorkerExit
@@ -97,7 +96,7 @@ class Block(_BlockConnectable, base.Worker):
     KW_TO_ATTRS = True
     META_OVERLAY = True
     _delay = 1e-4
-    _wait_delay = 1e-2
+    _wait_delay = 1e-4
     _exception_annotator = exceptions.ExceptionAnnotate()
     _agent = None
     parent_id = task_id = None
@@ -254,7 +253,8 @@ class Block(_BlockConnectable, base.Worker):
 
     def process(self, *xs, meta):
         '''Process data.'''
-        return xs, meta
+        # self.log.info(f'{type(x)} {x}')
+        return xs[0] if xs else None, meta
 
     def finish(self):
         '''Cleanup.'''
@@ -515,15 +515,21 @@ class Block(_BlockConnectable, base.Worker):
                         break
                     # add a small delay
                     sleep(self._delay)
+                    sw.ticktock(self._delay, 'waiting')
                     # check if we're paused
                     if paused:
                         continue
                     # check if we're throttling
-                    if throttle():
+                    still_throttling, throttle_dt = throttle()
+                    if throttle_dt:
+                        sw.ticktock(throttle_dt, 'waiting')
+                    if still_throttling:
                         continue
                     # check source availability
                     if not src_avail():
                         waiting()
+                        sleep(self._wait_delay)
+                        sw.ticktock(self._wait_delay, 'waiting')
                         continue
                     waiting(False)
 
@@ -548,9 +554,9 @@ class Block(_BlockConnectable, base.Worker):
             self.log.info(text.yellow('Interrupting'))
             self.terminate()
         finally:
+            waiting(False)
             with self.state.finishing, sw('finish'), exc('finish'):
                 self.finish()
-
 
     def __read_sources(self):
         '''Get the next batch of data from each source.'''
@@ -614,7 +620,7 @@ class Block(_BlockConnectable, base.Worker):
         # pass to sinks
         for sink, out in zip(self.sinks, outs):
             if sink is not None and out is not None:
-                sink.put(out)
+                sink.put_nowait(out)
 
         # count the number of buffers generated
         self.generated += 1
@@ -649,8 +655,8 @@ class Block(_BlockConnectable, base.Worker):
                 try:
                     sink.put((signal, meta or {}), block=block, timeout=timeout)
                 except TimeoutError:
-                    reip.util.print_stack()
-                    print('timeout sending', signal, 'to', sink)
+                    # reip.util.print_stack()
+                    self.log.error(f'timeout sending {signal} to {sink}')
                     pass  # ???
 
 
@@ -867,18 +873,22 @@ class ClockThrottler:
             interval = 1 / rate
             ti = time.time()
             t0 = self.t_start
-            i = (ti - t0) // interval
+            i, remainder = divmod((ti - t0), interval)
             i_last = self.i_last
+
             if i == i_last:
-                dt = max(0, interval - (ti - i * interval))
+                dt = max(0, interval - remainder)
                 if dt:
                     rate_chunk = self.rate_chunk
-                    time.sleep(min(dt, rate_chunk) if rate_chunk else dt)
+                    dt = min(dt, rate_chunk) if rate_chunk else dt
+                    time.sleep(dt)
                     i = (time.time() - t0) // interval
-                if i == i_last:
-                    return True
+                    if i == i_last:
+                        return True, dt
+                    self.i_last = i
+                return False, dt
             self.i_last = i
-        return False
+        return False, 0
 
 Throttler = ClockThrottler
 

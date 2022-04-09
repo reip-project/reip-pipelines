@@ -353,6 +353,12 @@ class CompositeState(BaseState):
         self.cond = cond
         super().__init__(name=name or (states[0].name if states else None), **kw)
 
+    def __str__(self):
+        return '{}({})'.format(self.cond.__name__, ', '.join(map(str, self.states)))
+
+    def __repr__(self):
+        return '{}({})'.format(self.cond.__name__, ', '.join(map(repr, self.states)))
+
     # def __call__(self, value):
     #     for s in self.states: 
     #         s(value)

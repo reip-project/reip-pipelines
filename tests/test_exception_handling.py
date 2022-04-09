@@ -40,14 +40,14 @@ class Task(reip.Task):
         raise CustomError('go to your room !! >.<')
 
 def agg_generated_count(g):
-    return g.generated if isinstance(g, reip.Block) else sum(agg_generated_count(b) for b in g.blocks)
+    return g.generated if isinstance(g, reip.Block) else sum(agg_generated_count(b) for b in g.children)
 
 def _test_run_error(g, init=False):
     # with pytest.raises(CustomError):
     try:
         g.run()
         print(g._except)
-        for b in g.blocks:
+        for b in g.children:
             print(b._except)
     except reip.exceptions.GraphException as e:
         # XXX AHHHHHH WTF How to handle this ??????????????????

@@ -5,6 +5,7 @@ import pyarrow as pa
 import pyarrow.plasma as plasma
 from .core import BaseStore, SharedPointer
 from . import queue as q_
+import reip
 
 
 __all__ = ['PlasmaStore', 'ArrowQueue']
@@ -67,7 +68,7 @@ class PlasmaStore(BaseStore):
         assert (ret == "warm-up")
         print("Warmed up in %.4f sec\n" % (time.time()- t0))
 
-        self.ids = n_random_unique_object_ids(self.client, size)
+        self.ids = [None]*size #n_random_unique_object_ids(self.client, size)
         self.size = size
 
     _refreshed = False
@@ -78,13 +79,20 @@ class PlasmaStore(BaseStore):
         return len(self.client.list())
 
     def put(self, data, meta=None, id=None):
-        return save_both(self.client, data, {} if meta is None else meta, id=self.ids[id])
+        # NOTE: This had been giving "Object exists in plasma store" because we were reusing 100 ids
+        #       this just generates a new ID each time - not sure what the best thing to do is...
+        #       this is relying on plasma evicting objects once it's full
+        self.ids[id] = pid = random_object_id()
+        return save_both(self.client, data, meta, id=pid)
 
     def get(self, id):
         if not self._refreshed:
             self.refresh()
             self._refreshed = True
-        return load_both(self.client, self.ids[id])
+        pid = self.ids[id]
+        if pid is None:
+            return
+        return load_both(self.client, pid)
 
     def delete(self, ids):
         self.client.delete([self.ids[id] for id in ids])
@@ -98,6 +106,10 @@ def save_both(client, data, meta=None, id=None):
     if data is None:
         meta[TYPE] = "void"
         object_size = 0
+    elif isinstance(data, reip.Token):
+        meta[TYPE] = "token"
+        data = data.name.encode("utf-8")
+        object_size = len(data)
     elif isinstance(data, str):
         meta[TYPE] = "string"
         data = data.encode("utf-8")
@@ -110,6 +122,8 @@ def save_both(client, data, meta=None, id=None):
         data = pa.serialize(data).to_buffer()
         object_size = len(data)
 
+    if isinstance(meta, reip.util.meta.Meta):
+        meta = dict(meta)
     meta = pa.serialize(meta).to_buffer().to_pybytes()
 
     object_id = id or random_object_id()
@@ -126,11 +140,15 @@ def save_both(client, data, meta=None, id=None):
 
 
 def load_both(client, id):
+    print('hiiiiii', id)
     meta, data = client.get_buffers([id], timeout_ms=1, with_meta=True)[0]
+    print(meta, data, flush=True)
     meta = pa.deserialize(meta)
     dtype = meta.pop(TYPE, None)
     if dtype == "void":
         data = None
+    elif dtype == "token":
+        data = reip.Token(data.to_pybytes().decode("utf-8"))
     elif dtype == "string":
         data = data.to_pybytes().decode("utf-8")
     elif dtype == "array":
@@ -147,6 +165,8 @@ class pyarrow_serializer:
         return pa.deserialize(obj)
 
     def dumps(self, obj):
+        if isinstance(obj[1], reip.util.meta.Meta):
+            obj = obj[0], dict(obj[1])
         return pa.serialize(obj).to_buffer()
 q_.register_serializer(pyarrow_serializer(), 'arrow')
 

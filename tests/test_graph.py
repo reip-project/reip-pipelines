@@ -28,8 +28,8 @@ def checked_graph_instance(cls, parent, parents=None, task_id=None, **kw):
         assert task_id is False or g1.task_id == task_id
         assert reip.default_graph() is g1
         assert g1 is not reip.top_graph()
-        assert parents is None or [p.name for p in parents] == [p.name for p in g1.parents]
-        assert sum(g1 is b for b in parent.blocks) == 1
+        # assert parents is None or [p.name for p in parents] == [p.name for p in g1.parents]
+        assert sum(g1 is b for b in parent.children) == 1
 
         assert g1.parent_id is parent.name
         yield g1
@@ -53,7 +53,7 @@ def test_graph_inheritance():
                 with checked_graph_instance(reip.Graph, g3, [g3, g2, g1, top]) as g5:
                     pass
 
-    top.clear()
+    top.children.clear()
 
 
 def test_task_inheritance():
@@ -81,7 +81,7 @@ def test_task_inheritance():
                     with checked_graph_instance(reip.Graph, g4, [g4, g3, g2, g1, top], task_id=g2.name) as g5:
                         pass
 
-    reip.top_graph().clear()
+    reip.top_graph().children.clear()
 
 
 def test_graph_run():

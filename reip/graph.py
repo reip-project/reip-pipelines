@@ -6,10 +6,7 @@
 '''
 import time
 from contextlib import contextmanager
-import weakref
 import multiprocessing as mp
-import remoteobj
-
 from . import base
 from .base import Context
 from . import exceptions
@@ -23,8 +20,8 @@ from reip.util import text, iters
 def default_graph():
     return Graph._context_scope.default
 
-def get_graph(graph=None):
-    return Graph._context_scope.get(graph)
+# def get_graph(graph=None):
+#     return Graph._context_scope.get(graph)
 
 def top_graph():
     return Graph._context_scope.top
@@ -37,8 +34,8 @@ class Graph(Context):
     task_id = None
     _exception = None
 
-    def __init__(self, *blocks, graph=None, parent=None, log_level='info', **kw):
-        super().__init__(*blocks, parent=graph if parent is None else parent, **kw)
+    def __init__(self, *children, graph=None, parent=None, log_level='info', **kw):
+        super().__init__(*children, parent=graph if parent is None else parent, **kw)
         self.log = reip.util.logging.getLogger(self, level=log_level)
         # self._except = exceptions.ExceptionTracker()
 
@@ -48,15 +45,15 @@ class Graph(Context):
     def __str__(self):
         return '{}({}), {} children:{}\n'.format(
             self.__class__.__name__, self.name, len(self.children),
-            ''.join('\n' + text.indent(b) for b in self.children))
+            ''.join('\n' + text.indent(b).rstrip() for b in self.children))
 
     
 
 
-    @property  # XXX: phase out this attr
-    def blocks(self): return self.children
-    @blocks.setter
-    def blocks(self, children): self.children = children
+    # @property  # XXX: phase out this attr
+    # def blocks(self): return self.children
+    # @blocks.setter
+    # def blocks(self, children): self.children = children
 
     # context management
 
@@ -98,7 +95,7 @@ class Graph(Context):
             self.wait(duration, stats_interval=stats_interval)
 
     @contextmanager
-    def run_scope(self, wait=True, timeout=None, raise_exc=True):
+    def run_scope(self, wait=True, timeout=None, terminate=False, raise_exc=True):
         self.log.debug(text.green('Starting'))
         try:
             try:
@@ -109,6 +106,7 @@ class Graph(Context):
                 self.log.error(text.red('Spawn Error:\n{}'.format(reip.util.excline(e))))
                 self.log.warning(self)
                 self.terminate()
+                raise
             finally:
                 yield self
         except exceptions.WorkerExit:  # A worker saying we should exit
@@ -120,7 +118,7 @@ class Graph(Context):
             self.terminate()
         finally:
             try:
-                self.join(raise_exc=raise_exc, timeout=timeout)
+                self.join(raise_exc=raise_exc, terminate=terminate, timeout=timeout)
             finally:
                 self.log.debug(text.green('Done'))
 
@@ -207,7 +205,7 @@ class Graph(Context):
         print_th = reip.util.iters.HitThrottle(stats_interval) if stats_interval else False
         while not self.ready and not self.done:
             if print_th:
-                self.log.info('[ready={}, done={}] waiting on {}'.format(self.ready, self.done, reip.util.text.b_(*(b for b in self.children if not b.ready))))
+                self.log.info('[ready={}, done={}] waiting on {}'.format(self.ready, self.done, reip.util.text.b_(*(str(b).rstrip() for b in self.children if not b.ready))))
             time.sleep(self._delay)
 
     def join(self, close=True, terminate=False, raise_exc=None, **kw):
@@ -257,7 +255,7 @@ class Graph(Context):
         }
 
     def __import_state__(self, state):
-        self.log.info('import state: {}'.format(state))
+        # self.log.debug('import state: {}'.format(state))
         if state:
             for b, update in zip(self.children, state.pop('children', ())):
                 b.__import_state__(update)
@@ -271,7 +269,7 @@ class Graph(Context):
     def stats(self):
         return {
             'name': self.name,
-            'blocks': {b.name: b.stats() for b in self.children}
+            'children': {b.name: b.stats() for b in self.children}
         }
 
     def summary(self):

@@ -4,10 +4,29 @@ from multiprocessing import context
 
 SERIALIZERS = {}
 
+
+class Pickler(context.reduction.ForkingPickler):
+    protocol = -1
+    def __init__(self, file, protocol=..., **kw):
+        super().__init__(file, self.protocol if protocol == ... else protocol, **kw)
+
+class Pickler5(Pickler):
+    protocol = 5
+class Pickler4(Pickler):
+    protocol = 4
+class Pickler3(Pickler):
+    protocol = 3
+
 def get_serializer(name):
     '''Returns an object with a loads and dumps member.'''
     if name == 'pickle':
-        return context.reduction.ForkingPickler
+        return Pickler
+    if name == 'pickle5':
+        return Pickler5
+    if name == 'pickle4':
+        return Pickler4
+    if name == 'pickle3':
+        return Pickler3
     if name == 'json':
         import json
         return json
