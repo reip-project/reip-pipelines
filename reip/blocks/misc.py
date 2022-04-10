@@ -165,20 +165,22 @@ class Increment(Iterator):
 
 
 class Debug(reip.Block):
-    def __init__(self, message=None, level='debug', convert=None, value=False, compact=False,
-                 summary=False, period=None, name=None, border=False, **kw):
     '''Debug the output of a block.'''
+    level = 'debug'
+    log_level = 'debug'
+    def __init__(self, message=None, level=None, convert=None, value=False, compact=False,
+                 summary=False, period=None, name=None, border=False, log_level=None, **kw):
         self.message = message or 'Debug'
         self.value = value
         self.period = period
         self._summary = summary
         self._border = border
         self._last_time = 0
-        self.level = reip.util.logging.aslevel(level)
+        self.level = reip.util.logging.aslevel(level or self.level)
         self.convert = convert
         self.compact = compact
         name = 'Debug-{}'.format(message.replace(" ", "-")) if message else None
-        super().__init__(name=name, **kw)
+        super().__init__(name=name, log_level=log_level or self.log_level, **kw)
 
     def _block_line_format(self, x):
         if self.convert:
