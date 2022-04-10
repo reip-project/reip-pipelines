@@ -190,12 +190,12 @@ class Graph(BaseContext):
     
     '''
     _delay = 1e-3
-    _main_delay = 1e-3#0.1
+    _main_delay = 1e-2#0.1
     controlling = None
 
-    def __init__(self, *blocks, **kw):
+    def __init__(self, *blocks, log_level='info', **kw):
         super().__init__(*blocks, **kw)
-        self.log = reip.util.logging.getLogger(self)
+        self.log = reip.util.logging.getLogger(self, level=log_level)
         self._except = remoteobj.LocalExcept()
 
     def __repr__(self):
@@ -251,12 +251,15 @@ class Graph(BaseContext):
                     # controlling = self.controlling
                     self.log.debug(text.green('Ready'))
                 except Exception as e:
-                    self.log.debug(text.red('Spawn Error'))
+                    self.log.error(text.red('Spawn Error'))
+                    self.log.exception(e)
                     raise
             with self._except(raises=False):
                 yield self
-        except KeyboardInterrupt:
-            self.log.info(text.yellow('Interrupting'))
+        except KeyboardInterrupt as e:
+            self.log.warning(text.yellow('Interrupting'))
+            # reip.util.print_stack('Interrupted here')
+            self.log.exception(e)
             self.terminate()
         finally:
             try:
@@ -276,7 +279,7 @@ class Graph(BaseContext):
             if stats_interval and time.time() - t > stats_interval:
                 t = time.time()
                 status = self.status()
-                print("Status after %.3f sec:\n%s" % (time.time() - t0, status[status.find("\n")+1:]))
+                self.log.info("Status after %.3f sec:\n%s" % (time.time() - t0, status[status.find("\n")+1:]))
 
     def _reset_state(self):
         self._except.clear()
@@ -327,8 +330,14 @@ class Graph(BaseContext):
                 _ready_flag.set()
 
     def wait_until_ready(self):
+    def wait_until_ready(self, stats_interval=5):
+        t = time.time()
         while not self.ready and not self.done:
             time.sleep(self._delay)
+            
+            if stats_interval and time.time() - t > stats_interval:
+                t = time.time()
+                self.log.info(f'waiting for all blocks to initialize...\n{self}')
 
     def join(self, close=True, terminate=False, raise_exc=None, **kw):
         '''Joins the graph and its children.'''
