@@ -7,6 +7,52 @@ from random import choice
 import requests
 import reip
 
+# import os
+# import time
+import glob
+import traceback
+
+ALPHABETICALLY = lambda f: f.split('/')[-1]
+
+def get_upload_files(*patterns, interval=12, empty_interval=1, sort=ALPHABETICALLY, min_mtime=3):
+    '''Infinitely return files from a directory, sorted by date.
+    '''
+    while True:
+        try:
+            # get file statistics
+            files = sorted((
+                f for pattern in patterns
+                for f in glob.iglob(pattern)
+            ), key=sort, reverse=True)
+
+            ti = time.time()
+            i = 0
+            while i < len(files):
+                # file list expires after certain time
+                if time.time() - ti > (interval if files else empty_interval):
+                    break
+
+                fname = files[i]
+                # file is too young
+                if min_mtime and not check_mtime(fname, min_mtime):
+                    continue
+                # good to go, next
+                yield fname
+                i += 1
+        except Exception:  # some unexpected exception - assume it's a weird thing and continue on
+            traceback.print_exc()
+
+def check_mtime(fname, min_mtime):
+    if min_mtime:
+        try:
+            mtime = os.path.getmtime(fname)
+            if time.time() - mtime >= min_mtime:
+                return False
+        except FileNotFoundError:  # file got deleted by something, just pop and ignore
+            return False
+    return True
+
+
 
 def checkfile(f):
     return f if f and os.path.isfile(f) else None
@@ -21,7 +67,7 @@ class BaseUpload(reip.Block):
                  cacert=None, client_cert=None,
                  client_key=None, client_pass=None, crlfile=None,
                  timeout=60, verify=True, n_tries=5, retry_sleep=15,
-                 sess=None, **kw):
+                 sess=None, fake=False, **kw):
         """Data Uploader.
 
         Args:
@@ -46,6 +92,7 @@ class BaseUpload(reip.Block):
         self.client_key = checkfile(client_key)
         self.client_pass = client_pass or None
         self.crlfile = checkfile(crlfile)
+        self.fake = fake
         self._given_sess = sess
         super().__init__(**kw)
 
@@ -75,6 +122,9 @@ class BaseUpload(reip.Block):
         # setup
         url = self.get_url()
         datastr = self.data_str(**kw)
+
+        if self.fake:
+            return requests.Response(url), 0, 0
         #print('request', kw)
         # retry request until it succeeds
         for i in reip.util.iters.loop():
@@ -190,6 +240,26 @@ class UploadJSON(BaseUpload):
 
     def calc_size(self, data=None, json=None, **kw):
         return sys.getsizeof(data)
+
+
+
+
+
+
+
+
+class UploadFilesFromDirectory(UploadFile):
+    def __init__(self, endpoint, *patterns, n_inputs=0, **kw):
+        self.patterns = patterns
+        super().__init__(endpoint, n_inputs=n_inputs, **kw)
+
+    def init(self):
+        self.iter_files = get_upload_files(*self.patterns)
+
+    def process(self, meta):
+        fname = next(self.iter_files)
+        return super().process(fname, meta=meta)
+
 
 
 
