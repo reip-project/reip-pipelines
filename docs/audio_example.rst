@@ -5,6 +5,12 @@ Audio Example
 
 The full example can be found here: ...
 
+You can run it using:
+
+.. code-block:: bash
+
+    python examples/sonyc_demo.py run
+
 
 .. code-block:: python
 
@@ -115,3 +121,4 @@ filenames will get printed to screen because of the ``Debug`` block.
             .to(B.Csv('tmp/clsf/{time}.csv', headers=emb2cls.classes, max_rows=10))
             .to(B.TarGz('data/clsf.gz/{time}.tar.gz'))
             .to(B.Debug("ML Classification CSV", compact=True)))
+
