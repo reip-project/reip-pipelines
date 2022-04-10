@@ -1,6 +1,16 @@
-'''
+'''File System Events
 
 Watchdog API Reference: https://pythonhosted.org/watchdog/api.html
+
+.. note::
+
+    from experience, I've found file watchers can be a bit unreliable - (potentially
+    due to my own misuse !).
+
+    Additionally, many times (for example file upload) watching file 
+    events may not actually be what you want, and you may be better off
+    polling file lists using glob as that will reduce the number of missed files
+    and is resilient to reboots.
 
 '''
 import queue
@@ -23,6 +33,7 @@ class _WatchBlockHandler(PatternMatchingEventHandler):
             self.q.put(e)
 
 class Watch(reip.Block):
+    '''A Generic File Watcher'''
     _q = _event_handler = _watch = None
     event_types = None
     def __init__(self, *patterns, path='./', event_types=None, recursive=False, **kw):
@@ -79,15 +90,19 @@ class Watch(reip.Block):
 
 
 class Created(Watch):
+    '''Outputs any created files.'''
     event_types = ('created',)
 
 class Modified(Watch):
+    '''Outputs any modified files.'''
     event_types = ('modified',)
 
 class Deleted(Watch):
+    '''Outputs any deleted files.'''
     event_types = ('deleted',)
 
 class Moved(Watch):
+    '''Outputs any moved files.'''
     event_types = ('moved',)
     def _output_event(self, event, meta):
         return [event.src_path, event.dest_path], {'event_type': event.event_type}

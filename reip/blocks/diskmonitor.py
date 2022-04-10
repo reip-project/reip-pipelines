@@ -1,19 +1,19 @@
 '''
 
-Delete files when the disk is full
-
-root_dir: /data - contains audio, spl, logs
-threshold: 0.95
-batch_size: 1
-decision:
- - {dir: logs, }
-
-
-
-DiskMonitor('/data', [
-    ('logs', batch(n=None)),
-    ('spl', delete_batch(even_distributed, n=5)),
-])
+.. Delete files when the disk is full
+.. 
+.. root_dir: /data - contains audio, spl, logs
+.. threshold: 0.95
+.. batch_size: 1
+.. decision:
+..  - {dir: logs, }
+.. 
+.. 
+.. 
+.. DiskMonitor('/data', [
+..     ('logs', batch(n=None)),
+..     ('spl', delete_batch(even_distributed, n=5)),
+.. ])
 
 '''
 import os
@@ -23,6 +23,26 @@ import reip
 
 
 class DiskMonitor(reip.Block):
+    '''Monitors the disk usage in a certain directory and will selectively delete files from that directory.
+    
+    .. code-block:: python
+
+        # define the file deleter
+
+        @B.diskmonitor.Diskmonitor.deleter
+        def Diskmon(block, offset=1, skip=3, chunksize=5):
+            # select some subset of the files
+            files = block.get_files('audio')[offset::skip]
+            # randomly delete files in chunks of 5 until 
+            # under the desired storage limit
+            block.delete_while_full(files, chunksize)
+
+        # instantiate the block
+        with reip.Graph():
+            Diskmon('/data')
+
+        
+    '''
     def __init__(self, root='/', deleter=None, threshold=0.95, padding=0.1, interval=60, **kw):
         self._deleter = deleter if callable(deleter) else self._default_deleter
         self.root = root
@@ -104,10 +124,10 @@ class DiskMonitor(reip.Block):
 
 
 
-@DiskMonitor.deleter
-def SonycDiskMonitor(block, chunksize=5, skip=2, offset=1):
-    block.delete(block.get_files('logs'))  # delete all logs first
-    return (
-        block.delete_while_full(block.get_files('audio')[offset::skip], chunksize) or
-        block.delete_while_full(block.get_files('ml')[offset::skip], chunksize) or
-        block.delete_while_full(block.get_files('spl')[offset::skip], chunksize))
+# @DiskMonitor.deleter
+# def SonycDiskMonitor(block, chunksize=5, skip=2, offset=1):
+#     block.delete(block.get_files('logs'))  # delete all logs first
+#     return (
+#         block.delete_while_full(block.get_files('audio')[offset::skip], chunksize) or
+#         block.delete_while_full(block.get_files('ml')[offset::skip], chunksize) or
+#         block.delete_while_full(block.get_files('spl')[offset::skip], chunksize))

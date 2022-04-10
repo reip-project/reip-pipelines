@@ -1,9 +1,5 @@
 '''
 
-TODO:
- - call Store.spawn, .join from Producer
- - test
-
 '''
 import time
 import threading
@@ -20,6 +16,7 @@ class _RemoteTraceback(Exception):
         return self.tb
 
 class QueueCustomer(Customer):
+    '''A customer that requests values from a Queue Store.'''
     cache = None
     def __init__(self, *a, serializer=None, **kw):
         super().__init__(*a, **kw)
@@ -70,6 +67,7 @@ class QueueCustomer(Customer):
 
 
 class QueueStore(Store):
+    '''A Store that will push values through a queue when a Customer requests.'''
     Pointer = SharedPointer
     Customer = QueueCustomer
 

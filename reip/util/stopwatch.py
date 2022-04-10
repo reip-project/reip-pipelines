@@ -8,6 +8,16 @@ from reip.util.statistics import OnlineStats
 _BLANK = ''
 
 class Stopwatch:
+    '''Stopwatch for timing and recording execution time of bits of code.
+    
+    .. code-block:: python
+
+        sw = reip.util.Stopwatch()
+
+        for _ in range(100):
+            with sw('sleeping'):
+                time.sleep(0.1)
+    '''
     class lap:
         def __init__(self, sw, name=_BLANK):
             self.sw = sw

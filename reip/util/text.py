@@ -39,9 +39,11 @@ def tabindent(x, n=1, w=4):
 
 
 def tab2space(text, w=4):
+    '''Convert tabs to spaces.'''
     return text.replace('\t', ' '*w)
 
 def space2tab(text, w=4):
+    '''Convert spaces to tabs.'''
     return text.replace(' '*w, '\t')
 
 

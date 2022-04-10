@@ -2,6 +2,7 @@ from .base import BaseStore
 
 
 class Store(BaseStore):
+    '''A basic store that stores it's elements in a list.'''
     def __init__(self, size):
         self.items = [None] * size
 

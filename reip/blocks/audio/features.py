@@ -31,7 +31,7 @@ class SPL(reip.Block):
         # get the frequency weights for each weighting function
         freqs = librosa.fft_frequencies(sr=meta['sr'], n_fft=self.n_fft)
         self.weightings = librosa.db_to_power(
-            librosa.multi_frequency_weighting(freqs, self.weight_names))
+            librosa.multi_frequency_weighting(freqs, kinds=self.weight_names))
 
     def process(self, data, meta):
         if self.weightings is None:  # initialize using sr from metadata

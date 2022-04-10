@@ -23,17 +23,19 @@ setuptools.setup(
         # 'pyarrow',
         # block packages
         # 'watchdog',
-        'tflit>=0.0.13',
+        'tflit>=0.1.2',
         # status messages
         'psutil', 'ifcfg', 'ixconfig>=0.1.1', 'netswitch', 'requests',
     ],
     extras_require={
         # 'status': ['psutil', 'ixconfig', 'netswitch'],
+        'plasma': ['pyarrow'],
         'audio': ['sounddevice', 'librosa'],
         'video': ['opencv-python'],  # already installed on Jetson by default
-        'encrypt': ['pycrypto'],
+        # 'gstream': ['PyGObject'],
+        'encrypt': ['pycryptodome'],
         'vis': ['matplotlib'],
-        'docs': ['sphinx!=1.3.1', 'sphinx_theme', 'sphinx-gallery'],
+        'docs': ['sphinx!=1.3.1', 'sphinx_theme', 'sphinx-gallery', 'sphinx_rtd_theme'],
     },
     license='BSD 3-Clause Clear License',
     keywords='iot embedded app pipeline block multiprocessing')

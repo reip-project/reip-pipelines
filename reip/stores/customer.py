@@ -3,6 +3,8 @@ from reip.util import text
 
 
 class Customer(Source):
+    '''A Source object to read from a :py:class:`reip.stores.producer.Producer`
+    '''
     def __init__(self, source, index, store_id, **kw):
         self.source = source
         self.id = index
@@ -19,6 +21,7 @@ class Customer(Source):
         return self.source.head.counter - self.cursor.counter
 
     def next(self):
+        '''Increment this cursor.'''
         if len(self):
             self.cursor.counter += 1
 
@@ -27,8 +30,14 @@ class Customer(Source):
 
     @property
     def cursor(self):
+        '''This customer's reader cursor. It marks the index
+        of the data within the Producer's Store.'''
         return self.source.readers[self.id]
 
     @property
     def store(self):
+        '''Links to the corresponding store from the Producer.
+        This will vary depending on the configuration across
+        Tasks.
+        '''
         return self.source.stores[self.store_id]

@@ -198,6 +198,10 @@ class Block:
         '''Connect other block sinks to this blocks sources.
         If the blocks have multiple sinks, they will be passed as additional
         inputs.
+
+        .. code-block:: python
+
+            ProcessBlock()(InputBlock())
         '''
         j = next(
             (i for i, s in enumerate(self.sources) if s is None), len(self.sources)
@@ -224,16 +228,26 @@ class Block:
         return self
 
     def to(self, *others, squeeze=True, **kw):
-        '''Connect this blocks sinks to other blocks' sources'''
+        '''Connect this blocks sinks to other blocks' sources.
+        
+        .. code-block:: python
+
+            InputBlock().to(ProcessBlock())
+        '''
         outs = [other(self, **kw) for other in others]
         return outs[0] if squeeze and len(outs) == 1 else outs
 
     def __or__(self, other):
-        '''Connect blocks using Unix pipe syntax.'''
+        '''Connect blocks using Unix pipe syntax.
+        
+        .. code-block:: python
+
+            InputBlock() | ProcessBlock()
+        '''
         return self.to(*reip.util.as_list(other))
 
     def __ror__(self, other):
-        '''Connect blocks using Unix pipe syntax.'''
+        '''Connect blocks using Unix pipe syntax. See :meth:`__or__`'''
         return self(*reip.util.as_list(other))
 
     def output_stream(self, **kw):

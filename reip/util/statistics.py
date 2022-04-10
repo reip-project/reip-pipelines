@@ -3,6 +3,7 @@ import numpy as np
 
 
 class OnlineStats:
+    '''Online statistics - calculate and update mean and variance as new data comes in.'''
     count = mean = _var = 0
     def __init__(self, history=0):
         self.last = 0

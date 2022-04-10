@@ -3,6 +3,7 @@ from .customer import Customer
 
 
 class BaseStore:
+    '''A base class for Stores.'''
     Pointer = Pointer
     Customer = Customer
 

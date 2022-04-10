@@ -1,17 +1,7 @@
-Welcome to reip's documentation!
+REIP SDK: IoT Data Pipelines
 ================================
 
 REIP is a reconfigurable framework that allows users to quickly build data streaming pipelines for IoT-based sensor research projects.
-
-
-Table of Contents
-=================
-
-.. toctree::
-    :maxdepth: 2
-
-    blocks
-
 
 Concepts
 ========
@@ -20,10 +10,53 @@ Concepts
  - **Blocks**: An atomic piece of code that consists of initialization and a transformation function with a variable number of inputs and outputs.
 
 
+.. Quickstart
+.. ---------------
 
-Indices and tables
-==================
+.. Coming soon. Documentation under development.
 
-* :ref:`genindex`
-* :ref:`modindex`
-* :ref:`search`
+.. .. code-block:: bash
+
+..    pip install reip[video]
+
+.. .. code-block:: python
+
+..    import reip
+..    import reip.blocks as B
+..    import reip.blocks.video
+..    from reip.blocks.video.models import Posenet
+
+..    # coming soon
+
+.. toctree::
+   :maxdepth: 2
+   :titlesonly:
+   :hidden:
+
+   self
+
+
+.. toctree::
+   :maxdepth: 1
+   :caption: Getting Started:
+
+   install
+   intro
+
+.. toctree::
+   :maxdepth: 1
+   :caption: Examples
+
+   audio_example
+   pose_example
+   recipes
+
+
+.. toctree::
+   :maxdepth: 1
+   :caption: API
+
+   api/blocks
+   api/core
+   api/stores
+   api/util

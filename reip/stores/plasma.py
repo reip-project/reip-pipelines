@@ -56,6 +56,16 @@ def n_random_unique_object_ids(client, size=10):
 
 
 class PlasmaStore(BaseStore):
+    '''Store that puts data in plasma store.
+    
+    Requires running a plasma store process.
+
+    e.g.
+
+    .. code-block:: bash
+
+        plasma_store -s $TMPDIR/plasma -m 2000000000
+    '''
     Pointer = SharedPointer
     def __init__(self, size, plasma_socket=None):
         self._plasma_socket_name = plasma_socket or get_plasma_path()

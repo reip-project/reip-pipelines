@@ -29,26 +29,36 @@ def all_strategy(source):
 
 
 class Sink:
+    '''An abstract interface representing a place to put data.
+    
+    Essentially, a put-only queue.
+    '''
     def __init__(self):
         self.dropped = 0
         self._full_delay = 1e-6
 
     def spawn(self):
+        '''An optional method that allows a sink to perform initialization.'''
         pass
 
     def join(self):
+        '''An optional method that allows a sink to perform cleanup.'''
         pass
 
     def __len__(self):
+        '''How many elements are in the queue.'''
         raise NotImplementedError
 
     def full(self):
+        '''Is the queue full?'''
         raise NotImplementedError
 
     def _put(self, buffer):
+        '''The overrideable method to put items in the queue.'''
         raise NotImplementedError
 
     def wait(self, timeout=None):
+        '''Wait until the queue has space for another element.'''
         t0 = time.time()
         while self.full():
             time.sleep(self._full_delay)
@@ -56,11 +66,13 @@ class Sink:
                 return None  # QUESTION: TimeoutError instead?
 
     def put(self, buffer, block=True, timeout=None):
+        '''Put an element in the sink.'''
         if block:
             self.wait(timeout)
         return self.put_nowait(buffer)
 
     def put_nowait(self, buffer):
+        '''Put an element in the sink, dropping the value if the queue is full.'''
         if self.full():
             self.dropped += 1
         else:
@@ -71,6 +83,10 @@ class Sink:
 
 
 class Source:
+    '''An abstract interface representing a place to get data.
+    
+    Essentially, a get-only queue.
+    '''
     # TODO: make it easier for someone to register a new strategy
     #       e.g.:
     #         @Source.register
@@ -108,12 +124,15 @@ class Source:
         self._strategy_get = self.strategies[strategy]
 
     def __len__(self):
+        '''How many elements are in the Source queue.'''
         raise NotImplementedError
 
     def empty(self):
+        '''Is the Source queue empty?'''
         return not len(self) and self._default is None
 
     def last(self):
+        '''Returns True if there is only one element left.'''
         ln = len(self)
         return ln == 1 or (not ln and self._default is not None)
 
@@ -124,6 +143,7 @@ class Source:
         raise NotImplementedError
 
     def wait(self, timeout=None):
+        '''Wait until an element is ready.'''
         t0 = time.time()
         while self.empty():
             time.sleep(self._empty_delay)
@@ -131,11 +151,13 @@ class Source:
                 return None  # QUESTION: TimeoutError instead?
 
     def get(self, block=True, timeout=None):
+        '''Get the next element in the queue.'''
         if block:
             self.wait(timeout)
         return self.get_nowait()
 
     def get_nowait(self):
+        '''Get the next element in the queue, returning None if no value is available.'''
         if len(self) == 0:
             if self._default is not None:
                 return self._default()

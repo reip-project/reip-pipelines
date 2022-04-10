@@ -5,6 +5,7 @@ import reip
 
 
 class Tar(reip.Block):
+    '''Archive files in a .tar file.'''
     def __init__(self, filename='{time}.tar', remove_files=False, gz=None, **kw):
         self.filename = filename
         self.remove_files = remove_files

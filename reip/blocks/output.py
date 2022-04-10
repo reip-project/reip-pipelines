@@ -23,6 +23,7 @@ class _CsvWriter(reip.util.CycledWriter):
             self._file.close()
 
 class Csv(reip.Block):
+    '''A CSV writer.'''
     _fname = _file = _writer = None
     def __init__(self, filename='{time}.csv', headers=None, max_rows=1000, **kw):
         self.writer = _CsvWriter(filename, headers=headers, max_rows=max_rows)

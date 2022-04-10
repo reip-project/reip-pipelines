@@ -5,6 +5,8 @@ import subprocess
 
 
 class Shell(reip.Block):
+    '''Run a shell command on the input data. See :py:func:`reip.util.shell.run` for 
+    information about command formatting.'''
     def __init__(self, cmd, astype=str, **kw):
         self.cmd = cmd
         self.astype = astype
@@ -16,6 +18,10 @@ class Shell(reip.Block):
 
 
 class ShellProcess(reip.Block):
+    '''Spawn a shell process while this block is running. There is currently
+    no support for passing data to and from the process, but their outputs 
+    are available via self.stdout and self.stderr.
+    '''
     _proc = _pid = None
     stdout = stderr = None
     n_err_lines = 50

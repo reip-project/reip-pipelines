@@ -6,6 +6,7 @@ import reip
 
 
 class Rebuffer(reip.Block):
+    '''Collect numpy arrays and convert them to a different resolution'''
     def __init__(self, size=None, duration=None, *a, sr_key='sr', **kw):
         assert size or duration, 'You must specify a size or duration.'
         self.size = size
@@ -18,14 +19,18 @@ class Rebuffer(reip.Block):
         self.sr = None
         self.current_size = 0
 
-    def process(self, x, meta):
+    def _calc_size(self, meta):
         # calculate the size the first time using the sr in metadata
-        if not self.size:
+        if not self.size and meta:
             self.sr = self.sr or meta[self.sr_key]
             self.size = self.duration * self.sr
 
+    def process(self, x, meta):
+        self._calc_size(meta)
+
         # place buffer into queue. If buffer is full, gather buffers and emit.
         if self._place_buffer(x, meta):
+            self.log.debug(f"full: {self.current_size} >= {self.size}")
             return self._gather_buffers()
 
     def _place_buffer(self, x, meta):
@@ -92,13 +97,15 @@ class FastRebuffer(reip.Block):
         return ret
 
 
-class GatedRebuffer(Rebuffer):
+class GatedRebuffer(reip.Block):
+    '''Rebuffer while also sampling sparsely in time. For example, sampling audio files 
+    while leaving gaps between them for privacy reasons.'''
     TIME_KEY = 'time'
-    def __init__(self, sampler, n_pass=1, **kw):
+    def __init__(self, sampler, size=10, **kw):
         self.sampler = (
             sampler if callable(sampler) else
             (lambda: sampler) if sampler else None)
-        self.n_pass = n_pass
+        self.size = size
         self.pause_until = 0
         self.allow_index = None
         super().__init__(**kw)
@@ -111,11 +118,14 @@ class GatedRebuffer(Rebuffer):
 
         # check if we are currently allowing buffers
         if self.allow_index is not None:
-            if self.processed - self.allow_index >= self.n_pass:  # we've exceeded
-                self.allow_index = None
-                self.pause_until = t0 + self.sampler()
-            else:
+            self.log.debug(f'allow: {self.processed} - {self.allow_index} >= {self.size}')
+            if self.processed - self.allow_index < self.size:  # under the limit
                 return
+            # we've exceeded
+            self.allow_index = None
+            s = self.sampler()
+            self.pause_until = t0 + s
+            self.log.debug(f'will be sleeping for {s:.3g}s')
 
         # check if we should be pausing
         if t0 < self.pause_until:
@@ -123,12 +133,32 @@ class GatedRebuffer(Rebuffer):
 
         # if not, record the processed count
         self.allow_index = self.processed
+        self.log.debug(f'allow_index: {self.allow_index}')
 
+    def init(self):
+        self.buffers = []
+        self.meta = []
+
+    def finish(self):
+        self.clear()
+
+    def clear(self):
+        self.buffers.clear()
+        self.meta.clear()
 
     def process(self, x, meta):
         if self.check_input_skip(meta):
             return
-        return super().process(x, meta)
+        self.log.debug(f'collecting buffer: {x.shape}')
+        self.buffers.append(x)
+        self.meta.append(meta)
+
+        if len(self.buffers) >= self.size:
+            X = np.concatenate(self.buffers)
+            meta = self.meta[0]
+            self.clear()
+            self.log.debug(f'submitting: {X.shape}')
+            return [X], meta
 
 
 

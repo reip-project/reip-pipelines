@@ -10,7 +10,8 @@ def check_block(block, match='', *a):
         text.printasone(text.block_text(str(block), text.l_(*a)), flush=True)
 
 
-def block_stack(message=None, fn=None, offset=0):
+def block_stack(message=None, fn=None, offset=0, limit=None):
+    '''Format the current stack trace.'''
     stack = inspect.stack()
     f = stack[offset+1]
     return text.block_text(
@@ -18,12 +19,13 @@ def block_stack(message=None, fn=None, offset=0):
         text.blue(text.l_(f.function, f.lineno, f.filename)), '',
         text.tbl(*(
             (f.function, f.lineno, f.filename, f'>>> {f.code_context[0].strip()}')
-            for f in stack[offset+2:]
+            for f in stack[offset+2:][:limit]
             if not fn or fn in f.filename
         )), ch=text.yellow('*')
     )
 
 def print_stack(message=None, *a, offset=0, **kw):
+    '''Print out the current stack trace.'''
     text.printasone(block_stack(message, *a, offset=offset + 1, **kw), flush=True)
 
 

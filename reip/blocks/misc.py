@@ -10,7 +10,7 @@ from reip.util import text
 
 
 class Iterator(reip.Block):
-    '''Call this function every X seconds'''
+    '''Yield each element in an iterator one at a time.'''
     def __init__(self, iterator, **kw):
         self.iterator = iter(iterator)
         super().__init__(n_inputs=0, **kw)
@@ -24,38 +24,38 @@ class Iterator(reip.Block):
 
 
 class Interval(reip.Block):
-    '''Call this function every X seconds'''
+    '''Emit every X seconds.'''
     def __init__(self, seconds=2, initial=None, **kw):
         self.seconds = seconds
         self.initial = initial
-        self._did_init = False
-        super().__init__(n_inputs=0, **kw)
+        super().__init__(n_inputs=0, max_rate=1/seconds, **kw)
+
+    def init(self):
+        time.sleep(self.initial or 0)
 
     def process(self, meta=None):
-        if self.initial and not self._did_init:
-            time.sleep(self.initial)
-            self._did_init = True
-        else:
-            time.sleep(self.seconds)
         return [None], {'time': time.time()}
 
 
-class ControlledDelay(reip.Block):
-    '''Add system time to metadata.'''
-    def process(self, x, meta=None):
-        time.sleep(x)
-        return [None], {'time': time.time()}
+# class ControlledDelay(reip.Block):
+#     '''Add system time to metadata.'''
+#     def process(self, x, meta=None):
+#         time.sleep(x)
+#         return [None], {'time': time.time()}
 
 
 class Time(reip.Block):
     '''Add system time to metadata.'''
-    def process(self, x, meta=None):
+    def __init__(self, **kw):
+        super().__init__(**kw)
+
+    def process(self, x, meta):
         return [x], {'time': time.time()}
 
 
 class Meta(reip.Block):
     '''Add arbitrary data to metadata.'''
-    def __init__(self, meta, *a, **kw):
+    def __init__(self, meta, **kw):
         self.meta = meta or {}
         super().__init__(*a, **kw)
     def process(self, x, meta=None):
@@ -67,6 +67,7 @@ class Meta(reip.Block):
 
 
 class Glob(reip.Block):
+    '''Outputs files matching glob patterns.'''
     def __init__(self, *paths, recursive=True, atonce=False, **kw):
         self.paths = paths
         self.recursive = recursive
@@ -133,17 +134,18 @@ class AsDict(reip.Block):
         return [data], {}
 
 
-class Sleep(reip.Block):
-    def __init__(self, sleep=2, **kw):
-        self.sleep = sleep
-        super().__init__(**kw)
+# class Sleep(reip.Block):
+#     def __init__(self, sleep=2, **kw):
+#         self.sleep = sleep
+#         super().__init__(**kw)
 
-    def process(self, x, meta):
-        time.sleep(self.sleep)
-        return [x], meta
+#     def process(self, x, meta):
+#         time.sleep(self.sleep)
+#         return [x], meta
 
 
 class Constant(reip.Block):
+    '''Yields a constant value.'''
     def __init__(self, value, *a, **kw):
         self.value = value
         super().__init__(*a, n_inputs=0, **kw)
@@ -153,6 +155,7 @@ class Constant(reip.Block):
 
 
 class Increment(Iterator):
+    '''Yield an incrementing (or decrementing) value.'''
     def __init__(self, start=None, stop=None, step=1, **kw):
         if stop is None:
             start, stop = 0, start
@@ -164,6 +167,7 @@ class Increment(Iterator):
 class Debug(reip.Block):
     def __init__(self, message=None, level='debug', convert=None, value=False, compact=False,
                  summary=False, period=None, name=None, border=False, **kw):
+    '''Debug the output of a block.'''
         self.message = message or 'Debug'
         self.value = value
         self.period = period
@@ -208,6 +212,7 @@ class Debug(reip.Block):
 
 
 class Results(reip.Block):
+    '''Gather the results in lists as self.results and self.meta'''
     squeeze = True
     def __init__(self, squeeze=True, **kw):
         self.squeeze = squeeze
@@ -223,15 +228,27 @@ class Results(reip.Block):
 
 
 class Lambda(reip.Block):
-    def __init__(self, func, name=None, n_inputs=None, **kw):
-        self.func = func
-        name = name or self.func.__name__
-        if name == '<lambda>':
-            name = '_lambda_'  # how to get the signature?
-        super().__init__(name=name, n_inputs=n_inputs, **kw)
+    '''An inline way to create a block from a regular function. Input and output formats are the same.'''
+    def __init__(self, func=None, name=None, init=None, finish=None, n_inputs=None, **kw):
+        self.func = func or (lambda *a, **kw: None)
+        self.init_func = init
+        self.finish_func = finish
+        if not func:  # don't run too fast if there's no process function
+            kw.setdefault('max_rate', 1)
+        super().__init__(
+            name=name or self.func.__name__, 
+            n_inputs=n_inputs, **kw)
+
+    def init(self):
+        if self.init_func:
+            self.init_func()
 
     def process(self, *xs, meta=None):
         return self.func(*xs, meta=meta)
+
+    def finish(self):
+        if self.finish_func:
+            self.finish_func()
 
     @classmethod
     def define(cls, func):
@@ -239,6 +256,7 @@ class Lambda(reip.Block):
 
 
 class Interleave(reip.Block):
+    '''Interleave the block inputs to a single output.'''
     def __init__(self, sort_key=None, **kw):
         super().__init__(n_inputs=None, **kw)
         self.sort_key = sort_key
@@ -252,6 +270,8 @@ class Interleave(reip.Block):
 
 
 class Separate(reip.Block):
+    '''Separate out a single input into multiple outputs based on a condition per output.
+    '''
     def __init__(self, bins, **kw):
         self.bins = bins
         super().__init__(n_outputs=len(bins), **kw)

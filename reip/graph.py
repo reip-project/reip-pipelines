@@ -185,6 +185,10 @@ class BaseContext:  # (metaclass=_MetaContext)
 # import blessed
 
 class Graph(BaseContext):
+    '''Represents a collection of Blocks.
+    
+    
+    '''
     _delay = 1e-3
     _main_delay = 1e-3#0.1
     controlling = None
@@ -209,6 +213,15 @@ class Graph(BaseContext):
     # run graph
 
     def run(self, duration=None, stats_interval=1, print_graph=True, **kw):
+        '''Run a graph and all of its child blocks.
+        
+        .. code-block::
+
+            with reip.Graph() as g:
+                BlockA().to(BlockB()).to(BlockC())
+
+            g.run(duration=10)
+        '''
         if print_graph:
             print("\nStarting:", self, "\n")
 
@@ -217,6 +230,18 @@ class Graph(BaseContext):
 
     @contextmanager
     def run_scope(self, wait=True, raise_exc=True):
+        '''Run a graph and its child blocks while inside the context manager.
+        
+        .. code-block:: python
+
+            with reip.Graph() as g:
+                BlockA().to(BlockB()).to(BlockC())
+
+            with g.run_scope():
+                # gives you more flexibility in here
+                g.wait(duration=5)
+            # equivalent to g.run(duration=5)
+        '''
         self.log.debug(text.green('Starting'))
         # controlling = False
         try:
@@ -260,27 +285,33 @@ class Graph(BaseContext):
 
     @property
     def ready(self):
+        '''True if all child blocks are ready'''
         return all(b.ready for b in self.blocks)
 
     @property
     def running(self):
+        '''True if any child blocks are running'''
         return any(b.running for b in self.blocks)
 
     @property
     def terminated(self):
+        '''True if any child blocks are ready'''
         return all(b.terminated for b in self.blocks)
 
     @property
     def done(self):
+        '''True if any child blocks are done'''
         return any(b.done for b in self.blocks)
 
     @property
     def error(self):
+        '''True if any child blocks threw an error'''
         return bool(self._except.all()) or any(b.error for b in self.blocks)
 
     # Block control
     _ready_flag = None
     def spawn(self, wait=True, _controlling=True, _ready_flag=None, **kw):
+        '''Spawns the graph and its children.'''
         self.controlling = _controlling
         if self.controlling:
             self._ready_flag = _ready_flag = mp.Event()
@@ -300,6 +331,7 @@ class Graph(BaseContext):
             time.sleep(self._delay)
 
     def join(self, close=True, terminate=False, raise_exc=None, **kw):
+        '''Joins the graph and its children.'''
         if self._ready_flag is not None and not self._ready_flag.is_set():
             self._ready_flag.set()
         if close:
@@ -315,22 +347,27 @@ class Graph(BaseContext):
         self.controlling = self._ready_flag = None
 
     def pause(self):
+        '''Pause all blocks.'''
         for block in self.blocks:
             block.pause()
 
     def resume(self):
+        '''Resume all blocks.'''
         for block in self.blocks:
             block.resume()
 
     def close(self):
+        '''Close all blocks.'''
         for block in self.blocks:
             block.close()
 
     def terminate(self):
+        '''Terminate all blocks.'''
         for block in self.blocks:
             block.terminate()
 
     def raise_exception(self):
+        '''Raise any exceptions from blocks.'''
         for block in self.blocks:
             block.raise_exception()
         self._except.raise_any()

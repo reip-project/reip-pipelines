@@ -5,6 +5,7 @@ import tflit
 
 
 class Tflite(reip.Block):
+    '''Run a tflite model.'''
     model = None
     # @rgui.options(rgui.Text(), rgui.MultiLabel(), input_features=rgui.FunctionDef('data', 'meta'))
     # @rgui.options  # infer from docstring
