@@ -1,3 +1,6 @@
+import multiprocessing as mp
+mp.set_start_method('fork')
+
 import logging
 log = logging.getLogger(__name__)
 # log.propagate = True
