@@ -319,6 +319,7 @@ class Graph(BaseContext):
         if self.controlling:
             self._ready_flag = _ready_flag = mp.Event()
 
+        self._spawn_tasks_first(_ready_flag=_ready_flag, **kw)
         for block in self.blocks:
             block.spawn(wait=False, _controlling=False, _ready_flag=_ready_flag, **kw)
 
@@ -329,7 +330,13 @@ class Graph(BaseContext):
             if self._ready_flag is not None:
                 _ready_flag.set()
 
-    def wait_until_ready(self):
+    def _spawn_tasks_first(self, **kw):
+        for b in self.blocks:
+            if isinstance(b, reip.Task):
+                b.spawn(wait=False, _controlling=False, **kw)
+            elif isinstance(b, reip.Graph):
+                b._spawn_tasks_first(wait=False, _controlling=False, **kw)
+
     def wait_until_ready(self, stats_interval=5):
         t = time.time()
         while not self.ready and not self.done:
