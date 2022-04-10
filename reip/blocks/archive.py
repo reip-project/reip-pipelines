@@ -26,4 +26,6 @@ class Tar(reip.Block):
                 os.remove(f)
         return [fname], {}
 
-TarGz = Tar
+class TarGz(Tar):
+    def __init__(self, filename='{time}.tgz', **kw):
+        super().__init__(filename, gz=True, **kw)
