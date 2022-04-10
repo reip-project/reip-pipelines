@@ -54,7 +54,7 @@ class Mic(reip.Block):
 
         # start audio streamer
         self._audio_stream = sd.InputStream(
-            device=self.device['index'], blocksize=self.blocksize,
+            device=self.device.get('index', self.device['name']), blocksize=self.blocksize,
             samplerate=self.sr, channels=self.channels, dtype=self.dtype,
             callback=self._stream_callback)
         self._audio_stream.start()
@@ -94,6 +94,9 @@ class Mic(reip.Block):
 
 def find_device(query, min_input=1, min_output=0, log=None):
     '''Search for an audio device by name.'''
+    devices = sd.query_devices(query or sd.default.device, kind='input')
+    if devices:
+        return devices
     devices = [dict(d, index=i) for i, d in enumerate(sd.query_devices())]
     if log is not None:
         log.debug('Available Audio Devices: {}'.format(devices))
