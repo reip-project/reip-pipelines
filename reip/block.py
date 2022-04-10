@@ -381,9 +381,13 @@ class Block:
                     with self._sw('sink'):
                         self.__send_to_sinks(outputs, meta)
 
-        except KeyboardInterrupt:
-            if self.controlling:
-                self.log.info(text.yellow('Interrupting'))
+        except KeyboardInterrupt as e:
+            self.log.info(text.yellow('Interrupting'))
+            self.log.exception(e)
+            # reip.util.print_stack('Interrupted here')
+        except Exception as e:
+            self.log.exception(e)
+            raise
         finally:
             self.ready = False
             # finish up and shut down
@@ -495,7 +499,7 @@ class Block:
 
     def remove_extra_sources(self, n=None):
         n = n or self.n_expected_sources
-        if n is not None and n is not -1:
+        if n is not None and n != -1:
             self.sources = self.sources[:n]
 
     def wait_until_ready(self):
