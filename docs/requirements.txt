@@ -1,1 +1,1 @@
--e ..[audio,video,vis,encrypt,plasma,docs]
+-e .[audio,video,vis,encrypt,plasma,docs]
