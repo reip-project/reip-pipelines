@@ -54,8 +54,6 @@ def segment(camera=0):
     with reip.Graph() as g:
         cam = B.video.Video(camera)
         out = Segment(log_level='debug')(cam, strategy='latest')
-        # out[0].to(B.Debug('seg'))
-        # out[1].to(B.Debug('ims'))
     stream = out[1].output_stream(strategy='latest')
 
     with g.run_scope():

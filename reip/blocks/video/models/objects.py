@@ -67,7 +67,7 @@ def draw_boxes(img, boxes, classes, scores, labels, threshold=0.5):
             cv2.rectangle(img, (xmin, ymin), (xmax, ymax), (10, 255, 0), 2)
 
             # Draw label
-            label = '{}: {:%}'.format(labels[int(classes[i])], scores[i])
+            label = '{}: {:.2%}'.format(labels[int(classes[i])], scores[i])
             labelSize, baseLine = cv2.getTextSize(
                 label, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2) # Get font size
             # Make sure not to draw label too close to top of window
@@ -75,10 +75,10 @@ def draw_boxes(img, boxes, classes, scores, labels, threshold=0.5):
             cv2.rectangle(
                 img, (xmin, label_ymin-labelSize[1]-10),
                 (xmin+labelSize[0], label_ymin+baseLine-10),
-                (255, 255, 255), cv2.FILLED) # Draw white box to put label text in
+                (10, 255, 0), cv2.FILLED) # Draw white box to put label text in
             cv2.putText(
                 img, label, (xmin, label_ymin-7),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2) # Draw label text
+                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,0,0), 2) # Draw label text
 
     # # Draw framerate in corner of frame
     # cv2.putText(img, 'FPS: {0:.2f}'.format(frame_rate_calc), (30,50),

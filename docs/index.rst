@@ -127,7 +127,7 @@ can process data. For example:
    :caption: Examples
 
    audio_example
-   pose_example
+   video_example
    recipes
 
 
