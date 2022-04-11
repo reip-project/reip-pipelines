@@ -6,6 +6,9 @@ log = logging.getLogger(__name__)
 # log.propagate = True
 log.setLevel(logging.INFO)
 
+def package_file(*fs):
+    return os.path.join(os.path.dirname(reip.__file__), *fs)
+
 import time
 from .constants import *
 from . import exceptions

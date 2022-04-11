@@ -97,14 +97,14 @@ class VideoWriter(reip.Block):
 
 
 def stream_imshow(stream, *names):
-    import cv2
     try:
         for name in names:
             cv2.namedWindow(name)
         with stream:
             for xs, meta in stream:
                 for name, x in zip(names, xs):
-                    cv2.imshow(name, x)
+                    if x is not None:
+                        cv2.imshow(name, x)
                 if cv2.waitKey(25) & 0xFF == ord('q'):
                     return
                 yield

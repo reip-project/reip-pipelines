@@ -39,6 +39,21 @@ class _BlockSinkView:
     def __getitem__(self, key):  # get sub index
         return self.items[key]
 
+    def to(self, *others, squeeze=True, **kw):
+        '''Connect this blocks sinks to other blocks' sources.
+        
+        .. code-block:: python
+
+            InputBlock().to(ProcessBlock())
+        '''
+        outs = [other(self.items, **kw) for other in others]
+        return outs[0] if squeeze and len(outs) == 1 else outs
+
+    def output_stream(self, strategy='all', source_strategy=all, **kw):
+        '''Create a Stream iterator which will let you iterate over the
+        outputs of a block.'''
+        return reip.Stream([s.gen_source(strategy=strategy, **kw) for s in self.items], strategy=source_strategy, **kw)
+
 
 class Block:
     '''This is the base instance of a block.

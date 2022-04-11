@@ -220,6 +220,16 @@ class Stream:
             duration=duration, timeout=timeout,
             name=name or block.name)  # FIXME: how to pass kw to Stream as well ...?
 
+    @classmethod
+    def from_sinks(cls, sinks, max_rate=None, duration=None, delay=None,
+                   timeout=None, name=None, **kw):
+        '''Generate a stream using sources generated from a block's sinks.'''
+        return cls(
+            [sink.gen_source(**kw) for sink in sinks],
+            max_rate=max_rate, delay=delay,
+            duration=duration, timeout=timeout,
+            name=name)
+
     # Stream slicing
 
     '''Allows you to take a stream and select to only return a certain output

@@ -4,13 +4,14 @@ from reip.stores import Store, PlasmaStore, QueueStore, Pointer, Counter, HAS_PY
 
 
 class Producer(reip.Sink):
-    def __init__(self, size=100, delete_rate=10, task_id=reip.UNSET, **kw):
+    def __init__(self, size=100, delete_rate=10, task_id=reip.UNSET, skip_no_readers=True, **kw):
         self.size = size + 1  # need extra slot because head == tail means empty
         self.delete_rate = delete_rate
         self.task_id = task_id
         self.stores = {}
         self.head = Pointer(self.size)
         self.tail = Pointer(self.size)
+        self.skip_no_readers = skip_no_readers
         # self._dropped = Counter()
         self.readers = []
         super().__init__(**kw)
@@ -67,6 +68,8 @@ class Producer(reip.Sink):
 
     def _put(self, buffer):
         '''Send data to stores.'''
+        if self.skip_no_readers and not self.readers:
+            return
         data, meta = buffer
         meta = meta or {}
         for store in self.stores.values():
