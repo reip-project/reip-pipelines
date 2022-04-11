@@ -21,6 +21,7 @@ Javascript-esque method chaining.
 ```python
 import reip
 import reip.blocks as B
+import reip.blocks.audio
 
 # record audio and buffer into chunks of 10
 audio = B.audio.Mic(block_duration=1)
@@ -62,7 +63,7 @@ reip.run()
 
 ```
 
-## Concepts
+<!-- ## Concepts
 
 ### Block
 A block is an isolated piece of computation that takes a variable number of inputs and a metadata dictionary (`(*Xs, meta={})`) and returns a variable number of outputs and a metadata dictionary `([X], {})`.
@@ -103,10 +104,10 @@ class Custom(reip.Block):
     def finish(self):
         '''Any cleanup that you want to do.'''
 
-```
+``` -->
 
 
-### Graph
+<!-- ### Graph
 A collection of blocks that operate together.
 
 Here's how graph contexts work.
@@ -190,10 +191,10 @@ assert reip.default_graph() is top_graph
 ```python
 
 
-```
+``` -->
 
 
-### Task
+<!-- ### Task
 A Task is a Graph that executes in a separate process.
 
 All of the same principles of Graphs apply to Tasks. They can be set as the default and blocks will automatically add themselves to it.
@@ -214,10 +215,10 @@ print(top_graph)
 
 ```
 
-Currently, Tasks will add to the default graph and not other tasks. This was done because I figured nested processes would get messy, but idk. That may change once we test it.
+Currently, Tasks will add to the default graph and not other tasks. This was done because I figured nested processes would get messy, but idk. That may change once we test it. -->
 
 
-## API - out of date, will update
+<!-- ## API - out of date, will update
 
 The goal of the API is to provide a simple and easily understandable interface to build out ad-hoc data processing pipelines.
 
@@ -262,12 +263,12 @@ reip.run(
 )
 ```
 
-**NOTE:** I am open to looking into eager execution definitions as well (which is the current trend with things like tensorflow), but I know that tensorflow had to do some hacky things for eager execution to work properly so doing something like that will probably increase the complexity a fair amount. For the time being, anything people want to use eager execution for, they can just use the function block (`B.f(lambda: ...)`).
+**NOTE:** I am open to looking into eager execution definitions as well (which is the current trend with things like tensorflow), but I know that tensorflow had to do some hacky things for eager execution to work properly so doing something like that will probably increase the complexity a fair amount. For the time being, anything people want to use eager execution for, they can just use the function block (`B.f(lambda: ...)`). -->
 
 
 
 
-### Block Design
+<!-- ### Block Design
 
 
 
@@ -314,9 +315,9 @@ class Inspect(Block):
         ''')
         return X, meta
 
-```
+``` -->
 
-#### Block Concepts
+<!-- #### Block Concepts
 
 Many pipeline implementations have concepts around block classes like:
  - Source: something that produces data (the start of a pipeline)
@@ -327,9 +328,9 @@ But personally, I don't think there is a meaningful distinction between a proces
 
 So that leaves us with sources and processors. For the most part they are considered one in the same, however:
  - a processor takes in input and passes on outputs - just think of it as a function that is triggered when new input is passed.
- - a source isn't called in the same way because it doesn't have inputs - it is called once and it controls how often data is sent down the pipeline.
+ - a source isn't called in the same way because it doesn't have inputs - it is called once and it controls how often data is sent down the pipeline. -->
 
-
+<!-- 
 ## TODO
 
 ### Larger Decisions to be Made
@@ -378,4 +379,4 @@ So that leaves us with sources and processors. For the most part they are consid
 
 ### Notes
  - `~~` means in progress / partially done?
- - ~~some task~~ means completed
+ - ~~some task~~ means completed -->

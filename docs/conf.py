@@ -64,3 +64,9 @@ html_theme = 'sphinx_rtd_theme'
 html_static_path = ['_static']
 
 autodoc_member_order = 'bysource'
+
+
+
+
+napoleon_custom_sections = [("Inputs", "Parameters"), ("Outputs", "Parameters")]
+napoleon_custom_section_rename = False # True is default for backwards compatibility.

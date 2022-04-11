@@ -35,7 +35,7 @@ setuptools.setup(
         # 'gstream': ['PyGObject'],
         'encrypt': ['pycryptodome'],
         'vis': ['matplotlib'],
-        'docs': ['sphinx!=1.3.1', 'sphinx_theme', 'sphinx-gallery', 'sphinx_rtd_theme'],
+        'docs': ['sphinx!=1.3.1', 'sphinx_theme', 'sphinx_rtd_theme'],
     },
     license='BSD 3-Clause Clear License',
     keywords='iot embedded app pipeline block multiprocessing')
