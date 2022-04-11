@@ -1,9 +1,9 @@
 # REIP - data processing pipelines
 
-[![pypi](https://badge.fury.io/py/reip-pipelines.svg)](https://pypi.python.org/pypi/reip-pipelines/)
+[![pypi](https://badge.fury.io/py/reip.svg)](https://pypi.python.org/pypi/reip/)
 <!-- ![tests](https://github.com/beasteers/pathtrees/actions/workflows/ci.yaml/badge.svg) -->
 [![docs](https://readthedocs.org/projects/reip-pipelines/badge/?version=latest)](http://reip-pipelines.readthedocs.io/?badge=latest)
-[![License](https://img.shields.io/pypi/l/reip-pipelines.svg)](https://github.com/reip-project/reip-pipelines/blob/master/LICENSE.md)
+[![License](https://img.shields.io/pypi/l/reip.svg)](https://github.com/reip-project/reip/blob/master/LICENSE.md)
 
 
 ## Install

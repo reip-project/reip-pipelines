@@ -241,6 +241,8 @@ def test_encrypt(tmp_path):
     f_out = tmp_path / 'testfile{}.txt'
     content = 'some content {} !!!'
     rsa_key = tmp_path / 'rsa.pem'
+    if not os.path.isfile(rsa_key):
+        private_rsa, rsa_key = B.encrypt.create_rsa(public_fname=rsa_key)
 
     with reip.Graph() as g:
         inc = B.Increment(10, max_rate=10)
@@ -248,8 +250,7 @@ def test_encrypt(tmp_path):
         encrypted = B.encrypt.TwoStageEncrypt(
             tmp_path / 'encrypted/{name}.enc.tar.gz', rsa_key)(txtfile)
         decrypted = B.encrypt.TwoStageDecrypt(
-            tmp_path / 'decrypted/{name}.txt',
-            B.encrypt.public2private(rsa_key))(encrypted)
+            tmp_path / 'decrypted/{name}.txt', private_rsa)(encrypted)
 
     with g.run_scope():
         inp = txtfile.output_stream()

@@ -90,7 +90,7 @@ def test_process_function_returns():
     with reip.Graph() as g:
         out = Constants([5, 6], max_processed=10).output_stream()
     g.run()
-    assert list(out.data[0].nowait()) == [5, 6]*5
+    assert list(out.data[0].nowait()) == [5, 6]*10
 
 
 def test_init_errors_from_block_in_task():

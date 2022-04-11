@@ -39,15 +39,15 @@ def test_stream_slice():
     stream = reip.Stream([source]).nowait()  # don't wait for sources
 
     for i in range(10):
-        sink.put(([i], {'i': i}))
+        sink.put((i, {'i': i}))
     assert list(stream) == [([i], {'i': i}) for i in range(10)]
 
     for i in range(10):
-        sink.put(([i], {'i': i}))
+        sink.put((i, {'i': i}))
     assert list(stream.data) == [[i] for i in range(10)]
 
     for i in range(10):
-        sink.put(([i], {'i': i}))
+        sink.put((i, {'i': i}))
     assert list(stream.meta) == [{'i': i} for i in range(10)]
 
     # slicing
@@ -59,7 +59,7 @@ def test_stream_slice():
     for i in range(10):
         sink.put((i, {'i': i}))
         sink2.put((i+3, {'j': i+3}))
-    assert list(stream) == [([i, i+3], {'i': i, 'j': i+3}) for i in range(10)]
+    assert list(stream) == [([i, i+3], [{'i': i}, {'j': i+3}]) for i in range(10)]
 
     for i in range(10):
         sink.put((i, {'i': i}))
