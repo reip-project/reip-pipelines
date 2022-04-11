@@ -11,7 +11,7 @@ setuptools.setup(
     long_description_content_type='text/markdown',
     author='Yurii Piadyk, Bea Steers',
     author_email='ypiadyk@nyu.edu',
-    url='https://github.com/{}/{}'.format(USERNAME, NAME),
+    url='https://github.com/reip-project/reip-pipelines',
     packages=setuptools.find_packages(),
     # entry_points={'console_scripts': ['{name}={name}:main'.format(name=NAME)]},
     install_requires=[
