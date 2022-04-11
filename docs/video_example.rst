@@ -39,6 +39,8 @@ Simple Camera
 
 .. code-block:: python
 
+    import reip
+    import reip.blocks as B
     import reip.blocks.video
 
     camera = 0  # your camera's index'
