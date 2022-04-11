@@ -13,6 +13,8 @@ pip install -e ./reip-pipelines
 pip install reip
 ```
 
+More detailed installation instruction for NVIDIA Jeton platform can be found [here](Installation.md).
+
 ## Usage
 
 

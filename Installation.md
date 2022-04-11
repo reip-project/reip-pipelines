@@ -1,6 +1,6 @@
 # Installation of REIP SDK on NVIDIA Jetson
 
-Tested on NVIDIA Jetson AGX Xavier 16G with [JetPack](https://developer.nvidia.com/embedded/jetpack) v4.6.1.
+Tested on NVIDIA Jetson AGX Xavier 16G and NVIDIA Jetson Xavier NX with [JetPack](https://developer.nvidia.com/embedded/jetpack) v4.6.1.
 
 ## General environment
 
@@ -43,6 +43,7 @@ sudo apt install -y libjemalloc-dev libboost-dev \
 
 Python packages:
 ```bash
+pip3 install cython
 pip3 install -r python/requirements-build.txt
 ```
 
@@ -119,7 +120,49 @@ plasma_store -m 3000000000 -s /tmp/plasma
 
 ## REIP SDK
 
-From withis the desired installation directory:
+### Install Dependencies
+
+Install the relevant version of tflite-runtime from https://google-coral.github.io/py-repo/tflite-runtime:
+```bash
+pip3 install https://github.com/google-coral/pycoral/releases/download/v1.0.1/tflite_runtime-2.5.0-cp36-cp36m-linux_aarch64.whl
+```
+
+Or full TensorFlow from [NVIDIA](https://docs.nvidia.com/deeplearning/frameworks/install-tf-jetson-platform/index.html) (if tflite-runtime is not enough for tflit in tflite):
+```bash
+sudo apt-get update
+sudo apt-get install libhdf5-serial-dev hdf5-tools libhdf5-dev zlib1g-dev zip libjpeg8-dev liblapack-dev libblas-dev gfortran
+
+sudo pip3 install -U pip testresources setuptools==49.6.0
+
+sudo pip3 install -U --no-deps numpy==1.19.4 future==0.18.2 mock==3.0.5 keras_preprocessing==1.1.2 keras_applications==1.0.8 gast==0.4.0 protobuf pybind11 cython pkgconfig
+
+# sudo env H5PY_SETUP_REQUIRES=0 pip3 install -U h5py==3.1.0
+
+sudo pip3 install --pre --extra-index-url https://developer.download.nvidia.com/compute/redist/jp/v461 tensorflow
+```
+
+Intel TBB from sources (for numba as part of librosa in audio):
+```bash
+git clone https://github.com/wjakob/tbb.git
+mkdir tbb/build
+pushd tbb/build
+cmake ..
+make -j `nproc`
+sudo make install
+popd
+
+pip3 install --upgrade colorama
+```
+
+Additionally, llvmlite for librosa in audio:
+```bash
+sudo apt-get install -y llvm-10
+export LLVM_CONFIG=/usr/lib/llvm-10/bin/llvm-config
+```
+
+### Build SDK
+
+From within the desired installation directory:
 
 Acquire:
 ```bash
@@ -128,22 +171,28 @@ git clone https://github.com/reip-project/reip-pipelines.git
 
 Install:
 ```bash
-pip install -e ./reip-pipelines
+pip3 install -e ./reip-pipelines
 ```
 
 Include block libraries:
 ```bash
-pip install -e ./reip-pipelines[audio,video]
+pip3 install -e ./reip-pipelines[audio,video]
 ```
 
 Full list of block liraries:
+ - plasma
+ - tflite
  - audio
  - video
  - encrypt
- - network?
  - vis
+ - docs
 
-*Note: JetPack has OpenCV installed already, so don't overide it by acident when installing video library!*
+*Note: JetPack has OpenCV installed already, so don't overide it by acident when installing video library! One can test OpenCV installation by running:*
+```bash
+python3 -c 'import cv2; print(cv2.getBuildInformation()); exit()'
+```
+*Also, plasma is installed by default as part of pyarrow compilation.*
 
 More details at https://wp.nyu.edu/reip.
 
