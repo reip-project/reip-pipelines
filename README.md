@@ -8,11 +8,6 @@
 ## Install
 
 ```bash
-# while we're still private:
-git clone https://github.com/reip-project/reip-pipelines.git
-pip install -e ./reip-pipelines
-
-# eventually:
 pip install reip
 ```
 
