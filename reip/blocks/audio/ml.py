@@ -4,7 +4,7 @@ import librosa
 import reip
 import reip.blocks as B
 import reip.blocks.ml
-
+from reip.util.iters import npgenarray
 
 
 as_model_file = lambda f: os.path.join(os.path.dirname(reip.__file__), 'models', f)
@@ -92,28 +92,28 @@ def melstft(X, sr, n_fft=2048, hop_length=512, n_mels=64):
 
 
 
-# def ml_stft_inputs(data, meta, hop_size=0.1, duration=1, sr=8000, **kw):
-#     # load audio
-#     file, y = (data, None) if isinstance(data, str) else (None, data)
-#     y, sr = load_resample(file, y, meta.get('sr'), sr)
-#     # frame and extract stft
-#     frames = padframe(y, int(sr * duration), int(sr * hop_size)).T
-#     X = npgenarray(
-#         (melstft(frame, sr, **kw) for frame in frames),
-#         len(frames))[..., None]
-#     return X
+def ml_stft_inputs(data, meta, hop_size=0.1, duration=1, sr=8000, **kw):
+    # load audio
+    file, y = (data, None) if isinstance(data, str) else (None, data)
+    y, sr = load_resample(file, y, meta.get('sr'), sr)
+    # frame and extract stft
+    frames = padframe(y, int(sr * duration), int(sr * hop_size)).T
+    X = npgenarray(
+        (melstft(frame, sr, **kw) for frame in frames),
+        len(frames))[..., None]
+    return X
 
-# def melstft(X, sr, n_fft=2048, hop_length=512, n_mels=64):
-#     # magnitude spectrum
-#     S = np.abs(librosa.core.stft(
-#         X, n_fft=n_fft, hop_length=hop_length,
-#         window='hann', center=True, pad_mode='constant'))
+def melstft(X, sr, n_fft=2048, hop_length=512, n_mels=64):
+    # magnitude spectrum
+    S = np.abs(librosa.core.stft(
+        X, n_fft=n_fft, hop_length=hop_length,
+        window='hann', center=True, pad_mode='constant'))
 
-#     # log mel spectrogram
-#     return librosa.power_to_db(
-#         librosa.feature.melspectrogram(
-#             S=S, sr=sr, n_mels=n_mels, htk=True),
-#         amin=1e-10)
+    # log mel spectrogram
+    return librosa.power_to_db(
+        librosa.feature.melspectrogram(
+            S=S, sr=sr, n_mels=n_mels, htk=True),
+        amin=1e-10)
 
 
 
@@ -124,26 +124,26 @@ def melstft(X, sr, n_fft=2048, hop_length=512, n_mels=64):
 
 # '''
 
-# def load_resample(fname=None, y=None, sr=None, target_sr=None):
-#     '''Get the audio data at a specified target sample rate.'''
-#     if y is None:
-#         y, target_sr = librosa.load(fname, mono=False, sr=target_sr)
-#     else:
-#         y = y.T
-#         y = np.atleast_2d(y)[0, :]
-#         if len(y) == 1:
-#             y = y[0]
-#         if sr and target_sr and sr != target_sr:
-#             y = librosa.resample(y, sr, target_sr)
-#     return y, target_sr or sr
+def load_resample(fname=None, y=None, sr=None, target_sr=None):
+    '''Get the audio data at a specified target sample rate.'''
+    if y is None:
+        y, target_sr = librosa.load(fname, mono=False, sr=target_sr)
+    else:
+        y = y.T
+        y = np.atleast_2d(y)[0, :]
+        if len(y) == 1:
+            y = y[0]
+        if sr and target_sr and sr != target_sr:
+            y = librosa.resample(y, sr, target_sr)
+    return y, target_sr or sr
 
 
-# def framepadlen(xlen, flen, hlen):
-#     '''Calculate the padding for a specific frame and hop size.'''
-#     return int(np.ceil(1. * (xlen - flen) / hlen) * hlen + flen)
+def framepadlen(xlen, flen, hlen):
+    '''Calculate the padding for a specific frame and hop size.'''
+    return int(np.ceil(1. * (xlen - flen) / hlen) * hlen + flen)
 
 
-# def padframe(y, framelen, hoplen):
-#     '''Get framed array with zero padding to fill the first/last frames.'''
-#     y = librosa.util.pad_center(y, framepadlen(len(y), framelen, hoplen))
-#     return librosa.util.frame(y, framelen, hoplen)
+def padframe(y, framelen, hoplen):
+    '''Get framed array with zero padding to fill the first/last frames.'''
+    y = librosa.util.pad_center(y, framepadlen(len(y), framelen, hoplen))
+    return librosa.util.frame(y, framelen, hoplen)

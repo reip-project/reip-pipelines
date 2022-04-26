@@ -12,7 +12,7 @@ import reip.blocks.encrypt
 import reip.blocks.os_watch
 import reip.blocks.upload
 
-def run(duration=60):
+def run(duration=31):
     g=reip.Graph(log_level='debug').as_default()
 
     #######################################################
@@ -124,7 +124,7 @@ def run(duration=60):
     ###############################################################
 
     print(reip.default_graph())
-    reip.run(stats_interval=20, duration=duration)
+    reip.run(stats_interval=10, duration=duration)
 
 
 

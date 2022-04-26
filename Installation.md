@@ -176,14 +176,14 @@ pip3 install -e ./reip-pipelines
 
 Include block libraries:
 ```bash
-pip3 install -e ./reip-pipelines[audio,video]
+pip3 install -e ./reip-pipelines[audio,ml,encrypt,vis]
 ```
 
 Full list of block liraries:
  - plasma
- - tflite
  - audio
  - video
+ - ml
  - encrypt
  - vis
  - docs

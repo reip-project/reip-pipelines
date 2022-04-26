@@ -40,7 +40,7 @@ MODEL_DIR = './models'
 #     def run(self):
 #         self.graph.run()
 
-def sonyc(test=True, status_period=20):
+def sonyc(test=True, status_period=10):
 
     #######################################################
     # Graph Definition - Nothing is actually executed here.
@@ -206,7 +206,7 @@ def sonyc(test=True, status_period=20):
     # Run the graph - this is where everything actually executes
     ###############################################################
 
-    reip.default_graph().run(duration=60, stats_interval=1)
+    reip.default_graph().run(duration=31, stats_interval=1)
 
 
 import time
