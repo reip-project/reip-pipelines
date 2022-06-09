@@ -127,7 +127,7 @@ Install the relevant version of tflite-runtime from https://google-coral.github.
 pip3 install https://github.com/google-coral/pycoral/releases/download/v1.0.1/tflite_runtime-2.5.0-cp36-cp36m-linux_aarch64.whl
 ```
 
-Or full TensorFlow from [NVIDIA](https://docs.nvidia.com/deeplearning/frameworks/install-tf-jetson-platform/index.html) (if tflite-runtime is not enough for tflit in tflite):
+Or full TensorFlow from [NVIDIA](https://docs.nvidia.com/deeplearning/frameworks/install-tf-jetson-platform/index.html) if tflite-runtime is not enough for tflit in tflite:
 ```bash
 sudo apt-get update
 sudo apt-get install libhdf5-serial-dev hdf5-tools libhdf5-dev zlib1g-dev zip libjpeg8-dev liblapack-dev libblas-dev gfortran
@@ -141,7 +141,7 @@ sudo pip3 install -U --no-deps numpy==1.19.4 future==0.18.2 mock==3.0.5 keras_pr
 sudo pip3 install --pre --extra-index-url https://developer.download.nvidia.com/compute/redist/jp/v461 tensorflow
 ```
 
-Intel TBB from sources (for numba as part of librosa in audio):
+Intel TBB from sources for numba as part of librosa in audio:
 ```bash
 git clone https://github.com/wjakob/tbb.git
 mkdir tbb/build
@@ -160,6 +160,19 @@ sudo apt-get install -y llvm-10
 export LLVM_CONFIG=/usr/lib/llvm-10/bin/llvm-config
 ```
 
+Finally, jetson-inference for GPU-accelrated blocks in video:
+```bash
+sudo apt-get install -y libpython3-dev python3-numpy
+git clone --recursive https://github.com/reip-project/jetson-inference.git
+mkdir jetson-inference/build
+pushd jetson-inference/build
+cmake ..
+make -j `nproc`
+sudo make install
+sudo ldconfig
+popd
+```
+
 ### Build SDK
 
 From within the desired installation directory:
@@ -176,14 +189,14 @@ pip3 install -e ./reip-pipelines
 
 Include block libraries:
 ```bash
-pip3 install -e ./reip-pipelines[audio,ml,encrypt,vis]
+pip3 install -e ./reip-pipelines[audio,vis]
 ```
 
 Full list of block liraries:
  - plasma
+ - tflite
  - audio
  - video
- - ml
  - encrypt
  - vis
  - docs
