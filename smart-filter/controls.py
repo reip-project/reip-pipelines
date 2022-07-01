@@ -41,7 +41,7 @@ class BulkUSB(reip.Block):
     debug = False  # Debug output
     verbose = False  # Detailed debug output
     usb_dev = None  # USB Bulk Device Class handle
-    max_usb_stats = 60000  # Max number of usb stats to accumulate before printing (about a minute)
+    max_usb_stats = 15000  # Max number of usb stats to accumulate before printing (about a minute)
     idVendor = 0x1cbe
     idProduct = 0x0003
 
@@ -338,15 +338,15 @@ class Follower(reip.Block):
 
 
 def test_example():
-    cin = ConsoleInput(name="Console_Input", debug=True)
+    # cin = ConsoleInput(name="Console_Input", debug=True)
 
     with reip.Task("USB"):
         bulk_usb = BulkUSB(name="Bulk_USB", debug=True, verbose=True)
 
-    ctl = Controller(name="Manual_Controller", usb_device=bulk_usb, debug=True)
-    cin.to(ctl)
+    # ctl = Controller(name="Manual_Controller", usb_device=bulk_usb, debug=True)
+    # cin.to(ctl)
 
-    reip.default_graph().run(duration=None, stats_interval=None)
+    reip.default_graph().run(duration=None, stats_interval=2)
 
 
 if __name__ == '__main__':

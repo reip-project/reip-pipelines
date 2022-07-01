@@ -67,8 +67,9 @@ class UsbCamGStreamer(BundleCam):
     fps = 15  # Supported max fps: 15, 30, 30
     rate = 5  # Decoding / appsink rate
     dev = 0  # Camera device ID
+    g_time = None # Global timestamp
     max_duration = 3  # Max file duration, sec
-    max_size = 300  # Max file size, MB
+    max_size = 500  # Max file size, MB
     gst_started = False  # Delay pipeline start until all blocks loaded
     rec = True  # Do record the original data stream
     gst = None  # GStreamer pipeline
@@ -203,6 +204,7 @@ class UsbCamGStreamer(BundleCam):
         while not sample:
             sample = self.gst.sink.try_pull_sample(1e+9 / self.fps / 10)
         t = time.time()
+        global_t = self.g_time.value if self.g_time is not None else 0
         gt = None
 
         if sample:
@@ -228,6 +230,7 @@ class UsbCamGStreamer(BundleCam):
         if img is not None:
             return img, {"python_timestamp" : t,
                          "gstreamer_timestamp" : gt / 1.e+9,
+                         "global_timestamp" : global_t,
                          "resolution": self.res,
                          "file_template": self.fname,
                          "file_index": self.gst.multifilesink_index,
