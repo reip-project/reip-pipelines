@@ -24,8 +24,8 @@ from motion import MotionDetector
 from controls import BulkUSB, Follower, Controller, ConsoleInput
 from audio import MicArray
 
-DATA_DIR = './data'
-# DATA_DIR = '/mnt/ssd/data'
+# DATA_DIR = './data'
+DATA_DIR = '/home/reip/data'
 MODEL_DIR = './models'
 
 
@@ -235,5 +235,5 @@ if __name__ == '__main__':
     # all()
     nec()
 
-    reip.default_graph().run(duration=None, stats_interval=2)
+    reip.default_graph().run(duration=None, stats_interval=3)
 

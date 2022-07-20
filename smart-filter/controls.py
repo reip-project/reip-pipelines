@@ -151,6 +151,7 @@ class BulkUSB(reip.Block):
         except usb.core.USBError as e:
             self.read_errors += 1
             data = None
+            read = 0
             if e.errno != 110:  # timeout
                 raise e
         self.loops += 1

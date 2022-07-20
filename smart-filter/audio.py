@@ -83,7 +83,9 @@ class MicArray(reip.Block):
                     data = np.frombuffer(raw_data, dtype=np.int32).reshape((self.chunk, self.channels))
                     break
                 else:
-                    raise ValueError("MicArray: Invalid data length")
+                    # raise ValueError("MicArray: Invalid data length")
+                    if self.debug:
+                        print("MicArray: Invalid data length", l)
 
         pos = self.i_chunk * self.chunk
         if self.debug and self.verbose:
