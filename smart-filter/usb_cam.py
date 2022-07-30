@@ -107,12 +107,15 @@ class UsbCamGStreamer(BundleCam):
             # f.connect("filesink", self.new_file, f)
 
             q = g.add("queue", "queue_a")#.set_property("leaky", "downstream")
-            q.set_property("max-size-buffers", 3)
+            q.set_property("max-size-buffers", 15)
             q.set_property("leaky", "downstream")
             q.connect("overrun", self.overrun, q)
 
             r = g.add("videorate", "rate")
             r.set_property("max-rate", self.rate)
+            # reduction = self.fps // self.rate
+            # print("FPS Reduction =", reduction)
+            # r.set_property("rate", reduction)  # Does not work just like max-file-duration in multifilesink
             r.set_property("skip-to-first", True)
             r.set_property("drop-only", True)
             g.add("jpegdec", "decode")
@@ -128,9 +131,10 @@ class UsbCamGStreamer(BundleCam):
             # g.sink.connect("new-sample", just_pull, g.sink)
             # g.sink.connect("new-sample", pull_copy, g.sink)
 
-            g.link(["source", "src_caps", "tee"])
+            g.link(["source", "src_caps", "queue_a", "tee"])
             g.link(["tee", "queue_f", "mux", "filesink"])
-            g.link(["tee", "queue_a", "rate", "decode", "sink"])
+            # g.link(["tee", "rate", "decode", "sink"])
+            g.link(["tee", "sink"])
         else:
             g.add("v4l2src", "src").set_property("device", "/dev/video%d" % self.dev)
             g.add("capsfilter", "caps").set_property("caps", g.from_string("image/jpeg,width=%d,height=%d,framerate=%d/1" % (self.res[1], self.res[0], self.fps)))
@@ -215,7 +219,9 @@ class UsbCamGStreamer(BundleCam):
                 print("Pulled_%d:" % self.dev, self.count, gt / 1.e+9, "at", time.time() - self.t0)
 
             w, h, ch, fmt = fmt
-            assert(fmt == "I420")
+            # assert(fmt == "I420")
+            if fmt is None:
+                img, self.pixel_format = None, None
             # img = img[: img.shape[0] * 2 // 3].reshape((h, w))
         else:
             img = None
@@ -227,7 +233,8 @@ class UsbCamGStreamer(BundleCam):
         # if not self.bundle:  # copy required by pyarrow because negative strides are not supported
         #     img = img.copy() # bundles make a copy by default
 
-        if img is not None:
+        # if img is not None:
+        if True:
             return img, {"python_timestamp" : t,
                          "gstreamer_timestamp" : gt / 1.e+9,
                          "global_timestamp" : global_t,
@@ -236,8 +243,8 @@ class UsbCamGStreamer(BundleCam):
                          "file_index": self.gst.multifilesink_index,
                          "fps": self.fps,
                          "pixel_format" : self.pixel_format}
-        else:
-            return None, {}
+        # else:
+        #     return None, {}
 
     # Provided by BundleCam
     # def process(self, *xs, meta=None):
@@ -247,7 +254,7 @@ class UsbCamGStreamer(BundleCam):
         if self.gst and self.gst_started:
             self.gst.stop(timeout=3)
 
-        if self.debug or True:
+        if self.debug:
             print("\nCamera_%d:\n\tPulled - %d, Lost - %d" % (self.dev, self.tot_samples, self.tot_overrun))
 
         super().finish()

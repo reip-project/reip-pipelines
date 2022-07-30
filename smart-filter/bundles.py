@@ -109,7 +109,8 @@ class BundleCam(reip.Block):
     def process(self, *xs, meta=None):
         buffer, meta = self.get_buffer()
 
-        if buffer is not None:
+        # if buffer is not None:
+        if True:
             if self.bundle:
                 ret, idx  = None, self.frame_id % self.bundle
 
@@ -148,11 +149,11 @@ class BundleCam(reip.Block):
                     print("Outputting single:", meta)
 
                 return [buffer], meta
-        else:
-            if self.debug: # and self.verbose:
-                print("BundleCam: Got empty buffer!")
-
-            return None
+        # else:
+        #     if self.debug and self.verbose:
+        #         print("BundleCam: Got empty buffer!")
+        # 
+        #     return None
 
     def finish(self):
         self.bundle_reset()

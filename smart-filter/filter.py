@@ -195,30 +195,31 @@ def test_audio():
     audio20s.to(B.audio.AudioFile(os.path.join(DATA_DIR, 'audio/test_{time}.wav')))
 
 
-def nec(audio_length=60):
-    rate, timestamp = 3, str(time.time())
+def nec(video_length=30, audio_length=5):
+    rate, timestamp = 15, "%.0f" % time.time()
 
-    with reip.Task("USB"):
+    with reip.Task("USB_Task"):
         bulk_usb = BulkUSB(name="Bulk_USB", debug=True, verbose=True)
 
-    with reip.Task("Cam_Task_0"):
-        cam_0 = UsbCamGStreamer(name="Cam_0", filename=DATA_DIR + "/video/%d_"+timestamp+".avi", dev=0, g_time=bulk_usb.timestamp,
-                              bundle=None, rate=rate, debug=False, verbose=False)
-        cam_0_gr = Bundle(name="Cam_0_Bundle", size=180, meta_only=True)
+    with reip.Task("Cam_0_Task"):
+        cam_0 = UsbCamGStreamer(name="Cam_0\t", filename=DATA_DIR + "/video/%d_"+timestamp+".avi", dev=0,
+                                g_time=bulk_usb.timestamp, bundle=None, rate=rate, debug=True, verbose=False)
+        cam_0_gr = Bundle(name="Cam_0_Bundle", size=15*video_length, meta_only=True)
         cam_0_wr = NumpyWriter(name="Cam_0_Writer", filename_template=DATA_DIR + "/time/0_"+timestamp+"_%d")
-        cam_0.to(cam_0_gr).to(cam_0_wr).to(BlackHole(name="Cam_0_BH"))
+        cam_0.to(cam_0_gr).to(cam_0_wr)
 
-    with reip.Task("Cam_Task_1"):
-        cam_1 = UsbCamGStreamer(name="Cam_1", filename=DATA_DIR + "/video/%d_"+timestamp+".avi", dev=1, g_time=bulk_usb.timestamp,
-                               bundle=None, rate=rate, debug=False, verbose=False)
-        cam_1_gr = Bundle(name="Cam_1_Bundle", size=180, meta_only=True)
+    with reip.Task("Cam_1_Task"):
+        cam_1 = UsbCamGStreamer(name="Cam_1\t", filename=DATA_DIR + "/video/%d_"+timestamp+".avi", dev=1,
+                                g_time=bulk_usb.timestamp, bundle=None, rate=rate, debug=True, verbose=False)
+        cam_1_gr = Bundle(name="Cam_1_Bundle", size=15*video_length, meta_only=True)
         cam_1_wr = NumpyWriter(name="Cam_1_Writer", filename_template=DATA_DIR + "/time/1_"+timestamp+"_%d")
-        cam_1.to(cam_1_gr).to(cam_1_wr).to(BlackHole(name="Cam_1_BH"))
+        cam_1.to(cam_1_gr).to(cam_1_wr)
 
     with reip.Task("Mic_Array_Task"):
-        audio1s = MicArray(name="MicArray", interval=1, use_pyaudio=False, debug=True, verbose=False)
-        audio_ns = audio1s.to(B.FastRebuffer(size=audio_length))
-        audio_ns.to(B.audio.AudioFile(os.path.join(DATA_DIR, 'audio/{time}.wav'))).to(BlackHole(name="Audio_Writer_BH"))
+        audio_1s = MicArray(name="Mic_Array", interval=1, use_pyaudio=False, debug=True, verbose=False)
+        audio_ns = B.FastRebuffer(name="Audio_Rebuffer", size=audio_length)
+        audio_wr = B.audio.AudioFile(name="Audio_Writer", filename=os.path.join(DATA_DIR, 'audio/{time:.0f}.wav'))
+        audio_1s.to(audio_ns).to(audio_wr)
 
 
 if __name__ == '__main__':

@@ -5,9 +5,9 @@ import reip
 
 
 class AudioFile(reip.Block):
-    def __init__(self, filename='{time}.wav'):
+    def __init__(self, filename='{time:.3f}.wav', **kw):
         self.filename = filename
-        super().__init__()
+        super().__init__(**kw)
 
     def process(self, X, meta):
         # meta["time"] = time.time()

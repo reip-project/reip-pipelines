@@ -148,7 +148,7 @@ class GStreamer:
             print("\n\tInserted EOS")
 
     # timeout = -1 - no timeout
-    def stop(self, wait=True, timeout=0.1):
+    def stop(self, wait=True, timeout=2):
         self.check_ready(required = not self._done)
 
         if not self._done:
