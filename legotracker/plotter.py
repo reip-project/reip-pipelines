@@ -29,13 +29,25 @@ class Plotter(reip.Block):
            3.22]
     count = 0
     version = "plot"
+    xy = False
+    all = True
+    persist = False
+    figsize = (16, 16)
+    out_dir = None
     savefig = False
     savegif = False
 
     def init(self):
-        plt.figure(self.name, (12, 8))
+        if self.savefig:
+            self.figsize = (8, 6.4)
+        else:
+            self.figsize = (20, 20)
+
+        plt.figure(self.name, self.figsize)
         plt.clf()
         self.shown = False
+        if self.savefig and self.out_dir is not None:
+            reip.util.ensure_dir(self.out_dir)
 
     def plot_2d(self, xs):
         plt.clf()
@@ -192,14 +204,54 @@ class Plotter(reip.Block):
 
         plt.tight_layout()
 
-    def plot_ccl(self, xs):
+    def plot_ccl_xy(self, xs):
         data = xs[0]
 
         r = data[:, :, 0].T
         m = data[:, :, 1].T
         l = data[:, :, 2].T
 
+        x = data[:, :, 3].T
+        y = data[:, :, 4].T
 
+        if not self.persist:
+            plt.clf()
+            self.plot_units()
+
+        max_l = round(np.amax(l))
+
+        for i in range(0, max_l):
+            idx = np.nonzero(l == i)
+            xi, yi = x[idx].ravel(), y[idx].ravel()
+            if i == 0:
+                continue
+            else:
+                if self.all:
+                    plt.plot(xi, yi, ".")
+                else:
+                    plt.plot(np.mean(xi), np.mean(yi), ".", markersize=9)
+
+        plt.xlim([-36.5, 6.5])
+        plt.ylim([-26.5, 6.5])
+        # plt.xlim([-50, 7])
+        # plt.ylim([-50, 7])
+        # plt.axis("equal")
+
+        plt.xlabel("X, meters")
+        plt.ylabel("Y, meters")
+        if self.savefig:
+            plt.title("%.2f sec" % (self.processed / 20))
+        else:
+            plt.title(str(self.processed))
+        plt.tight_layout()
+
+
+    def plot_ccl(self, xs):
+        data = xs[0]
+
+        r = data[:, :, 0].T
+        m = data[:, :, 1].T
+        l = data[:, :, 2].T
 
         # c = data[:, :, -1].T # "closing"
 
@@ -254,6 +306,18 @@ class Plotter(reip.Block):
 
         plt.tight_layout()
 
+    def plot_units(self):
+        if self.all:
+            units = [(3.95, -21.2), (-31.7, 4.55), (-3.75, 0.4)]
+        else:
+            units = [(3.85, -21.5), (-31.7, 4.55), (-3.55, 0.2)]
+        plt.plot(0, 0, "*k", markersize=13, label="Origin")
+        for j in range(3):
+            plt.plot(units[j][0], units[j][1], "x" + "rgb"[j], markersize=10, label="Unit %d" % (j + 1))
+        # plt.legend(loc="upper right")
+        plt.legend(loc="lower left")
+        plt.tight_layout()
+
     def process(self, *xs, meta=None):
         if self.type == "data_type":
             if meta["data_type"] == "lidar_formatted" or meta["data_type"] == "lidar_bgfiltered":
@@ -268,6 +332,10 @@ class Plotter(reip.Block):
                 self.type = "detection"
 
         # animate = None
+        if not self.shown:
+            self.plot_units()
+            plt.show(block=False)
+            self.shown = True
 
         if self.type == "2D":
             self.plot_2d(xs)
@@ -286,13 +354,12 @@ class Plotter(reip.Block):
         elif self.type == "morphological":
             self.plot_morphological(xs)
         elif self.type == "detection":
-            self.plot_ccl(xs)
+            if self.xy:
+                self.plot_ccl_xy(xs)
+            else:
+                self.plot_ccl(xs)
         else:
             raise RuntimeError("Unknown format")
-
-        if not self.shown:
-            plt.show(block=False)
-            self.shown = True
 
         # if self.savegif:
         #     anim = animation.FuncAnimation(plt.gcf(), animate,
@@ -301,6 +368,7 @@ class Plotter(reip.Block):
 
         plt.gcf().canvas.draw()
         plt.gcf().canvas.start_event_loop(0.001)
-        if self.savefig:
-            plt.savefig("plot/gif/{}_{}.png".format(self.version, self.count))
+        if self.savefig and self.out_dir is not None:
+            plt.savefig(self.out_dir + "%d.png" % self.count, dpi=250)
+            self.shown = False
             self.count += 1

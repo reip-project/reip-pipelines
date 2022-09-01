@@ -124,7 +124,7 @@ class ObjectDetector(reip.Block):
         xy = data[:, :, :2]
         labels = self.reassign_labels(labels, xy)
 
-        res = np.stack([r, mask, labels], axis=2)
+        res = np.stack([r, mask, labels, data[:, :, 0], data[:, :, 1]], axis=2)
         return res
 
     def reassign_labels(self, labels, xy):

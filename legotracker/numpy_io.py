@@ -1,4 +1,6 @@
 import json
+import os.path
+
 import reip
 import numpy as np
 
@@ -45,6 +47,9 @@ class NumpyReader(reip.Block):
         filename, self.id = self.filename_template % self.id, self.id + 1
         if self.verbose:
             print(filename)
+
+        if not os.path.exists(filename + ".npy"):
+            return None
 
         with open(filename + ".npy", "rb") as f:
             data = np.load(f)

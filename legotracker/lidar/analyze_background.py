@@ -81,5 +81,6 @@ def analyze_background(src_dir="data/lab", save_dir="data/lab_bg", override=Fals
 
 
 if __name__ == "__main__":
-    filename = analyze_background()
+    data_dir = "/home/vidaviz/lego/lidar/"
+    filename = analyze_background(src_dir=data_dir+"bg/", save_dir=data_dir)
     print("filename", filename)
