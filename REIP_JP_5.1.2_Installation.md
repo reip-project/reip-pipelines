@@ -44,13 +44,9 @@ sudo  -H  pip3  install  -U  jetson-stats
 
 ## Apache (Py)Arrow
 
-  
-
-Download the latest release from https://arrow.apache.org/release.
-
 Compilation instructions were tested for version 11.0.0. Plasma store has been removed from subsequent versions.
 
-  
+Download the source artifacts for v11.0.0 from https://arrow.apache.org/release.  
 
 From source code directory execute:
 
