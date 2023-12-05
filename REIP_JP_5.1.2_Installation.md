@@ -71,7 +71,7 @@ autoconf  flex  bison
 Python packages:
 
 ```bash
-pip3  install  cython
+pip3  install  Cython==0.29.36
 pip3  install  -r  python/requirements-build.txt
 ```
 
@@ -134,10 +134,10 @@ echo "export LD_LIBRARY_PATH=${ARROW_HOME}/lib:\$LD_LIBRARY_PATH" >> ~/.bashrc
 Configure:
 
 ```bash
-export  Plasma_DIR=./dist/lib/cmake/Plasma
-export  Parquet_DIR=./dist/lib/cmake/Parquet
-export  Arrow_DIR=./dist/lib/cmake/Arrow
-export  ArrowCUDA_DIR=./dist/lib/cmake/ArrowCUDA
+export  Plasma_DIR=$(pwd)/dist/lib/cmake/Plasma
+export  Parquet_DIR=$(pwd)/dist/lib/cmake/Parquet
+export  Arrow_DIR=$(pwd)/dist/lib/cmake/Arrow
+export  ArrowCUDA_DIR=$(pwd)/dist/lib/cmake/ArrowCUDA
 cd  python
 export  PYARROW_WITH_PARQUET=1
 export  PYARROW_WITH_PLASMA=1
