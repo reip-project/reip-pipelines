@@ -272,6 +272,8 @@ git  clone  https://github.com/reip-project/reip-pipelines.git
 Install:
 
 ```bash
+pip3 install pandas --upgrade
+pip install pyusb
 pip3  install  -e  ./reip-pipelines
 ```
 
