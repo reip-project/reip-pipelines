@@ -6,7 +6,7 @@ class Generator(reip.Block):
     debug = False
     inc = False
 
-    def __init__(self, size=(1,), dtype=np.int, **kw):
+    def __init__(self, size=(1,), dtype=np.int32, **kw):
         self.size = size
         self.dtype = np.dtype(dtype)
         self.array_0, self.array_1 = None, None

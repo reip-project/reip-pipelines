@@ -7,20 +7,20 @@ import numpy as np
 
 import reip
 import reip.blocks as B
-import reip.blocks.ml
+#import reip.blocks.ml
 import reip.blocks.audio
 # import reip.blocks.encrypt
 import reip.blocks.os_watch
 import reip.blocks.upload
 
 from numpy_io import NumpyWriter
-from direct_io import DirectWriter, DirectReader
+#from direct_io import DirectWriter, DirectReader
 from bundles import Bundle
 from usb_cam import UsbCamGStreamer
 from dummies import Generator, BlackHole
 from cv_utils import ImageConvert, ImageDisplay, ImageWriter
 from ai import ObjectDetector
-from motion import MotionDetector
+#from motion import MotionDetector
 from controls import BulkUSB, Follower, Controller, ConsoleInput
 from audio import MicArray
 
@@ -31,16 +31,17 @@ MODEL_DIR = './models'
 
 def mono_object():
     with reip.Task("Cam"):
-        cam = UsbCamGStreamer(name="Cam", filename=DATA_DIR + "/video/%d_{time}.avi", dev=0,
+        cam = UsbCamGStreamer(name="Cam", filename=DATA_DIR + "/video/%d_{time}.avi", dev=2, rec=False,
                               bundle=None, rate=15, debug=False, verbose=False)
 
     with reip.Task("Det"):
         det = ObjectDetector(name="Detector", labels_dir=MODEL_DIR, max_rate=None, thr=0.1, model = "ssd-mobilenet-v2",
-                            draw=True, cuda_out=False, zero_copy=False, debug=True, verbose=False)
+                            draw=False, cuda_out=False, zero_copy=False, debug=True, verbose=False)
 
     cam.to(det, throughput='large', strategy="latest")
 
-    det.to(ImageWriter(name="Writer", path=DATA_DIR + "/objects/"), throughput='large').to(BlackHole(name="Writer_BH"))
+    det.to(BlackHole(name="Writer_BH"))
+    # det.to(ImageWriter(name="Writer", path=DATA_DIR + "/objects/"), throughput='large').to(BlackHole(name="Writer_BH"))
 
     # det.to(ImageDisplay(name="Display"), throughput='large', strategy="latest").to(BlackHole(name="Display_BH"))
 
@@ -86,18 +87,18 @@ def mono_both():
 
 
 def stereo():
-    # with reip.Task("Cam_Task_0"):
-    cam_0 = UsbCamGStreamer(name="Cam_0", filename=DATA_DIR + "/video/%d_{time}.avi", dev=0,
+    with reip.Task("Cam_Task_0"):
+        cam_0 = UsbCamGStreamer(name="Cam_0", filename=DATA_DIR + "/video/%d_{time}.avi", dev=0,
                               bundle=None, rate=6, debug=True, verbose=False)
 
-    # with reip.Task("Cam_Task_1"):
-    cam_1 = UsbCamGStreamer(name="Cam_1", filename=DATA_DIR + "/video/%d_{time}.avi", dev=1,
+    with reip.Task("Cam_Task_1"):
+        cam_1 = UsbCamGStreamer(name="Cam_1", filename=DATA_DIR + "/video/%d_{time}.avi", dev=2,
                               bundle=None, rate=6, debug=True, verbose=False)
 
-    # with reip.Task("Detector_Task"):
-    det = ObjectDetector(name="Detector", n_inputs=2, labels_dir=MODEL_DIR, max_rate=None, thr=0.1,
-                        draw=False, cuda_out=False, zero_copy=False, debug=True, verbose=False)
-    det.model = "ssd-mobilenet-v2"
+    with reip.Task("Det"):
+        det = ObjectDetector(name="Detector", n_inputs=2, labels_dir=MODEL_DIR, max_rate=None, thr=0.1, model = "ssd-mobilenet-v2", 
+            draw=False, cuda_out=False, zero_copy=False, debug=True, verbose=False)
+
 
     cam_0.to(det, throughput='large', strategy="latest", index=0)
     cam_1.to(det, throughput='large', strategy="latest", index=1)
@@ -188,52 +189,61 @@ def all(audio_length=10):
         clsf.to(B.Csv(os.path.join(DATA_DIR, 'clsf/{time}.csv'), headers=class_names, max_rows=10))
 
 
-def test_audio():
-    # audio1s = B.audio.Mic(block_duration=1, channels=16, device="hw:2,0", dtype=np.int32)#.to(B.Debug('audio pcm'))
-    audio1s = MicArray(name="MicArray", interval=1, use_pyaudio=False, debug=True, verbose=False)#.to(B.Debug('audio pcm'))
-    audio20s = audio1s.to(B.FastRebuffer(size=20))
-    audio20s.to(B.audio.AudioFile(os.path.join(DATA_DIR, 'audio/test_{time}.wav')))
+# def test_audio():
+#     # audio1s = B.audio.Mic(block_duration=1, channels=16, device="hw:2,0", dtype=np.int32)#.to(B.Debug('audio pcm'))
+#     audio1s = MicArray(name="MicArray", interval=1, use_pyaudio=False, debug=True, verbose=False)#.to(B.Debug('audio pcm'))
+#     audio20s = audio1s.to(B.FastRebuffer(size=20))
+#     audio20s.to(B.audio.AudioFile(os.path.join(DATA_DIR, 'audio/test_{time}.wav')))
 
 
 def nec(video_length=30, audio_length=5):
     rate, timestamp = 15, "%.0f" % time.time()
-
+    
+    #To receive microcontroller pulses for time sync
     with reip.Task("USB_Task"):
         bulk_usb = BulkUSB(name="Bulk_USB", debug=True, verbose=True)
-
+    
+    """
+    	CHECK CAMERA NAMES ARE RIGHT BY PINGING THEM (GENERATED RANDONMLY, dev=?),
+    	ls /dev/video*
+    	gst-launch-1.0 v4l2src device=/dev/video0 ! decodebin ! xvimagesink -e 
+    	use dmesg to check kernel related messages
+    """
     with reip.Task("Cam_0_Task"):
         cam_0 = UsbCamGStreamer(name="Cam_0\t", filename=DATA_DIR + "/video/%d_"+timestamp+".avi", dev=0,
+                                #g_time=None, bundle=None, rate=rate, debug=True, verbose=False)
                                 g_time=bulk_usb.timestamp, bundle=None, rate=rate, debug=True, verbose=False)
+	#meta only flag bundles ensures only metadata is put out and numpywriter writes out the timestamps
         cam_0_gr = Bundle(name="Cam_0_Bundle", size=15*video_length, meta_only=True)
         cam_0_wr = NumpyWriter(name="Cam_0_Writer", filename_template=DATA_DIR + "/time/0_"+timestamp+"_%d")
         cam_0.to(cam_0_gr).to(cam_0_wr)
 
     with reip.Task("Cam_1_Task"):
-        cam_1 = UsbCamGStreamer(name="Cam_1\t", filename=DATA_DIR + "/video/%d_"+timestamp+".avi", dev=1,
+        cam_1 = UsbCamGStreamer(name="Cam_1\t", filename=DATA_DIR + "/video/%d_"+timestamp+".avi", dev=2,
                                 g_time=bulk_usb.timestamp, bundle=None, rate=rate, debug=True, verbose=False)
         cam_1_gr = Bundle(name="Cam_1_Bundle", size=15*video_length, meta_only=True)
-        cam_1_wr = NumpyWriter(name="Cam_1_Writer", filename_template=DATA_DIR + "/time/1_"+timestamp+"_%d")
+        cam_1_wr = NumpyWriter(name="Cam_1_Writer", filename_template=DATA_DIR + "/time/2_"+timestamp+"_%d")
         cam_1.to(cam_1_gr).to(cam_1_wr)
 
-    with reip.Task("Mic_Array_Task"):
-        audio_1s = MicArray(name="Mic_Array", interval=1, use_pyaudio=False, debug=True, verbose=False)
-        audio_ns = B.FastRebuffer(name="Audio_Rebuffer", size=audio_length)
-        audio_wr = B.audio.AudioFile(name="Audio_Writer", filename=os.path.join(DATA_DIR, 'audio/{time:.0f}.wav'))
-        audio_1s.to(audio_ns).to(audio_wr)
+    #with reip.Task("Mic_Array_Task"):
+        #audio_1s = MicArray(name="Mic_Array", interval=1, use_pyaudio=False, debug=True, verbose=False)
+        #audio_ns = B.FastRebuffer(name="Audio_Rebuffer", size=audio_length)
+        #audio_wr = B.audio.AudioFile(name="Audio_Writer", filename=os.path.join(DATA_DIR, 'audio/{time:.0f}.wav'))
+        #audio_1s.to(audio_ns).to(audio_wr)
 
 
 if __name__ == '__main__':
     # If camera got stcuk and does not open, run:
     # sudo service nvargus-daemon restart
 
-    # mono_object()
+    #mono_object()
     # mono_motion()
     #mono_both()
 
     # test_audio()
-    # stereo()
+    #stereo()
     # audio()
-    # all()
+    #all()
     nec()
 
     reip.default_graph().run(duration=None, stats_interval=3)

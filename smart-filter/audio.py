@@ -12,8 +12,10 @@ class MicArray(reip.Block):
     channels = 16  # LR
     rate = 48000  # Hz
     chunk = 2000  # Use bigger buffer to prevent overrun errors (2048 max)
-    dev = 11  # Input device (11 == 'MCHStreamer PDM16: USB Audio (hw:2,0)' on Happy Sensor)
-    hw = 2 # Input device (11 == 'MCHStreamer PDM16: USB Audio (hw:2,0)' on Happy Sensor)
+
+    #check the hw and dev numbers by running the device info loop in the debug option below in the code
+    dev = 26  # Input device (11 == 'MCHStreamer PDM16: USB Audio (hw:2,0)' on Happy Sensor)
+    hw = 4 # Input device (11 == 'MCHStreamer PDM16: USB Audio (hw:2,0)' on Happy Sensor)
     interval = 1  # sec
     use_pyaudio = True
     debug = False
@@ -40,8 +42,7 @@ class MicArray(reip.Block):
             self.stream = self.audio.open(channels=self.channels, rate=self.rate, format=pyaudio.paInt32,
                                           input=True, input_device_index=self.dev, frames_per_buffer=self.chunk)
         else:
-            self.pcm = alsaaudio.PCM(alsaaudio.PCM_CAPTURE, alsaaudio.PCM_NORMAL,
-                                     channels=self.channels, rate=self.rate, format=alsaaudio.PCM_FORMAT_S32_LE,
+            self.pcm = alsaaudio.PCM(alsaaudio.PCM_CAPTURE, alsaaudio.PCM_NORMAL, channels=self.channels, rate=self.rate, format=alsaaudio.PCM_FORMAT_S32_LE,
                                      device=("hw:%d,0" % self.hw), periodsize=self.chunk)
         self.new_buf()
 
@@ -59,7 +60,7 @@ class MicArray(reip.Block):
         if self.use_pyaudio:
             try:
                 # exception_on_overflow=True would cause stream to be closed automatically after the first overrun error
-                raw_data = self.stream.read(self.chunk, exception_on_overflow=False)
+                raw_data = self.stream.read(self.chunk, exception_on_overflow=True)
                 data = np.frombuffer(raw_data, dtype=np.int32).reshape((self.chunk, self.channels))
             except Exception as e:
                 if self.debug:
@@ -121,10 +122,11 @@ class MicArray(reip.Block):
                 self.audio.terminate()
 
 
+#run main function for "unit testing"
 if __name__ == '__main__':
     # mic = MicArray(name="Mic", max_rate=None, use_pyaudio=True, debug=True, verbose=False)
-    mic = MicArray(name="Mic", max_rate=23, use_pyaudio=True, debug=True, verbose=False)
+    mic = MicArray(name="Mic", max_rate=23, use_pyaudio=False, debug=True, verbose=False)
     # mic.interval = 1.7
     mic.to(BlackHole(name="BH"))
 
-    reip.default_graph().run(duration=5.1, stats_interval=1)
+    reip.default_graph().run(duration=10.1, stats_interval=1)

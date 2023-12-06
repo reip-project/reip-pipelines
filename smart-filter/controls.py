@@ -166,7 +166,7 @@ class BulkUSB(reip.Block):
     def parse(self, data, read):
         if data is not None and read > 0:
             data = bytes(data)
-            if data[0] == 0 and read == 9:
+            if data[0] == 0 and read == 13:
                 # Default packet contains current flags and timestamp
                 new_flags = int.from_bytes(data[1:5], byteorder='little', signed=False)
                 new_timestamp = int.from_bytes(data[5:9], byteorder='little', signed=False)
@@ -177,6 +177,8 @@ class BulkUSB(reip.Block):
                 self.flags.value, self.timestamp.value = new_flags, new_timestamp
             else:
                 # Map value reads to self.values dict or print otherwise
+                print(data)
+                return
                 res = data.decode("ascii")
                 res = res[:-1] if res[len(res)-1] == "\n" else res
 

@@ -2,7 +2,7 @@ import reip
 import time
 import cv2
 import numpy as np
-import jetson.utils
+#import jetson.utils
 from bundles import BundleCam
 from cv_utils import ImageConvert, ImageDisplay
 from gstreamer import *
@@ -63,8 +63,8 @@ class UsbCamOpenCV(BundleCam):
 class UsbCamGStreamer(BundleCam):
     # global_time = None  # Global timestamp
     pixel_format = "I420"  # Supported pixel formats: RGB
-    res = (1944, 2592)  # Supported resolutions: (1944, 2592), (1080, 1920), (720, 1280)
-    fps = 15  # Supported max fps: 15, 30, 30
+    res = (2160, 3840)  # Supported resolutions: (1944, 2592), (1080, 1920), (720, 1280)
+    fps = 30  # Supported max fps: 15, 30, 30
     rate = 5  # Decoding / appsink rate
     dev = 0  # Camera device ID
     g_time = None # Global timestamp
@@ -85,6 +85,8 @@ class UsbCamGStreamer(BundleCam):
         GStreamer.init()
         self.gst = GStreamer(debug=self.debug)
         g = self.gst
+        
+        self.fname = None
 
         if self.rec:
             g.add("v4l2src", "source").set_property("device", "/dev/video%d" % self.dev)
@@ -217,9 +219,9 @@ class UsbCamGStreamer(BundleCam):
 
             if self.debug and self.verbose:
                 print("Pulled_%d:" % self.dev, self.count, gt / 1.e+9, "at", time.time() - self.t0)
-
+                
             w, h, ch, fmt = fmt
-            # assert(fmt == "I420")
+            #assert(fmt == "I420")
             if fmt is None:
                 img, self.pixel_format = None, None
             # img = img[: img.shape[0] * 2 // 3].reshape((h, w))

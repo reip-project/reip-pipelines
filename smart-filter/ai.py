@@ -111,7 +111,7 @@ class ObjectDetector(reip.Block):
         if pixel_format == "mono8":
             pixel_format = "gray8"
         # if pixel_format == "i420":
-        #     pixel_format = "nv12"
+        #    pixel_format = "nv12"
         if len(img_in.shape) == 2:
             img_in = img_in[:, :, None]
 
