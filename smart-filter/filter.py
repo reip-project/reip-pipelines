@@ -225,11 +225,11 @@ def nec(video_length=30, audio_length=5):
         cam_1_wr = NumpyWriter(name="Cam_1_Writer", filename_template=DATA_DIR + "/time/2_"+timestamp+"_%d")
         cam_1.to(cam_1_gr).to(cam_1_wr)
 
-    #with reip.Task("Mic_Array_Task"):
-        #audio_1s = MicArray(name="Mic_Array", interval=1, use_pyaudio=False, debug=True, verbose=False)
-        #audio_ns = B.FastRebuffer(name="Audio_Rebuffer", size=audio_length)
-        #audio_wr = B.audio.AudioFile(name="Audio_Writer", filename=os.path.join(DATA_DIR, 'audio/{time:.0f}.wav'))
-        #audio_1s.to(audio_ns).to(audio_wr)
+    with reip.Task("Mic_Array_Task"):
+        audio_1s = MicArray(name="Mic_Array", interval=1, use_pyaudio=False, debug=True, verbose=False)
+        audio_ns = B.FastRebuffer(name="Audio_Rebuffer", size=audio_length)
+        audio_wr = B.audio.AudioFile(name="Audio_Writer", filename=os.path.join(DATA_DIR, 'audio/{time:.0f}.wav'))
+        audio_1s.to(audio_ns).to(audio_wr)
 
 
 if __name__ == '__main__':

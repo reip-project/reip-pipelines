@@ -14,8 +14,8 @@ class MicArray(reip.Block):
     chunk = 2000  # Use bigger buffer to prevent overrun errors (2048 max)
 
     #check the hw and dev numbers by running the device info loop in the debug option below in the code
-    dev = 26  # Input device (11 == 'MCHStreamer PDM16: USB Audio (hw:2,0)' on Happy Sensor)
-    hw = 4 # Input device (11 == 'MCHStreamer PDM16: USB Audio (hw:2,0)' on Happy Sensor)
+    dev = 0  # Input device (11 == 'MCHStreamer PDM16: USB Audio (hw:2,0)' on Happy Sensor)
+    hw = 0 # Input device (11 == 'MCHStreamer PDM16: USB Audio (hw:2,0)' on Happy Sensor)
     interval = 1  # sec
     use_pyaudio = True
     debug = False
